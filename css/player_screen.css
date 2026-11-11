@@ -79,7 +79,12 @@ body.simple .item .thumb{display:none}  /* 간단 표시: 목록 썸네일 숨�
 #videoBox{background:#000;border-bottom:1px solid var(--line);display:flex;justify-content:center}
 #videoBox[hidden]{display:none}
 /* 영상 칸: 가로를 채우되 높이는 창의 70%까지 (아래 30%에 곡 정보·버튼·가사가 늘 보이게 — 오른쪽 칸 전체 스크롤은 없음) */
-#videoBox .frame{width:100%;max-width:calc(100vh / var(--ui-zoom) * .7 * 16 / 9);aspect-ratio:16/9}
+#videoBox .frame{width:100%;max-width:calc(100vh / var(--ui-zoom) * var(--vid-f, .7) * 16 / 9);aspect-ratio:16/9}
+/* user request: drag bar under the video sets its height (--vid-f = share of the window height, remembered); 16:9 kept */
+#videoGrip{flex:none;height:8px;margin-top:-4px;margin-bottom:-4px;position:relative;z-index:5;cursor:ns-resize;touch-action:none}
+#videoGrip::after{content:"";position:absolute;left:50%;top:2px;width:44px;height:4px;margin-left:-22px;border-radius:2px;background:var(--line);opacity:.8}
+#videoGrip:hover::after,#videoGrip.drag::after{background:var(--accent);opacity:1}
+#videoBox[hidden]+#videoGrip{display:none}
 #videoBox{flex:none}
 /* 영상이 있을 때 가사 칸은 작으니 아래 여백(마지막 줄을 가운데로 올리는 자리)도 작게 — 여백이 칸보다 크면 칸 밖으로 넘침 */
 /* 영상 숨김(서버 없이 연 화면의 온라인 곡): 중계 플레이어는 소리를 내야 해서 지우지 않고 보이지 않게만 */

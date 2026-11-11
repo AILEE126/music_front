@@ -866,6 +866,28 @@ function showVideo() {
   $("videoFrame").innerHTML = `<div class="vfallback" ${bg}><div class="vmsg">${esc(msg)}
     ${cur.video ? `<a href="${esc(cur.video)}" target="_blank" rel="noopener">원곡 페이지 ↗</a>` : ""}</div></div>`;
 }
+/* Video height (user request): drag the bar under the video; the video keeps 16:9, so it shrinks/grows with it.
+   Kept as a share of the window height (--vid-f, 10–85%) so it still fits after a window resize. Double-click → default 70%. */
+const VID_F = f => { f = Math.min(.85, Math.max(.1, f)); document.documentElement.style.setProperty("--vid-f", f); return f; };
+{
+  const saved = store.get("videoH", null);
+  if (saved) VID_F(saved);
+  const grip = $("videoGrip");
+  let drag = null;
+  grip.addEventListener("pointerdown", e => {
+    drag = {y: e.clientY, h: $("videoFrame").getBoundingClientRect().height};
+    grip.setPointerCapture(e.pointerId); grip.classList.add("drag"); e.preventDefault();
+  });
+  grip.addEventListener("pointermove", e => {
+    if (!drag) return;
+    drag.f = VID_F((drag.h + e.clientY - drag.y) / innerHeight);
+    dispatchEvent(new Event("resize"));  // the bridge player over the video follows at once (play_engine placeNow)
+  });
+  const end = () => { if (!drag) return; if (drag.f) store.set("videoH", drag.f); drag = null; grip.classList.remove("drag"); };
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
+  grip.addEventListener("dblclick", () => { document.documentElement.style.removeProperty("--vid-f"); store.set("videoH", null); dispatchEvent(new Event("resize")); });
+}
 $("btnVideo").onclick = () => { if (SIMPLE) return; VID.on = !VID.on; store.set("video", VID.on); showVideo(); };
 $("btnCmt").onclick = () => { audio.comments = !audio.comments; showVideo(); };
 for (const ev of ["sourcechange", "emptied", "error", "loadedmetadata"]) on(audio, ev, showVideo);  // 중계 플레이어가 바뀜·뜸·못 틂

@@ -372,6 +372,8 @@ const LOCAL = {
   /* 오류 신고: 신고 하나에 파일 하나 (Server\data\reports\<시각>_<번호>.json — 여럿이 보내도 안 겹침).
      깃허브에서 열면 그 저장소에 커밋 (WEB 만 받은 다른 사람도) · 폴더로 열면 그 폴더에 → 서버 PC 의 음원 관리 › 오류 신고가 git 으로 받아 봄 */
   async saveReport(d) {
+    // user request: the manage screen shows who sent each report — on GitHub ask the name first (sync edits have no dialog)
+    if (this.gh && !String(d.who || "").trim()) d = {...d, who: await this.ghWho()};
     const at = nowText(), id = at.replace(/[-: ]/g, "").replace(/^(\d{8})/, "$1_") + "_" + Math.random().toString(36).slice(2, 6);
     const r = {at, kind: String(d.kind || "기타").slice(0, 40), text: String(d.text || "").trim().slice(0, 3000),
                song: d.song || null, pos: d.pos ?? null, source: String(d.source || "").slice(0, 300),
