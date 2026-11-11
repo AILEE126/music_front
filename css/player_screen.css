@@ -12,6 +12,8 @@ html,body{height:100%}
 .side{display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--card);min-height:0}
 .side-head{padding:14px 14px 10px;border-bottom:1px solid var(--line)}
 .side-head h1{font-size:18px;margin:0}
+.side-head h1.rainbow{display:inline-block;font-size:22px;font-weight:900;letter-spacing:1px;color:transparent;-webkit-background-clip:text;background-clip:text;
+  background-image:linear-gradient(135deg,#ff0000 0%,#ff8000 17%,#ffff00 33%,#00c000 50%,#0080ff 67%,#4000ff 83%,#c000ff 100%)}
 .side-head .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 .filters{display:flex;gap:6px;margin-top:8px}
 .filters select{flex:1}
