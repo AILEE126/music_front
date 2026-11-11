@@ -107,6 +107,20 @@ a.btn[hidden]{display:none}
 .rlist .ri{padding:4px 8px;border-radius:6px;cursor:pointer;color:var(--text)}
 .rlist .ri:hover{background:var(--chip)}
 #reportText{width:100%;min-height:120px;resize:vertical;box-sizing:border-box}
+/* 같이듣기 창 */
+#listenDlg{width:min(440px,94vw)}
+#listenDlg .rlabel{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);margin-bottom:12px}
+#listenDlg .ltrow{display:flex;align-items:center;gap:8px;margin:10px 0}
+#listenDlg .ltrow .hint{font-size:12px;color:var(--muted)}
+#ltJoinCode{width:9em;font-size:18px;letter-spacing:.15em;text-align:center}
+.ltcode{font-size:40px;font-weight:700;letter-spacing:.12em;text-align:center;color:var(--accent);margin:6px 0}
+.ltmembers{margin:8px 0 0;padding-left:20px;line-height:1.7}
+.ltmembers .r{font-size:12px;color:var(--muted)}
+.ltstatus{margin:10px 0 0;color:var(--warn)}
+/* 같이듣기 손님: 재생 조작은 방장만 — 목록에서 곡을 눌러도 안 틂, 영상 클릭(재생/멈춤)도 막음 */
+body.lt-guest #list{cursor:not-allowed}
+body.lt-guest .vshield{pointer-events:none}
+body.lt-guest #streamHost{pointer-events:none}
 /* 썸네일 크게 보기 */
 #coverDlg{width:auto;max-width:94vw;background:transparent;border:0}
 #coverDlg img{display:block;max-width:94vw;max-height:88vh;border-radius:10px;cursor:zoom-out}

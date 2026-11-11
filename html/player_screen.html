@@ -74,6 +74,7 @@
         <button id="btnReport" title="곡의 문제 알리기 (싱크·가사·곡 정보·재생 등) — 음원 관리 › 오류 신고에 남음">🚩 오류 신고</button>
         <button id="btnVideo" title="원곡 영상 보기 · 숨기기 (인터넷 필요)">🎬 영상</button>
         <button id="btnCmt" title="니코니코 댓글 켜기 · 끄기 (다음 곡에도 그대로)" hidden>💬 댓글</button>
+        <button id="btnListen" title="같이듣기 — 방을 만들면 나오는 번호를 넣은 사람과 같은 곡을 같은 위치로 같이 들음">🎧 같이듣기</button>
         <button id="btnMemo" title="이 곡의 특이사항 적기 (적은 날짜·시각과 함께 저장)">📝 특이사항</button>
         <a class="btn" id="btnSrc" target="_blank" rel="noopener" title="원곡 영상 페이지를 새 탭으로" hidden>원곡 ↗</a>
         <a class="btn" id="btnWiki" target="_blank" rel="noopener" title="나무위키 곡 문서를 새 탭으로" hidden>위키 ↗</a>
@@ -146,6 +147,23 @@
   </div>
   <div class="dlg-foot"><button id="lyrViewDown" title="이 가사를 txt 파일로 내려받기">txt로 받기</button><span style="flex:1"></span><button class="primary" id="lyrViewClose">닫기</button></div>
 </dialog>
+<dialog id="listenDlg"><!-- 같이듣기 (listen_together.js) -->
+  <div class="dlg-head">🎧 같이듣기</div>
+  <div class="dlg-body">
+    <label class="rlabel">내 이름<input type="text" id="ltName" placeholder="이름 (오류 신고의 보내는 사람과 같음)" autocomplete="off" spellcheck="false" maxlength="40"></label>
+    <div id="ltIdle">
+      <div class="ltrow"><button class="primary" id="ltMake">방 만들기</button><span class="hint">번호가 새로 나옵니다 — 그 번호를 알려 주면 같이 들을 수 있어요</span></div>
+      <div class="ltrow"><input type="text" id="ltJoinCode" inputmode="numeric" placeholder="받은 번호 6자리" autocomplete="off" maxlength="7"><button id="ltJoin">들어가기</button></div>
+    </div>
+    <div id="ltRoom" hidden>
+      <div class="ltcode" id="ltCode"></div>
+      <p class="hint" id="ltRoomHint"></p>
+      <ul class="ltmembers" id="ltMembers"></ul>
+    </div>
+    <p class="ltstatus" id="ltStatus" hidden></p>
+  </div>
+  <div class="dlg-foot"><button id="ltLeave" hidden></button><span style="flex:1"></span><button class="primary" id="ltClose">닫기</button></div>
+</dialog>
 <script>
 const STORE_PREFIX = "player.";  // 브라우저 저장값 이름 앞머리
 </script>
@@ -156,5 +174,6 @@ const STORE_PREFIX = "player.";  // 브라우저 저장값 이름 앞머리
 <script src="../js/play_engine.js"></script>
 <script src="../js/song_filter.js"></script>
 <script src="../js/player_screen.js"></script>
+<script src="../js/listen_together.js"></script>
 </body>
 </html>

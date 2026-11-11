@@ -305,6 +305,7 @@ function makePlayer(el) {
   const audio = new LocalMedia(el, host);
   const P = {
     audio, now: null, lyr: null, editing: false, autoplay: false,
+    follow: false,  // 같이듣기 손님 (곡이 끝나도 혼자 넘어가지 않음)
     canQueue: canPlay,  // 재생 목록에는 틀 수 있는 곡만
     /* 곡 바꾸기 — how: next · prev · pick(곡 하나만 고름) · ''(그 곡부터 순서를 새로) */
     async load(it, autoplay = true, how = "") {
@@ -454,6 +455,7 @@ function makePlayer(el) {
   audio.addEventListener("volumechange", () => store.set("vol", audio.volume));
   audio.addEventListener("ended", () => {
     if (P.editing) return;  // 플레이어에서 싱크를 직접 맞추는 중이면 넘어가지 않음
+    if (P.follow) return;  // 같이듣기 손님: 방장이 다음 곡으로 넘김 (listen_together.js)
     if (P.repeat === "one") { audio.currentTime = 0; audio.play(); } else P.next(true);
   });
   /* 온라인 곡을 못 틀면 (원곡 영상 삭제·비공개·퍼가기 금지 등) 화면 가운데 창에 남기고 다음 곡으로 — 멈추지 않고 계속 재생.
