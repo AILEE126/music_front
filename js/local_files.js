@@ -86,6 +86,17 @@ const LOCAL = {
     return r;
   },
 
+  /* Commit author for GitHub uploads (user request): everyone shares one token, so each upload is signed with the name
+     the user types — the same remembered name as the report dialog's '보내는 사람'; asked once when it is empty */
+  async ghWho() {
+    let who = String(store.get("reportWho", "") || "").trim();
+    if (who) return who;
+    who = await uiPrompt("깃허브에 올릴 때 남길 이름을 적어 주세요 (다음에도 그대로 — 오류 신고의 '보내는 사람'과 같음)", "", "이름");
+    if (!who) throw new Error("이름을 적어야 올릴 수 있습니다.");
+    store.set("reportWho", who.slice(0, 40));
+    return who.slice(0, 40);
+  },
+
   /* ---- 폴더 ---- */
   async saved() { try { return await idb("get", "music-dir"); } catch (e) { return null; } },
   async pick() {
@@ -164,10 +175,12 @@ const LOCAL = {
   },
   async writeText(path, text) {
     if (this.gh) {  // 깃허브: 지금 파일의 sha 를 받아 그 위에 커밋 (새 파일이면 sha 없이)
+      const who = await this.ghWho();
       let sha;
       try { sha = (await (await this.ghFetch(path)).json()).sha; } catch (e) { if (e.name !== "NotFoundError") throw e; }
       await this.ghFetch(path, {method: "PUT", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({message: `서버 없이 저장: ${path.split("/").pop()}`, content: b64utf8(text), sha, branch: this.gh.ref})});
+        body: JSON.stringify({message: `${who}: 서버 없이 저장 — ${path.split("/").pop()}`, content: b64utf8(text), sha, branch: this.gh.ref,
+                              author: {name: who, email: "music-player@users.noreply.github.com"}})});
       return;
     }
     const w = await (await this.file(path, this.dir, true)).createWritable();

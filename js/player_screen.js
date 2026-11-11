@@ -14,7 +14,8 @@ let userScrollAt = 0;
 /* ================= 곡 목록 ================= */
 const keyOf = it => it.site + "/" + it.name;
 async function loadLibrary() {
-  try { LIB = await api("/api/library"); } catch (e) { $("libInfo").textContent = e.message; return; }
+  // the load bar (GitHub download progress) must close even when this is not the first open
+  try { LIB = await api("/api/library"); } catch (e) { $("libInfo").textContent = e.message; return; } finally { hideLoad(); }
   LIB.items.forEach(prepItem);
   renderOnOff();
   renderSortOptions();  // 정렬 칸: 스트리밍은 '목록 순 (위키)', 번호 정렬·번호 버튼 없음
@@ -808,7 +809,8 @@ $("btnEditSave").onclick = async () => {
   try { song = await post("/api/sync/save", {site: song.site, name: song.name, times: T, matched: editOk, offset: 0}); }
   catch (e) { uiAlert(e.message); return; }
   stopEdit(); times = song.sync.times; offset = 0; syncShell();
-  renderLyrics(); renderSyncChip(); loadLibrary();
+  // the song's list mark is already updated (LOCAL.synced) — re-downloading the whole list (MBs on GitHub) left the load bar up
+  renderLyrics(); renderSyncChip(); renderList();
 };
 
 /* ================= 가사 보기: 가사 txt 미리보기 · 끌어서 복사 · txt 로 받기 ================= */

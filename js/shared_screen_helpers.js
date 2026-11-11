@@ -32,6 +32,24 @@ function uiDialog(msg, ok, cancel) {
   });
 }
 const uiAlert = msg => uiDialog(msg, "확인");
+/* text input dialog → the typed text (trimmed) / null when cancelled */
+function uiPrompt(msg, value = "", placeholder = "") {
+  return new Promise(res => {
+    const d = document.createElement("dialog");
+    d.className = "uidlg";
+    d.innerHTML = `<div class="dlg-body"><p></p><input type="text" maxlength="40" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box"></div>
+      <div class="dlg-foot"><button data-v="0">취소</button><button class="primary" data-v="1">확인</button></div>`;
+    d.querySelector("p").textContent = msg;
+    const inp = d.querySelector("input");
+    inp.value = value; inp.placeholder = placeholder;
+    inp.addEventListener("keydown", e => { if (e.key === "Enter" && inp.value.trim()) d.close("1"); });
+    d.addEventListener("click", e => { const b = e.target.closest("button[data-v]"); if (b && (b.dataset.v === "0" || inp.value.trim())) d.close(b.dataset.v); });
+    d.addEventListener("close", () => { d.remove(); res(d.returnValue === "1" ? inp.value.trim() : null); });
+    document.body.appendChild(d);
+    d.showModal();
+    inp.focus();
+  });
+}
 const uiConfirm = (msg, ok = "확인") => uiDialog(msg, ok, "취소");
 
 /* 가사 글자색 (바탕화면 오버레이와 같음): 서버가 묶음마다 준 보컬 색 vc 1~3개. 여럿이면(듀엣·합창) 한 줄의 글자를
