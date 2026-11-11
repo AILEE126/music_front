@@ -6,7 +6,9 @@
    player_screen.js 다음에 읽음 (SHELL·audio·keyOf·LIB·OFFDIR·ONLINE 을 씀) */
 const LT_PEERJS = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
 const LT_PREFIX = "ailee126-noinjeong-lt-";  // PeerJS id = 이 앞머리 + 번호
-const LT = {role: "", code: "", peer: null, conns: new Map(), host: null, members: [], status: "", lastHeard: 0};
+const LT = {role: "", code: "", peer: null, conns: new Map(), host: null, members: [], status: "", lastHeard: 0, lostAt: 0, retryAt: 0};
+const LT_SILENT = 70000;   // 방장 소식이 이만큼 없으면 끊긴 것으로 봄 (뒤에 깔린 탭은 브라우저가 타이머를 1분에 한 번까지 늦춤)
+const LT_GIVE_UP = 180000; // 손님: 이만큼 다시 잇지 못하면 나감
 let ltApplying = 0;  // 방장 상태를 따라 하는 중 (이때 바뀐 건 다시 보내지 않음)
 const ltQuiet = fn => { ltApplying++; try { return fn(); } finally { ltApplying--; } };
 const ltName = () => $("ltName").value.trim() || store.get("reportWho", "") || "이름 없음";
@@ -55,30 +57,38 @@ async function ltHost() {
   ltLeave(true);
   LT.status = "방을 만드는 중…"; ltRender();
   try { await ltLoadPeerJs(); } catch (e) { LT.status = e.message; return ltRender(); }
-  const tryOpen = (left) => {
-    const code = ltNewCode(), peer = new Peer(LT_PREFIX + code);
-    LT.peer = peer;
-    peer.on("open", () => {
-      if (LT.peer !== peer) return;
-      LT.role = "host"; LT.code = code; LT.status = ""; SHELL.follow = false;
-      ltMembers();
-    });
-    peer.on("connection", c => {
-      c.on("open", () => { LT.conns.set(c, {name: (c.metadata && c.metadata.name) || "손님", seen: Date.now()}); ltMembers(); ltSend(c, {t: "state", s: ltState()}); });
-      c.on("data", m => ltHostGot(c, m));
-      c.on("close", () => { if (LT.conns.delete(c)) ltMembers(); });
-      c.on("error", () => { if (LT.conns.delete(c)) ltMembers(); });
-    });
-    peer.on("error", e => {
-      if (LT.peer !== peer) return;
-      if (e.type === "unavailable-id" && left > 0) { peer.destroy(); return tryOpen(left - 1); }  // 번호가 겹침 → 다른 번호
-      if (LT.role === "host" && e.type !== "network" && e.type !== "server-error" && e.type !== "socket-error") return;  // 손님 하나의 문제
-      ltLeave(true); LT.status = ltErrText(e); ltRender();
-    });
-    // the PeerJS server link dropped: guests already joined keep working, new guests can't join until it comes back
-    peer.on("disconnected", () => { if (LT.peer === peer && LT.role === "host") setTimeout(() => { if (LT.peer === peer && !peer.destroyed) try { peer.reconnect(); } catch (e) {} }, 2000); });
-  };
-  tryOpen(3);
+  ltHostPeer(ltNewCode(), 3);
+}
+/* 방장 peer (번호 = PeerJS id). left: 번호가 겹치면 새 번호로 다시 할 횟수 (-1: 이미 연 방을 같은 번호로 다시 엶) */
+function ltHostPeer(code, left) {
+  const peer = new Peer(LT_PREFIX + code);
+  LT.peer = peer;
+  peer.on("open", () => {
+    if (LT.peer !== peer) return;
+    LT.role = "host"; LT.code = code; LT.status = ""; LT.lostAt = 0; SHELL.follow = false;
+    ltMembers();
+  });
+  peer.on("connection", c => {
+    c.on("open", () => { LT.conns.set(c, {name: (c.metadata && c.metadata.name) || "손님", seen: Date.now()}); ltMembers(); ltSend(c, {t: "state", s: ltState()}); });
+    c.on("data", m => ltHostGot(c, m));
+    c.on("close", () => { if (LT.conns.delete(c)) ltMembers(); });
+    c.on("error", () => { if (LT.conns.delete(c)) ltMembers(); });
+  });
+  peer.on("error", e => {
+    if (LT.peer !== peer) return;
+    if (LT.role !== "host") {  // 방을 열기 전
+      if (e.type === "unavailable-id" && left > 0) { peer.destroy(); return ltHostPeer(ltNewCode(), left - 1); }  // 번호가 겹침 → 다른 번호
+      ltLeave(true); LT.status = ltErrText(e); return ltRender();
+    }
+    // Room already open (user report: the room broke after a while): a dropped link to the PeerJS server used to close it.
+    // Guests already in talk to this browser directly and don't need that server — keep the room, reconnect in ltKeep.
+    if (["network", "server-error", "socket-error", "socket-closed", "disconnected", "unavailable-id"].includes(e.type)) ltHostLost();
+  });
+  peer.on("disconnected", () => { if (LT.peer === peer && LT.role === "host") ltHostLost(); });
+}
+function ltHostLost() {
+  if (!LT.lostAt) LT.lostAt = Date.now();
+  LT.status = "연결 서버와 다시 잇는 중… (들어와 있는 사람은 그대로 같이 들음 · 새로 들어오기만 잠시 안 됨)"; ltRender();
 }
 function ltHostGot(c, m) {
   const v = LT.conns.get(c); if (!v || !m) return;
@@ -92,31 +102,43 @@ async function ltJoin(code) {
   ltLeave(true);
   LT.status = "들어가는 중…"; ltRender();
   try { await ltLoadPeerJs(); } catch (e) { LT.status = e.message; return ltRender(); }
+  ltGuestPeer(code);
+}
+/* 손님 peer: 방장에게 잇기. 이미 들어와 있던 방(LT.role guest)이면 끊겨도 나가지 않고 ltKeep 이 다시 이음 */
+function ltGuestPeer(code) {
   const peer = LT.peer = new Peer();
+  const fail = msg => {
+    if (LT.peer !== peer) return;
+    if (LT.role === "guest") return ltGuestLost();
+    ltLeave(true); LT.status = msg; ltRender();
+  };
   peer.on("open", () => {
     if (LT.peer !== peer) return;
     const c = peer.connect(LT_PREFIX + code, {reliable: true, metadata: {name: ltName()}});
-    const t = setTimeout(() => { if (LT.peer === peer && LT.role !== "guest") { ltLeave(true); LT.status = "방에 들어가지 못했습니다 — 번호를 확인하거나 다시 해 보세요"; ltRender(); } }, 15000);
+    const t = setTimeout(() => { if (LT.peer === peer && LT.host !== c) fail("방에 들어가지 못했습니다 — 번호를 확인하거나 다시 해 보세요"); }, 15000);
     c.on("open", () => {
       clearTimeout(t);
       if (LT.peer !== peer) return c.close();
-      LT.role = "guest"; LT.code = code; LT.host = c; LT.status = ""; LT.lastHeard = Date.now();
+      LT.role = "guest"; LT.code = code; LT.host = c; LT.status = ""; LT.lastHeard = Date.now(); LT.lostAt = 0;
       SHELL.follow = true;  // 곡이 끝나도 혼자 다음 곡으로 넘어가지 않음 (방장이 넘김)
       ltRender();
     });
-    c.on("data", m => ltGuestGot(m));
-    c.on("close", () => { if (LT.host === c) { ltLeave(true); LT.status = "방이 닫혔습니다"; ltRender(); } });
+    c.on("data", m => { if (LT.host === c) ltGuestGot(m); });
+    c.on("close", () => { if (LT.host === c) ltGuestLost(); });
   });
-  peer.on("error", e => {
-    if (LT.peer !== peer) return;
-    ltLeave(true);
-    LT.status = e.type === "peer-unavailable" ? "그 번호의 방이 없습니다 — 번호를 확인해 주세요" : ltErrText(e);
-    ltRender();
-  });
+  peer.on("error", e => fail(e.type === "peer-unavailable" ? "그 번호의 방이 없습니다 — 번호를 확인해 주세요" : ltErrText(e)));
+}
+/* 들어와 있던 방과 끊김 → 방장이 방을 닫았다고 알리기 전까지는 다시 잇기 (3분 넘게 안 되면 나감) */
+function ltGuestLost() {
+  if (LT.role !== "guest") return;
+  LT.host = null;
+  if (!LT.lostAt) LT.lostAt = Date.now();
+  LT.status = "방장과 연결이 끊겨 다시 잇는 중…"; ltRender();
 }
 function ltGuestGot(m) {
   if (!m) return;
   LT.lastHeard = Date.now();
+  if (m.t === "bye") { ltLeave(true); LT.status = "방장이 방을 닫았습니다"; return ltRender(); }
   if (m.t === "members") { LT.members = m.list || []; return ltRender(); }
   if (m.t === "state") ltApply(m.s, performance.now());
 }
@@ -142,11 +164,40 @@ function ltErrText(e) {
 function ltLeave(quiet) {
   if (LT.role === "host") LT.conns.forEach((_, c) => ltSend(c, {t: "bye"}));
   const peer = LT.peer;
-  LT.peer = null; LT.role = ""; LT.code = ""; LT.host = null; LT.members = []; LT.conns = new Map();
+  LT.peer = null; LT.role = ""; LT.code = ""; LT.host = null; LT.members = []; LT.conns = new Map(); LT.lostAt = 0; LT.retryAt = 0;
   SHELL.follow = false;
   if (peer) setTimeout(() => { try { peer.destroy(); } catch (e) {} }, 300);  // "bye" 가 먼저 나가게
   if (!quiet) LT.status = "";
   ltRender();
+}
+
+/* 3초마다: 방장은 지금 상태를 알리고 연결 서버와 끊겼으면 다시 이음 · 손님은 살아 있다고 알리고 끊겼으면 다시 들어감 */
+function ltKeep() {
+  const now = Date.now();
+  if (LT.role === "host") {
+    ltBroadcast();
+    let gone = false;
+    LT.conns.forEach((v, c) => { if (now - v.seen > 20000 && !c.open) { LT.conns.delete(c); gone = true; } });
+    if (gone) ltMembers();
+    const p = LT.peer;
+    if (p && (p.destroyed || p.disconnected) && now >= LT.retryAt) {
+      LT.retryAt = now + 5000;
+      if (!LT.lostAt) ltHostLost();
+      if (p.destroyed) ltHostPeer(LT.code, -1);  // same code, guests already in were on the old peer and will rejoin
+      else try { p.reconnect(); } catch (e) {}
+    }
+  } else if (LT.role === "guest") {
+    if (LT.host) {
+      ltSend(LT.host, {t: "ping"});
+      if (now - LT.lastHeard > LT_SILENT) { const c = LT.host; ltGuestLost(); try { c.close(); } catch (e) {} }
+    } else if (now - LT.lostAt > LT_GIVE_UP) { ltLeave(true); LT.status = "방장과 연결이 끊겼습니다 (3분 동안 다시 잇지 못함)"; ltRender(); }
+    else if (now >= LT.retryAt) {
+      LT.retryAt = now + 16000;  // 한 번 잇기에 최대 15초
+      const old = LT.peer;
+      ltGuestPeer(LT.code);
+      if (old) try { old.destroy(); } catch (e) {}
+    }
+  }
 }
 
 /* ---------- 재생기에 걸기: 방장은 바뀔 때마다 알리고, 손님이 직접 하는 재생 조작은 막음 (방장 상태를 따라 할 때만 통과) ---------- */
@@ -172,17 +223,7 @@ function ltLeave(quiet) {
   audio.play = function () { return locked() ? Promise.resolve() : proto.play.call(this); };
   audio.pause = function () { if (!locked()) return proto.pause.call(this); };
   ["play", "pause", "seeked", "loadedmetadata"].forEach(ev => audio.addEventListener(ev, ltBroadcast));
-  setInterval(() => {
-    if (LT.role === "host") {
-      ltBroadcast();
-      let gone = false;
-      LT.conns.forEach((v, c) => { if (Date.now() - v.seen > 20000 && !c.open) { LT.conns.delete(c); gone = true; } });
-      if (gone) ltMembers();
-    } else if (LT.role === "guest") {
-      ltSend(LT.host, {t: "ping"});
-      if (Date.now() - LT.lastHeard > 15000) { ltLeave(true); LT.status = "방장과 연결이 끊겼습니다"; ltRender(); }
-    }
-  }, 3000);
+  setInterval(ltKeep, 3000);
   addEventListener("pagehide", () => ltLeave(true));
 }
 
