@@ -13,6 +13,7 @@
 const CRLF = "\r\n", LF = "\n";
 const GH_API = "https://api.github.com";
 const DATA_REPO_DIR = "Server/data/";  // data folder in the repo / program folder (moved out of WEB so WEB = player code only)
+const DATA_BRANCH = "data";  // branch holding Server/data (server: Server/web_api/data_git_publish.py)
 /* 깃허브 API 로 보낼 파일 내용 (base64 — 한글이 깨지지 않게 UTF-8 바이트로) */
 function b64utf8(text) {
   const bytes = new TextEncoder().encode(text);
@@ -57,7 +58,14 @@ const LOCAL = {
     if (!r.ok) throw new Error(`이 토큰으로 ${repo} 저장소를 볼 수 없습니다 (${r.status}). 협업자 초대·토큰의 저장소 선택을 확인하세요.`);
     const info = await r.json();
     const prev = {gh: this.gh, dir: this.dir, base: this.base};  // 못 열면 전에 열려 있던 곳 그대로
-    this.gh = {repo, token, ref: info.default_branch || "main", write: !!(info.permissions || {}).push};
+    // Data lives on the 'data' branch (one commit the server keeps replacing — user request: no pile of data commits).
+    // Reads and writes (reports·memos·sync edits) both go there; repo without that branch yet → its default branch.
+    let ref = DATA_BRANCH;
+    try {
+      const b = await fetch(`${GH_API}/repos/${repo}/branches/${DATA_BRANCH}`, {headers: {Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json"}, cache: "no-store"});
+      if (b.status === 404) ref = info.default_branch || "main";
+    } catch (e) {}
+    this.gh = {repo, token, ref, write: !!(info.permissions || {}).push};
     this.dir = null; this.base = DATA_REPO_DIR;
     // 곡 목록(수 MB)은 여기서 한 번만 받아 두고 곡 목록 그리기(library)에서 그대로 씀
     this.libText = await this.readTextP(`${this.out}/library.json`, "곡 목록 받는 중", 0.1, 0.8).catch(e => {
