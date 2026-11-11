@@ -356,6 +356,7 @@ const LOCAL = {
                song: d.song || null, pos: d.pos ?? null, source: String(d.source || "").slice(0, 300),
                from: this.gh ? `깃허브 (${this.gh.repo})` : `폴더 (${this.name})`,
                who: String(d.who || store.get("reportWho", "") || "").trim().slice(0, 40)};  // sender (shared token → name typed in the report dialog)
+    if (d.diag) r.diag = String(d.diag).slice(-12000);  // 안 보는 동안 멈춤 신고: 재생기 진단 기록 (play_engine.js diag)
     if (d.request) r.request = String(d.request).trim().slice(0, 300);  // 신곡 추가 요청: requested song name
     if (d.sync) r.sync = {file: String(d.sync.file), pending: String(d.sync.pending)};  // 싱크 수정 신고: 본 파일 · 기다리는 파일 (Server\data 기준)
     await this.writeText(`${this.data}reports/${id}.json`, JSON.stringify(r, null, 1));

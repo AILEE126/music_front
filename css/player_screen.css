@@ -257,10 +257,5 @@ body.simple #lyrics .vcm{background:none;-webkit-text-fill-color:currentColor}
 .offdlg{width:min(600px,94vw)}
 .offdlg .dlg-body{white-space:normal;font-size:13px}
 /* background-play notice: the one warning line bigger (user: hard to read) · text field + 📋 copy button in one row */
-.occwarn{font-size:17px;font-weight:700;margin:2px 0 12px}
-.occrow{display:flex;gap:6px;margin:4px 0 8px}
-.occrow input{flex:1;min-width:0}
-.occrow button{flex:none;padding:2px 10px}
-.offdlg .offsec{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
 .offdlg .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .offdlg .offerr{margin-top:10px;color:var(--err);white-space:pre-wrap;min-height:1em}

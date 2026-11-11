@@ -18,7 +18,7 @@ const streamRefs = it => [...new Set([it.video_link, ...(it.sources || [])].filt
 const canPlay = it => !!it && (it.site === "local" || (it.site === "stream" && streamRefs(it).length > 0));
 
 /* Diagnostic log (user: songs stop while another tab is in front — record what happened while hidden, read it after coming back).
-   Last 400 lines kept in this browser (survives reload); playerDiag() in the console or 📋 in the "stalled" popup copies it. */
+   Last 400 lines kept in this browser (survives reload); playerDiag() in the console or a stall report attaches it. */
 const DIAG = store.get("diag", []);
 let diagSave = 0;
 function diag(...a) {
@@ -472,8 +472,8 @@ function makePlayer(el) {
 
   /* ---- 안 보는 동안 멈춘 곡 알리기 ----
      User report: songs stop while the player isn't watched. Chromium defers media in a frame created while the tab is hidden
-     (each Niconico song = new embed frame). Behind other windows that's the "native window occlusion" flag → the screen
-     asks the user to turn it off (player_screen.js occlusionNotice). The page can't read the flag, so a real stall is the signal:
+     (each Niconico song = new embed frame). The screen opens an error report with
+     the diagnostic log (player_screen.js — the browser-settings popup was removed, user request). A real stall is the signal:
      a song started while hidden (not minimized) that never played until the tab came back → P.stallSubs. */
   let stallWatch = null;
   P.stallSubs = new Set();

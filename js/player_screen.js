@@ -56,20 +56,23 @@ $("onOff").addEventListener("click", () => {
 });
 /* 지금 목록의 곡: 온라인은 곡 목록 · 오프라인은 연결한 mp3 폴더의 곡 */
 const allItems = () => ONLINE ? LIB.items : OFFDIR.items;
-/* 오프라인 폴더 줄: 폴더를 고르거나 지난번 폴더를 다시 연결 (열 때마다 — 누를 때만 브라우저가 권한을 물어볼 수 있음) */
-async function renderOffBar() {
+/* 오프라인 mp3 폴더 연결 (누를 때만 — 브라우저가 그때만 권한을 물어볼 수 있음): 지난번 폴더가 있으면 그 폴더, 안 되면 새로 고르기 */
+async function connectOffDir(pickNew) {
+  try {
+    if (!pickNew && await OFFDIR.saved()) { try { await OFFDIR.reconnect(); } catch (e) { if (e.name === "AbortError") throw e; await OFFDIR.pick(); } }
+    else await OFFDIR.pick();
+  } catch (e) { if (e.name !== "AbortError") uiAlert(e.message); return; }
+  OFFDIR.items.forEach(prepItem);
+  renderOffBar(); renderFilterOptions(); renderList();
+}
+/* 오프라인 폴더 줄: 연결된 폴더 이름 + 다른 폴더 고르기. User request: not connected → nothing here,
+   the list itself shows only "폴더를 연결해 주세요" (renderRows) */
+function renderOffBar() {
   const bar = $("offBar");
-  if (ONLINE) { bar.innerHTML = ""; return; }
-  const saved = await OFFDIR.saved();
-  bar.innerHTML = `<div class="offnote">${OFFDIR.dir ? `📁 <b>${esc(OFFDIR.name)}</b> · mp3 ${OFFDIR.items.length}곡 (같은 이름의 json 이 있는 곡만 가사·싱크)` : "<b>오프라인</b> — 틀 mp3 폴더를 고르세요."}
-    <div class="row"><button id="offDirPick">${OFFDIR.dir ? "다른 폴더 고르기" : "mp3 폴더 고르기"}</button>${saved && !OFFDIR.dir ? `<button class="primary" id="offDirAgain">이전 폴더 연결하기 (${esc(saved.name)})</button>` : ""}</div></div>`;
-  const open = async fn => {
-    try { await fn(); } catch (e) { if (e.name !== "AbortError") uiAlert(e.message); return; }
-    OFFDIR.items.forEach(prepItem);
-    renderOffBar(); renderFilterOptions(); renderList();
-  };
-  $("offDirPick").onclick = () => open(() => OFFDIR.pick());
-  if ($("offDirAgain")) $("offDirAgain").onclick = () => open(() => OFFDIR.reconnect());
+  if (ONLINE || !OFFDIR.dir) { bar.innerHTML = ""; return; }
+  bar.innerHTML = `<div class="offnote">📁 <b>${esc(OFFDIR.name)}</b> · mp3 ${OFFDIR.items.length}곡 (같은 이름의 json 이 있는 곡만 가사·싱크)
+    <div class="row"><button id="offDirPick">다른 폴더 고르기</button></div></div>`;
+  $("offDirPick").onclick = () => connectOffDir(true);
 }
 /* 지금 목록 (번호·정렬이 보는 값): 오프라인은 local · 온라인은 필터에서 고른 노래방 목록 하나면 그 목록,
    한국 쪽만/일본 쪽만이면 한국/일본, 노래방을 안 골랐으면 stream (곡 목록 전체) */
@@ -369,6 +372,11 @@ function renderList() {
 var ROW_H = 0, rowShowNo = false, vlFrom = -1, vlTo = -1, VL_STEP = 20;
 function renderRows(force) {
   const L = $("list");
+  if (!ONLINE && !OFFDIR.dir) {  // offline, no mp3 folder yet → one button only (user request)
+    L.innerHTML = `<div class="empty"><button class="primary" id="offConnect">폴더를 연결해 주세요</button></div>`;
+    $("offConnect").onclick = () => connectOffDir(false);
+    vlFrom = vlTo = -1; return;
+  }
   if (!view.length) { L.innerHTML = `<div class="empty">곡이 없습니다.</div>`; vlFrom = vlTo = -1; return; }
   // 목록이 줄어 보던 자리가 끝을 넘으면 끝으로
   const h = ROW_H || 56, n = Math.ceil((L.clientHeight || 800) / h), top = Math.min(L.scrollTop, Math.max(0, view.length * h - L.clientHeight));
@@ -871,11 +879,15 @@ function reportKindChanged() {
 }
 $("reportKind").addEventListener("change", reportKindChanged);
 $("reportWho").addEventListener("input", () => { store.set("reportWho", $("reportWho").value.trim()); reportCanSend(); });
-function openReport() {
+let reportDiag = "";  // diagnostic log attached to a stall report (play_engine.js diag)
+function openReport(pre = {}) {
   $("reportWho").value = store.get("reportWho", "");
-  if (reportReq()) $("reportKind").selectedIndex = 0;
+  if (pre.kind) $("reportKind").value = pre.kind;
+  else if (reportReq() || $("reportKind").value === REPORT_STALL) $("reportKind").selectedIndex = 0;
   reportKindChanged();
-  $("reportText").value = "";
+  if (pre.it) setReportSong(pre.it);
+  $("reportText").value = pre.text || "";
+  reportDiag = pre.diag || "";
   // 보내는 곳: 깃허브에서 열었으면 그 저장소 (서버 PC 의 음원 관리가 받아 봄) · 폴더로 열었으면 그 폴더 (서버 PC 의 폴더일 때만 전달됨)
   $("reportHint").textContent = "보낸 날짜·시각과 함께 저장됩니다 — " + (LOCAL.gh
     ? (LOCAL.gh.write ? `깃허브 ${LOCAL.gh.repo} 에 올라가 음원 관리에서 받아 봅니다` : "읽기만 되는 토큰이라 보낼 수 없습니다 (토큰에 Contents 쓰기 권한 필요)")
@@ -885,7 +897,17 @@ function openReport() {
   $("reportDlg").showModal();
   ($("reportWho").value ? $("reportText") : $("reportWho")).focus();
 }
-$("btnReport").onclick = openReport;
+$("btnReport").onclick = () => openReport();
+/* User request: no browser-settings popup (on entry or on stall). A song that stalled while the player wasn't watched
+   (play_engine.js stallSubs) opens the error report instead, with the diagnostic log attached — once per load. */
+const REPORT_STALL = "안 보는 동안 곡이 멈춤";
+let stallShown = false;
+SHELL.stallSubs.add(it => {
+  if (stallShown || $("reportDlg").open) return;
+  stallShown = true;
+  openReport({kind: REPORT_STALL, it, text: "플레이어를 안 보는 동안 다음 곡이 재생되지 않고 멈춰 있었습니다.", diag: playerDiag().split("\n").slice(-120).join("\n")});
+});
+cleanups.push(() => SHELL.stallSubs.clear());
 /* 다른 곡 고르기: 검색 글자가 든 곡 (곡 목록 검색과 같은 비교) 20곡까지 */
 $("reportQ").addEventListener("input", () => {
   if (reportReq()) { reportCanSend(); return; }  // request: the box is the song name, no search
@@ -904,7 +926,8 @@ $("reportSend").onclick = async () => {
   try {
     await post("/api/report", {kind: $("reportKind").value, text: $("reportText").value, who: $("reportWho").value.trim(), request: req,
       song: it ? {site: it.site, name: it.name, title: it.title, artist: it.artist || ""} : null,
-      pos: playing ? Math.round(audio.currentTime * 10) / 10 : null, source: playing ? audio.src : ""});
+      pos: playing ? Math.round(audio.currentTime * 10) / 10 : null, source: playing ? audio.src : "",
+      diag: $("reportKind").value === REPORT_STALL ? reportDiag : ""});
   } catch (e) { reportCanSend(); uiAlert(e.message); return; }
   $("reportDlg").close();
   uiAlert("신고를 보냈습니다. 고맙습니다!");
@@ -959,7 +982,7 @@ async function offlineOpened() {
   LOCAL.ovReopen();  // 깃허브에서 열었으면: 지난번에 고른 오버레이 폴더(이 PC 의 WEB)를 권한이 남아 있으면 그대로
   $("notice").innerHTML = `<div class="offnote">${LOCAL.gh ? "☁" : "📁"} <b>${esc(LOCAL.name)}</b> · 서버 없이 재생 중`
     + (LOCAL.gh && !LOCAL.gh.write ? " · 읽기만 (저장 안 됨)" : "") + ` (음원 관리·자동 싱크는 서버 필요)
-    <button id="offPick">다른 곳에서 열기</button></div>`;
+    <button id="offPick">다른 토큰으로 열기</button></div>`;
   $("offPick").onclick = () => offlineDialog();
   await loadLibrary();
   if ((LIB.items || []).some(x => x.site !== "stream"))  // 예전 곡 목록(한국·일본 mp3 곡이 따로)을 연 경우 — 그 곡들은 재생 안 됨
@@ -968,133 +991,6 @@ async function offlineOpened() {
   showLoad("곡 목록 그리는 중…", 1);
   if (it && canPlay(it) && !SHELL.now) play(it, false, "");
   setTimeout(hideLoad, 150);
-  if (!store.get("occlusionOk", false)) setTimeout(() => occlusionNotice(false), 300);  // 처음 들어올 때 (설정했다고 누를 때까지)
-}
-/* 백그라운드 재생 설정 안내 (Windows 의 크롬·웨일·엣지).
-   User request: players kept behind other windows stop at song change → ask once to turn off the browser's
-   "Calculate window occlusion on Windows" (a page can't change or read it). Shown on entry until "설정했어요",
-   and again when a song really stalled while hidden (play_engine.js stallSubs, once per load).
-   Chrome/Edge: the flags (experimental features) page, shortest path. Keep the text short (user request).
-   Whale 5.x has no flags entry, only the launch switch. Editing shortcuts by hand was too hard and a separate
-   player window was rejected → a one-click .bat (WHALE_BG_PS below) adds the switch to every Whale shortcut
-   (desktop · taskbar · start menu) and restarts Whale with its tabs restored.
-   Tab-share alternative: plan/on_hold_tab_share_background_play.md */
-const WHALE_SWITCH = "--disable-features=CalculateNativeWinOcclusion";
-const WHALE_BG_PS = String.raw`
-$ErrorActionPreference = 'SilentlyContinue'
-$sw = '__SW__'
-$sh = New-Object -ComObject WScript.Shell
-$places = @(@([Environment]::GetFolderPath('Desktop'), $false), @("$env:PUBLIC\Desktop", $false),
-  @("$env:APPDATA\Microsoft\Internet Explorer\Quick Launch", $true),
-  @("$env:APPDATA\Microsoft\Windows\Start Menu\Programs", $true), @("$env:ProgramData\Microsoft\Windows\Start Menu\Programs", $true))
-$done = 0; $fail = 0; $exe = $null
-foreach ($p in $places) {
-  if (-not (Test-Path -LiteralPath $p[0])) { continue }
-  foreach ($f in (Get-ChildItem -LiteralPath $p[0] -Filter *.lnk -Recurse:$p[1] -File)) {
-    $l = $sh.CreateShortcut($f.FullName)
-    if ($l.TargetPath -notlike '*\whale.exe') { continue }
-    $exe = $l.TargetPath
-    if ($l.Arguments -like "*$sw*") { $done++; continue }
-    $l.Arguments = ($l.Arguments + ' ' + $sw).Trim()
-    try { $l.Save(); $done++ } catch { $fail++ }
-  }
-}
-# Whale started by opening a link (default browser) runs this registry command → same switch, user-level copy (no admin)
-$cmdSrc = 'HKLM:\SOFTWARE\Classes\WhaleHTM\shell\open\command'; $cmdDst = 'HKCU:\SOFTWARE\Classes\WhaleHTM\shell\open\command'
-$c = (Get-ItemProperty -Path $cmdDst).'(default)'
-if (-not $c) { $c = (Get-ItemProperty -Path $cmdSrc).'(default)' }
-$reg = $false
-if ($c -and $c -notlike "*$sw*" -and $c -like '*whale.exe*--single-argument*') {
-  if (-not (Test-Path -Path $cmdDst)) { New-Item -Path $cmdDst -Force | Out-Null }
-  Set-ItemProperty -Path $cmdDst -Name '(default)' -Value ($c -replace ' --single-argument', " $sw --single-argument")
-  $reg = $true
-} elseif ($c -like "*$sw*") { $reg = $true }
-if (-not $exe) { $exe = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\whale.exe').'(default)' }
-if (-not $exe) { $exe = (Get-ItemProperty 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\whale.exe').'(default)' }
-Write-Host ("웨일 바로가기 {0}개에 백그라운드 재생 설정을 넣었습니다." -f $done)
-if ($reg) { Write-Host '링크를 눌러 웨일이 켜질 때도 적용되게 했습니다.' }
-if ($fail) { Write-Host ("(관리자 권한이 필요한 바로가기 {0}개는 건너뜀)" -f $fail) }
-if (Get-Process whale) {
-  Write-Host '웨일을 껐다가 다시 켭니다. 열려 있던 탭은 다시 열립니다...'
-  taskkill /IM whale.exe | Out-Null
-  for ($i = 0; $i -lt 30 -and (Get-Process whale); $i++) { Start-Sleep -Milliseconds 500 }
-  Get-Process whale | Stop-Process -Force
-  Start-Sleep -Seconds 1
-  if ($exe) { Start-Process -FilePath $exe -ArgumentList "$sw --restore-last-session" }
-}
-Write-Host '끝났습니다. 이 창은 저절로 닫힙니다.'
-`.replace("__SW__", WHALE_SWITCH);
-/* .bat that runs WHALE_BG_PS (a .ps1 opens in Notepad on double-click). -EncodedCommand = UTF-16LE base64, so Korean
-   text and quotes survive cmd.exe. */
-function whaleBgBat() {
-  const ps = WHALE_BG_PS.replace(/\r?\n/g, "\r\n");
-  const u16 = new Uint8Array(ps.length * 2);
-  for (let i = 0; i < ps.length; i++) { u16[2 * i] = ps.charCodeAt(i) & 255; u16[2 * i + 1] = ps.charCodeAt(i) >> 8; }
-  let bin = "";
-  u16.forEach(b => { bin += String.fromCharCode(b); });
-  return `@echo off\r\nchcp 65001 >nul\r\npowershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${btoa(bin)}\r\ntimeout /t 6 >nul\r\n`;
-}
-let occShown = false;
-function occlusionNotice(stalled) {
-  const ua = navigator.userAgent;
-  if (!/Windows/.test(ua) || !/Chrome\//.test(ua) || occShown || document.querySelector("#occDlg")) return;
-  occShown = true;
-  const whale = /Whale\//.test(ua), scheme = whale ? "chrome" : /Edg\//.test(ua) ? "edge" : "chrome";
-  const flags = `${scheme}://flags/#calculate-native-win-occlusion`;
-  const field = id => `<div class="occrow"><input type="text" id="${id}" readonly><button id="${id}Copy" title="복사">📋</button></div>`;
-  const steps = whale
-    ? `1. <button id="occBat">⬇ 설정 파일 받기</button>\n`
-      + `2. 받은 파일 실행 (경고가 뜨면 <b>유지</b> · <b>추가 정보 → 실행</b>)\n→ 웨일이 껐다 켜지면 끝 (열려 있던 탭은 다시 열립니다)\n`
-    : `1. 아래 주소를 새 탭 주소창에 붙여넣기${field("occUrl")}`
-      + `2. 노랗게 표시된 <b>Calculate window occlusion on Windows</b> 를 <b>Disabled</b> 로\n3. 아래에 뜨는 <b>다시 시작</b> 누르기\n`;
-  const d = document.createElement("dialog");
-  d.id = "occDlg"; d.className = "uidlg";
-  // stalled: also a button copying the diagnostic log (play_engine.js diag) — the user pastes it to find out why
-  d.innerHTML = `<div class="dlg-head">백그라운드 재생 설정 (한 번만 하면 됩니다)</div><div class="dlg-body">${stalled ? "<b>방금 화면을 안 보는 동안 곡이 멈춰 있었습니다.</b> <button id=\"occDiag\">📋 진단 기록 복사</button>" : ""}`
-    + `<div class="occwarn">안 보는 동안 곡이 넘어갈 때 재생이 멈출 수 있습니다.</div>`
-    + steps + `\n`
-    + `<span class="r">설정해도 창을 최소화하거나 같은 창에서 다른 탭을 보고 있으면 멈출 수 있습니다 — 플레이어 창은 뒤에 깔아 두세요.</span></div>`
-    + `<div class="dlg-foot"><button id="occLater">나중에</button><button class="primary" id="occDone">설정했어요</button></div>`;
-  document.body.appendChild(d);
-  const close = () => { d.close(); d.remove(); };
-  const copyField = (id, text) => {  // text field + 📋 button right after it
-    const inp = d.querySelector("#" + id), b = d.querySelector("#" + id + "Copy");
-    if (!inp) return;
-    inp.value = text;
-    inp.onclick = () => inp.select();
-    b.onclick = async () => {
-      try { await navigator.clipboard.writeText(text); } catch (e) { inp.select(); document.execCommand("copy"); }
-      b.textContent = "✓"; setTimeout(() => { b.textContent = "📋"; }, 1500);
-    };
-  };
-  copyField("occUrl", flags);
-  const bat = d.querySelector("#occBat");
-  if (bat) bat.onclick = () => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([whaleBgBat()], {type: "application/octet-stream"}));
-    a.download = "웨일_백그라운드재생_켜기.bat";
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    bat.textContent = "받음 ✓ — 받은 파일을 실행하세요";
-  };
-  const dg = d.querySelector("#occDiag");
-  if (dg) dg.onclick = async () => {
-    try { await navigator.clipboard.writeText(playerDiag()); dg.textContent = "복사됨 ✓"; } catch (e) { dg.textContent = "복사 못 함"; }
-  };
-  d.querySelector("#occLater").onclick = close;  // 다음에 들어올 때 다시
-  d.querySelector("#occDone").onclick = () => { store.set("occlusionOk", true); close(); };
-  d.showModal();
-}
-let stallShown = false;
-SHELL.stallSubs.add(() => { if (stallShown) return; stallShown = true; occShown = false; occlusionNotice(true); });
-cleanups.push(() => SHELL.stallSubs.clear());
-/* 곡 목록 없이 오프라인 mp3 폴더만 연 화면 (온라인 곡은 '다른 곳에서 열기'로 나중에) */
-function offlineMp3Only() {
-  $("notice").innerHTML = `<div class="offnote">📁 오프라인 mp3 폴더만 열었습니다 (온라인 곡 목록은 열지 않음) <button id="offPick">곡 목록 열기</button></div>`;
-  $("offPick").onclick = () => offlineDialog();
-  ONLINE = false; store.set("online", false);
-  OFFDIR.items.forEach(prepItem);
-  renderOnOff(); renderSortOptions(); renderFilterOptions(); renderList();
 }
 async function offlineIntro() {
   const gh = LOCAL.savedGitHub();
@@ -1109,22 +1005,17 @@ async function offlineIntro() {
   hideLoad();
   offlineDialog();
 }
+/* 처음 화면: 깃허브 토큰 입력만 (user request — repo field, Server\data folder and mp3-folder choices removed;
+   offline mp3 folder is connected from the list after switching to offline). Repo = last one used or the default. */
 async function offlineDialog(err = "") {
   hideLoad();
-  const gh = LOCAL.savedGitHub(), saved = await LOCAL.saved();
+  const gh = LOCAL.savedGitHub(), repo = (gh || {}).repo || "AILEE126/music_backend";
   document.querySelector("dialog.offdlg")?.remove();
   const d = document.createElement("dialog");
   d.className = "uidlg offdlg";
-  const mp3 = await OFFDIR.saved();
-  d.innerHTML = `<div class="dlg-body"><b>서버 없이 연 플레이어</b> — 온라인 곡 목록·가사·싱크를 어디서 읽을지 고르세요. 오프라인 mp3 는 플레이어에서 폴더를 고릅니다.
-    <div class="offsec"><b>깃허브에서 열기</b> <span class="muted">(폴더를 고르지 않음 — 받은 토큰으로)</span>
-      <div class="ghform"><input type="text" id="ghRepo" placeholder="아이디/저장소" value="${esc((gh || {}).repo || "AILEE126/music_backend")}">
-        <input type="password" id="ghToken" placeholder="깃허브 토큰 (github_pat_…)" autocomplete="off">
-        <button class="primary" id="ghOpen">열기</button></div></div>
-    <div class="offsec"><b>이 PC 의 폴더에서 열기</b> <span class="muted">— 서버 PC 의 프로그램 폴더 안 Server\\data 폴더를 골라 그 파일을 바로 읽고 쓰기</span>
-      <div class="row"><button id="offFolder">Server\\data 폴더 고르기</button>${saved ? `<button id="offReopen">지난 폴더 다시 열기 (${esc(saved.name)})</button>` : ""}</div></div>
-    <div class="offsec"><b>오프라인 mp3 폴더만</b> <span class="muted">— 곡 목록 없이 고른 폴더의 mp3 만 (같은 이름의 json 이 있으면 그 가사·싱크)</span>
-      <div class="row"><button id="mp3Pick">mp3 폴더 고르기</button>${mp3 ? `<button id="mp3Again">이전 폴더 연결하기 (${esc(mp3.name)})</button>` : ""}</div></div>
+  d.innerHTML = `<div class="dlg-body"><b>깃허브 토큰을 넣어 주세요</b> <span class="muted">(받은 토큰 — 곡 목록·가사·싱크를 읽음)</span>
+      <div class="ghform"><input type="password" id="ghToken" placeholder="깃허브 토큰 (github_pat_…)" autocomplete="off">
+        <button class="primary" id="ghOpen">열기</button></div>
     <div class="offerr" id="offErr"></div></div>`;
   const q = sel => d.querySelector(sel), btns = () => d.querySelectorAll("button");
   const showErr = m => { q("#offErr").textContent = m; };
@@ -1132,22 +1023,18 @@ async function offlineDialog(err = "") {
   let done = false;
   d.addEventListener("cancel", e => e.preventDefault());  // Esc 로 못 닫음
   d.addEventListener("close", () => { if (!done) d.showModal(); });  // 그래도 닫히면 다시 (제대로 열려야만 닫힘)
-  const tryOpen = async (open, after = offlineOpened) => {
+  const tryOpen = async open => {
     showErr(""); btns().forEach(b => b.disabled = true); q("#offErr").textContent = "여는 중…";
     try { await open(); }
     catch (e) { showErr(e.name === "AbortError" ? "" : e.message); btns().forEach(b => b.disabled = false); return; }
     done = true; d.close(); d.remove();
-    await after();
+    await offlineOpened();
   };
-  q("#ghOpen").onclick = () => tryOpen(() => LOCAL.useGitHub(q("#ghRepo").value, q("#ghToken").value));
+  q("#ghOpen").onclick = () => tryOpen(() => LOCAL.useGitHub(repo, q("#ghToken").value));
   q("#ghToken").onkeydown = e => { if (e.key === "Enter") q("#ghOpen").click(); };
-  q("#offFolder").onclick = () => tryOpen(() => LOCAL.pick());
-  if (saved) q("#offReopen").onclick = () => tryOpen(async () => { await LOCAL.reopen(saved); store.set("gh", null); });
-  q("#mp3Pick").onclick = () => tryOpen(() => OFFDIR.pick(), offlineMp3Only);
-  if (mp3) q("#mp3Again").onclick = () => tryOpen(() => OFFDIR.reconnect(), offlineMp3Only);
   document.body.appendChild(d);
   d.showModal();
-  q(gh ? "#ghToken" : "#ghRepo").focus();
+  q("#ghToken").focus();
 }
 
 /* ================= 가사 오버레이 (programs\WEB\tools\lyrics_overlay.bat — 파워쉘 창, 바탕 투명 · 어느 브라우저든) =================
