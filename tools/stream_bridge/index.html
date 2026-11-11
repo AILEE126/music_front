@@ -32,7 +32,7 @@ if (q.get("yt")) {
     let ccOff = false;
     // youtube-nocookie: 브라우저에 로그인된 유튜브 계정을 쓰지 않음 (다른 곳에서 같은 계정으로 듣는 중이어도 막히지 않게)
     const y = new YT.Player("p", {host: "https://www.youtube-nocookie.com", videoId: q.get("yt"),
-      playerVars: {autoplay: 1, playsinline: 1, rel: 0, start: Math.floor(start), cc_load_policy: 0},
+      playerVars: {autoplay: 1, playsinline: 1, rel: 0, start: Math.floor(start), cc_load_policy: 0, controls: 0},  // no YouTube buttons (user request; the player has its own)
       events: {
         onReady: e => {
           if (startMuted) e.target.mute(); else { e.target.unMute(); e.target.setVolume(startVol); }

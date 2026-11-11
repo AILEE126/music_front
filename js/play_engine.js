@@ -293,6 +293,12 @@ function makePlayer(el) {
   const host = document.createElement("div");
   host.id = "streamHost";
   document.body.appendChild(host);
+  // user request: no YouTube/Niconico buttons on hover — a clear layer over the video takes the mouse; click = play/pause
+  const shield = document.createElement("div");
+  shield.className = "vshield";
+  shield.title = "누르면 재생 / 일시정지";
+  shield.addEventListener("click", () => P.toggle());
+  host.appendChild(shield);
   const probe = document.createElement("div");  // 이 문서의 화면 축소 비율 재기 (100px 이 실제로 몇 px 로 보이나)
   probe.style.cssText = "position:fixed;left:0;top:0;width:100px;height:0;visibility:hidden;pointer-events:none";
   document.body.appendChild(probe);
