@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stream bridge</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p,iframe{display:block;width:100%;height:100%;border:0}</style>
+</head>
+<body>
+<div id="p"></div>
+<script>
+/* 중계 페이지 (GitHub Pages 에 올려 https 주소로 씀 — 개인 데이터 없음)
+   파일로 연 음원 플레이어(file://)는 주소가 없어 유튜브·니코니코 플레이어가 거부함 → 이 페이지가 대신 띄우고,
+   재생 상태·시간을 부모 화면으로 보내고 부모의 명령(재생·멈춤·이동·소리)을 플레이어에 전함.
+   주소: ?yt=<유튜브 영상 번호> 또는 ?nico=<sm…> · &start=<초> · &mute=1 · &vol=<0~100> · &id=<부모가 구분하는 번호>
+   · &cmt=0: 니코니코 댓글 끄기 (기본 켬) · 유튜브 자막은 늘 끄고 시작
+   · &info=1: 니코니코 영상 정보만 알리고 재생하지 않음 (플레이어 곡 정보 줄의 재생수)
+   · cmd load {yt|nico, start, play}: next song in the same player (reused so playback goes on in a hidden tab) */
+const q = new URLSearchParams(location.search), id = q.get("id") || "";
+const up = m => parent.postMessage({bridge: 1, ver: 3, id, ...m}, "*");  // ver 2: cmd "load" (YouTube) · ver 3: also Niconico  // 부모는 파일로 연 화면 (origin 이 없음) → "*"
+const start = +q.get("start") || 0, startMuted = q.get("mute") === "1", startVol = q.has("vol") ? +q.get("vol") : 100;
+const comments = q.get("cmt") !== "0";  // 니코니코 댓글: 기본 켬 (&cmt=0 이면 끔)
+let P = null;  // {play, pause, seek(초), volume(0~100), mute(bool), comments(bool — 니코니코만)}
+
+if (q.get("yt")) {
+  const s = document.createElement("script");
+  s.src = "https://www.youtube.com/iframe_api";
+  s.onerror = () => up({ev: "error", code: "api"});
+  document.head.appendChild(s);
+  window.onYouTubeIframeAPIReady = () => {
+    const STATE = {"-1": "buffering", 0: "ended", 1: "playing", 2: "paused", 3: "buffering", 5: "paused"};
+    let ccOff = false;
+    // youtube-nocookie: 브라우저에 로그인된 유튜브 계정을 쓰지 않음 (다른 곳에서 같은 계정으로 듣는 중이어도 막히지 않게)
+    const y = new YT.Player("p", {host: "https://www.youtube-nocookie.com", videoId: q.get("yt"),
+      playerVars: {autoplay: 1, playsinline: 1, rel: 0, start: Math.floor(start), cc_load_policy: 0},
+      events: {
+        onReady: e => {
+          if (startMuted) e.target.mute(); else { e.target.unMute(); e.target.setVolume(startVol); }
+          e.target.playVideo();
+          up({ev: "ready", d: e.target.getDuration()});
+        },
+        onStateChange: e => {
+          // 자막은 끔 — cc_load_policy:0 만으로는 영상 설정에 따라 켜져서, 처음 재생될 때 자막 모듈을 내림
+          // (재생 직후 다시 올라오는 일이 있어 몇 번 더 · 그 뒤 자막 단추를 누르면 다시 켜짐)
+          if (e.data === 1 && !ccOff) {
+            ccOff = true;
+            const off = () => { try { y.unloadModule("captions"); } catch (x) {} };
+            off(); setTimeout(off, 1000); setTimeout(off, 3000);
+          }
+          up({ev: "state", s: STATE[e.data] || "buffering"});
+        },
+        onError: e => up({ev: "error", code: e.data}),  // 2·5·100·101·150: 없는 영상·퍼가기 금지 등
+      }});
+    // load: next YouTube song in this same player. Chrome defers media in frames created while the tab is hidden
+    // (until shown) → the parent keeps one YouTube bridge and reuses it, so songs go on while the user isn't looking.
+    let want = "";  // video id loaded by "load" — "ready" is sent once its duration is known (state events don't come while folded)
+    P = {play: () => y.playVideo(), pause: () => y.pauseVideo(), seek: t => y.seekTo(t, true),
+         volume: v => y.setVolume(v), mute: on => on ? y.mute() : y.unMute(),
+         load: v => { want = v.yt; ccOff = false; const o = {videoId: v.yt, startSeconds: +v.start || 0}; if (v.play) y.loadVideoById(o); else y.cueVideoById(o); }};
+    setInterval(() => {
+      try {
+        if (!y.getCurrentTime) return;
+        if (want && (y.getVideoData() || {}).video_id === want && y.getDuration() > 0) { want = ""; up({ev: "ready", d: y.getDuration()}); }
+        up({ev: "time", t: y.getCurrentTime(), d: y.getDuration()});
+      } catch (e) {}
+    }, 250);
+  };
+} else if (q.get("nico")) {
+  // 니코니코 퍼가기 플레이어 (postMessage 로 조작 — playerId 로 구분)
+  // cmd load {nico, start, play}: next Niconico song in the same embed frame (only its address changes).
+  // User report: in Whale a new Niconico song started while another tab was in front stayed silent → keep one frame that has played.
+  const f = document.createElement("iframe");
+  f.allow = "autoplay; fullscreen";
+  let cur = {nico: q.get("nico"), start, play: true}, vol = startVol, muted = startMuted, cmt = comments;
+  const url = v => `https://embed.nicovideo.jp/watch/${encodeURIComponent(v.nico)}?jsapi=1&playerId=b&from=${Math.floor(+v.start || 0)}`;
+  f.src = url(cur);
+  document.getElementById("p").replaceWith(f);
+  const send = (eventName, data) => f.contentWindow.postMessage({eventName, data, playerId: "b", sourceConnectorType: 1}, "https://embed.nicovideo.jp");
+  const STATE = {2: "playing", 3: "paused", 4: "ended"};
+  let dur = 0;
+  addEventListener("message", e => {
+    if (e.origin !== "https://embed.nicovideo.jp" || e.source !== f.contentWindow || !e.data || !e.data.eventName) return;
+    const d = e.data.data || {};
+    switch (e.data.eventName) {
+      case "loadComplete":
+        dur = ((d.videoInfo || {}).lengthInSeconds) || 0;
+        if (q.get("info")) { up({ev: "info", views: (d.videoInfo || {}).viewCount ?? null}); break; }  // 정보만: 재생 안 함
+        send("commentVisibilityChange", {commentVisibility: cmt});  // 댓글(弾幕) — 플레이어의 💬 댓글 버튼
+        if (muted) send("mute", {mute: true}); else { send("mute", {mute: false}); send("volumeChange", {volume: vol / 100}); }
+        if (cur.start) send("seek", {time: cur.start * 1000});
+        if (cur.play) send("play");
+        up({ev: "ready", d: dur, views: (d.videoInfo || {}).viewCount ?? null, vid: cur.nico});  // 재생수 (니코니코 퍼가기 플레이어가 알려 줌)
+        break;
+      case "playerStatusChange":
+        up({ev: "state", s: STATE[d.playerStatus] || "buffering"});
+        break;
+      case "playerMetadataChange":
+        up({ev: "time", t: (d.currentTime || 0) / 1000, d: dur});
+        break;
+      case "error":
+        up({ev: "error", code: d.code || "error"});
+        break;
+    }
+  });
+  P = {play: () => send("play"), pause: () => send("pause"), seek: t => send("seek", {time: t * 1000}),
+       volume: v => { vol = v; send("volumeChange", {volume: v / 100}); }, mute: on => { muted = on; send("mute", {mute: on}); },
+       comments: on => { cmt = on; send("commentVisibilityChange", {commentVisibility: on}); },
+       load: v => { if (!v.nico) return; cur = {nico: v.nico, start: +v.start || 0, play: !!v.play}; dur = 0; f.src = url(cur); }};
+} else {
+  up({ev: "error", code: "no-video"});
+}
+
+// 부모의 명령 {cmd: play|pause|seek|volume|mute|comments, v}
+addEventListener("message", e => {
+  if (e.source !== parent || !e.data || !e.data.cmd || !P) return;
+  const {cmd, v} = e.data;
+  try { if (cmd === "load") { if (P.load) P.load(v || {}); } else if (cmd === "seek") P.seek(+v); else if (cmd === "volume") P.volume(+v); else if (cmd === "mute" || cmd === "comments") { if (P[cmd]) P[cmd](!!v); } else if (P[cmd]) P[cmd](); } catch (x) {}
+});
+</script>
+</body>
+</html>

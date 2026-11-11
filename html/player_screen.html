@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>음원 플레이어</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><g fill='%23000000'><path d='M22 11L56 4V14L22 21Z'/><rect x='22' y='11' width='6' height='38'/><rect x='50' y='4' width='6' height='38'/><ellipse cx='17' cy='49' rx='11' ry='8' transform='rotate(-20 17 49)'/><ellipse cx='45' cy='42' rx='11' ry='8' transform='rotate(-20 45 42)'/></g></svg>">  <!-- 탭 아이콘: 검정 단색 음표 -->
+<link rel="stylesheet" href="../css/shared_screen_style.css">
+<link rel="stylesheet" href="../css/player_screen.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="side-head">
+      <div class="top"><h1>음원 플레이어</h1></div>
+      <div class="searchbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="search" id="q" placeholder="제목·가수 검색" title="제목·원제·발음·가수로 찾기 · Enter 를 누르면 검색어를 필터 조건으로"></div>
+      <div class="filters">
+        <button id="btnFilter" title="필터 조건 고르기 펼치기 / 접기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>필터<span class="cnt"></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+        <button type="button" class="onoff" id="onOff" title="누르면 온라인 ↔ 오프라인 — 온라인: 곡 목록의 곡을 원곡 영상으로 바로 재생 (노래방 곡·브랜드는 필터의 '노래방') / 오프라인: 고른 mp3 폴더의 mp3 를 그대로 (같은 이름의 json 이 있으면 그 가사·싱크)"><span class="lb off">OFFLINE</span><span class="lb on">ONLINE</span></button>
+      </div>
+      <div class="sortrow">
+        <span>정렬</span><select id="fSort" title="목록 정렬 순서 (노래방 목록 순 = 나무위키 노래방 목록 페이지에 나오는 순서)"></select>
+        <button id="btnNo" title="곡 왼쪽에 노래방 번호 보이기 / 숨기기 — 지금 고른 목록의 번호 (TJ 목록이면 TJ, JOYSOUND 목록이면 JOYSOUND)">번호</button>
+        <button id="btnSimple" title="간단 표시 — 목록의 썸네일 · 오른쪽 위 썸네일을 숨기고 영상도 접음 (소리는 그대로)">간단</button>
+      </div>
+      <div class="fchips" id="fChips"></div>
+      <div class="fpanel" id="fPanel" hidden>
+        <div class="fhead" id="fNew">
+          <button data-new="inc" title="새 그룹 — 그룹끼리는 하나라도 맞으면 보임">＋ 그룹</button>
+          <button data-new="exc" title="새 제외 그룹 — 이 그룹 조건에 모두 맞는 곡은 빠짐">− 제외</button>
+          <span class="grow"></span>
+          <span class="fhelp" title="• 조건은 선택된 그룹(밝은 상자)에 들어갑니다&#10;• 한 그룹 안 조건은 모두 맞아야 보입니다 (그리고)&#10;• 그룹끼리는 하나라도 맞으면 보입니다 (또는)&#10;• 빨간 − 그룹에 맞는 곡은 빠집니다&#10;• 그룹을 누르면 선택, 동그라미(＋/−)를 누르면 포함↔제외">?</span>
+          <button class="ib" id="fReset" title="필터 모두 지우기">↺</button>
+          <button class="ib" id="fFold" title="접기">▴</button>
+        </div>
+        <div class="fgrid">
+          <select id="fKind" title="카테고리 — 고르면 오른쪽 칸에 그 카테고리의 값 목록 (보컬 · 프로듀서 · 노래방 · 시리즈 · 투고년도 …)"></select>
+          <select id="fVal" title="값 — 고르면 조건으로 더함"></select>
+          <label class="solo" title="보컬 카테고리에서 값을 고를 때: 이 보컬 혼자 부른 곡만"><input type="checkbox" id="fSolo"> 솔로곡만</label>
+        </div>
+      </div>
+      <div class="libinfo"><span id="libInfo"></span>
+        <span class="acts"><button id="btnPlayView" title="지금 목록(검색어·필터)을 재생 목록으로 — 처음 곡부터 (무작위면 섞어서)">▶ 필터대로 재생</button><button id="btnFindCur" title="목록에서 지금 재생 중인 곡으로 이동">◎</button></span></div>
+    </div>
+    <div id="notice"></div>
+    <div id="offBar"></div>
+    <div id="list"></div>
+  </aside>
+
+  <main class="main">
+    <div id="videoBox" hidden><div class="frame" id="videoFrame"></div></div><!-- 재생 중인 온라인 곡의 중계 플레이어가 이 칸 위에 겹쳐 보임 -->
+    <div class="now">
+      <div class="nowtop">
+        <button id="btnList" title="곡 목록 접기 / 펴기">☰</button>
+        <img id="nowCover" alt="" title="누르면 크게 보기 · 오른쪽 클릭하면 썸네일 저장" hidden>
+        <div class="info">
+          <div class="titleline"><h2 id="nowTitle">곡을 선택하세요</h2><span class="detail" id="nowDetail"></span></div>
+          <div class="artist" id="nowArtist">왼쪽 목록에서 곡을 누르면 재생합니다.</div>
+          <div class="reldate" id="nowDate" title="원곡 투고(업로드) 날짜"></div>
+        </div>
+      </div>
+      <div class="ctrl">
+        <button class="ib" id="btnPrev" title="이전 곡">⏮&#xFE0E;</button>
+        <button class="ib play" id="btnPlay" title="재생 / 일시정지 (Space)">▶&#xFE0E;</button>
+        <button class="ib" id="btnNext" title="다음 곡">⏭&#xFE0E;</button>
+        <div class="seek"><span class="time" id="tCur">0:00</span><input type="range" class="bar-range" id="seek" min="0" max="1000" value="0"><span class="time" id="tDur">0:00</span></div>
+        <button class="ib mode" id="btnShuffle" title="무작위 재생"></button>
+        <button class="ib mode" id="btnRepeat" title="반복"></button>
+        <button class="ib mode" id="btnPlayQueue" title="재생 대기열 (다음에 틀 곡 · 지난 곡)" hidden></button>
+        <button class="ib vol" id="btnMute" title="음소거 / 해제"></button><input type="range" class="bar-range" id="vol" min="0" max="1" step="0.01" value="0.8" title="음량">
+        <div class="songmeta" id="songMeta" hidden></div>
+        <button id="btnReport" title="곡의 문제 알리기 (싱크·가사·곡 정보·재생 등) — 음원 관리 › 오류 신고에 남음">🚩 오류 신고</button>
+        <button id="btnVideo" title="원곡 영상 보기 · 숨기기 (인터넷 필요)">🎬 영상</button>
+        <button id="btnCmt" title="니코니코 댓글 켜기 · 끄기 (다음 곡에도 그대로)" hidden>💬 댓글</button>
+        <button id="btnMemo" title="이 곡의 특이사항 적기 (적은 날짜·시각과 함께 저장)">📝 특이사항</button>
+        <a class="btn" id="btnSrc" target="_blank" rel="noopener" title="원곡 영상 페이지를 새 탭으로" hidden>원곡 ↗</a>
+        <a class="btn" id="btnWiki" target="_blank" rel="noopener" title="나무위키 곡 문서를 새 탭으로" hidden>위키 ↗</a>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <span class="chip" id="syncChip">싱크 없음</span>
+      <span class="chip err" id="failChip" hidden></span>
+      <span class="sep"></span>
+      <div class="offset" title="가사가 노래보다 빠르면 +, 느리면 −">
+        <button id="offMinus">−</button><span id="offVal">±0.0초</span><button id="offPlus">+</button>
+      </div>
+      <button id="btnEdit" title="가사 줄마다 시간을 직접 찍어 싱크 맞추기">직접 맞추기</button>
+      <span class="sep"></span>
+      <button id="btnLyrics" title="가사 txt 미리보기 · 끌어서 복사 · txt로 받기">가사 보기</button>
+      <span class="grow"></span>
+      <label class="inline"><input type="checkbox" id="showR" checked> 발음</label>
+      <label class="inline"><input type="checkbox" id="showT" checked> 번역</label>
+      <label class="inline" title="이 줄을 부르는 보컬 (나무위키 가사에 보컬별 색 구분이 있는 곡)"><input type="checkbox" id="showP" checked> 파트</label>
+      <button class="ovpow" id="btnOverlayPower">오버레이 켜기</button>
+      <button class="ib" id="btnOverlaySet" title="가사 오버레이 설정 (programs\WEB\tools\lyrics_overlay.bat 로 켜는 바탕 투명 가사 창)">⚙&#xFE0E;</button>
+    </div>
+
+    <div class="editbar" id="editbar">
+      <span>재생하면서 각 묶음이 시작될 때 <kbd>Space</kbd> 또는 <kbd>↓</kbd> — 점선 묶음에 지금 시간을 찍습니다. <kbd>↑</kbd> 한 묶음 뒤로, 묶음을 누르면 그 묶음부터.</span>
+      <span style="flex:1"></span>
+      <button class="primary" id="btnEditSave">저장</button><button id="btnEditCancel">취소</button>
+    </div>
+
+    <div id="lyrics"><div class="empty">곡을 선택하면 가사가 여기에 표시됩니다.</div></div>
+  </main>
+</div>
+
+
+
+<dialog id="coverDlg"><img id="coverBig" alt="" title="누르면 닫기 · 오른쪽 클릭하면 저장"></dialog>
+<audio id="audioLocal" preload="metadata"></audio>
+
+<dialog id="reportDlg">
+  <div class="dlg-head">오류 신고</div>
+  <div class="dlg-body">
+    <label class="rlabel">보내는 사람<input type="text" id="reportWho" placeholder="이름 (다음에도 그대로)" autocomplete="off" spellcheck="false" maxlength="40"></label>
+    <label class="rlabel">무엇이 문제인가요<select id="reportKind">
+      <option>싱크가 안 맞음</option><option>가사가 틀림·빠짐</option><option>가사가 없음</option><option>곡 정보가 틀림 (제목·보컬·프로듀서·투고일)</option>
+      <option>재생이 안 됨 (영상 삭제·막힘)</option><option>원곡이 아님 (다른 버전·커버·잘린 영상)</option><option>소리가 너무 크거나 작음</option>
+      <option>썸네일이 이상함</option><option>신곡 추가 요청</option><option>기타</option></select></label>
+    <div class="rlabel"><span id="reportSongLabel">어느 곡인가요 <span class="hint">(지금 재생 중인 곡 — 다른 곡이면 아래에서 찾아 고르기)</span></span>
+      <div class="rsong" id="reportSong"></div>
+      <input type="search" id="reportQ" placeholder="다른 곡 찾기 (제목·원제·가수)" autocomplete="off" spellcheck="false">
+      <div class="rlist" id="reportList"></div></div>
+    <textarea id="reportText" spellcheck="false" placeholder="자세한 내용 (예: 2절부터 가사가 한 줄씩 밀림, 1:20 쯤부터 다른 곡이 나옴)"></textarea>
+    <p class="hint" id="reportHint"></p>
+  </div>
+  <div class="dlg-foot"><span style="flex:1"></span><button id="reportCancel">취소</button><button class="primary" id="reportSend">전송</button></div>
+</dialog>
+<dialog id="memoDlg">
+  <div class="dlg-head" id="memoTitle">특이사항</div>
+  <div class="dlg-body">
+    <p class="hint" id="memoHint"></p>
+    <textarea id="memoText" spellcheck="false" placeholder="이 곡에 대해 기억해 둘 것 (예: 2절 가사가 음원과 다름, 영상이 다른 버전 등)"></textarea>
+  </div>
+  <div class="dlg-foot"><button id="memoClear" title="이 곡의 특이사항을 지움">지우기</button><span style="flex:1"></span><button id="memoCancel">취소</button><button class="primary" id="memoSave">저장</button></div>
+</dialog>
+<dialog id="lyrView"><!-- 온라인 스트리밍 곡: 가사 txt 미리보기 (끌어서 복사 · txt 로 받기) -->
+  <div class="dlg-head" id="lyrViewTitle">가사</div>
+  <div class="dlg-body">
+    <p class="hint" id="lyrViewHint"></p>
+    <pre id="lyrViewText"></pre>
+  </div>
+  <div class="dlg-foot"><button id="lyrViewDown" title="이 가사를 txt 파일로 내려받기">txt로 받기</button><span style="flex:1"></span><button class="primary" id="lyrViewClose">닫기</button></div>
+</dialog>
+<script>
+const STORE_PREFIX = "player.";  // 브라우저 저장값 이름 앞머리
+</script>
+<script src="../js/shared_screen_helpers.js"></script>
+<script src="../js/offline_folder.js"></script>
+<script src="../js/play_queue.js"></script>
+<script src="../js/local_files.js"></script>
+<script src="../js/play_engine.js"></script>
+<script src="../js/song_filter.js"></script>
+<script src="../js/player_screen.js"></script>
+</body>
+</html>

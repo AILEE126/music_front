@@ -1,0 +1,266 @@
+/* player_screen.html 화면 스타일 */
+button{padding:6px 12px}
+select,input[type=text],input[type=search]{padding:6px 8px}
+html,body{height:100%}
+.app{display:grid;grid-template-columns:340px minmax(0,1fr);height:calc(100vh / var(--ui-zoom))}  /* 화면을 줄여도(--ui-zoom) 창 높이에 꽉 차게 */
+.app.nolist{grid-template-columns:minmax(0,1fr)}
+.app.nolist .side{display:none}
+#btnList{flex:none;align-self:flex-start;padding:4px 9px}
+/* 좁은 창: 목록 위·재생 아래 한 칸 배치. 기준 너비는 화면 축소(--ui-zoom .8)에 맞춘 값 (860px × .8 — 미디어 쿼리는 줄이기 전 창 너비로 잼) */
+@media (max-width:688px){.app{grid-template-columns:minmax(0,1fr);height:auto}.side{max-height:45vh;border-right:none}.now,.toolbar{padding-left:16px;padding-right:16px}#lyrics{padding:16px 16px 40vh;max-height:70vh}.seek{min-width:0;flex-basis:100%;order:5}}
+/* 곡 목록 */
+.side{display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--card);min-height:0}
+.side-head{padding:14px 14px 10px;border-bottom:1px solid var(--line)}
+.side-head h1{font-size:18px;margin:0}
+.side-head .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.filters{display:flex;gap:6px;margin-top:8px}
+.filters select{flex:1}
+/* 정렬 줄 (필터 아래): 정렬 순서 + 노래방 번호 보이기 */
+.sortrow{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--muted)}
+.sortrow select{flex:1;font-size:12.5px;padding:3px 6px}
+.sortrow button{padding:3px 10px;font-size:12px}
+.sortrow button.on{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+/* 검색칸: 돋보기 아이콘 */
+.searchbox{position:relative}
+.searchbox svg{position:absolute;left:9px;top:50%;width:14px;height:14px;margin-top:-7px;color:var(--muted);pointer-events:none}
+#q{width:100%;padding-left:30px}
+/* 필터 버튼: 깔때기 아이콘 + 조건 수 + 펼침 화살표 */
+#btnFilter{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+#btnFilter svg{width:14px;height:14px}
+#btnFilter .cnt{min-width:18px;padding:0 5px;border-radius:999px;background:var(--accent);color:var(--accent-text);font-size:11px;font-weight:700;line-height:16px;text-align:center}
+#btnFilter .cnt:empty{display:none}
+#btnFilter .chev{transition:transform .15s}
+#btnFilter.open .chev{transform:rotate(180deg)}
+/* 목록 정보 줄: 곡 수 | 재생 중인 곡 찾기 · 전체 작업 */
+.libinfo{font-size:12px;color:var(--muted);margin-top:10px;display:flex;justify-content:space-between;gap:6px;align-items:center;flex-wrap:wrap}
+.libinfo b{color:var(--text);font-size:13px}
+.libinfo .acts{display:flex;gap:4px;flex-wrap:wrap}
+.libinfo button{padding:2px 8px;font-size:12px}
+#btnFindCur{padding:2px 6px;font-size:14px;line-height:1.2}
+#btnPlayView{white-space:nowrap}
+#list{overflow-y:auto;flex:1;min-height:0}
+.item{padding:8px 14px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:10px;align-items:center}  /* 줄 높이가 모두 같아야 함 (곡 목록은 보이는 줄만 그림 — player_screen.js renderRows) */
+.item:hover{background:var(--chip)}
+.item.cur{background:var(--accent-soft)}
+.item.flash{animation:flash 1.2s ease-out}
+@keyframes flash{0%{box-shadow:inset 0 0 0 2px var(--accent)}100%{box-shadow:inset 0 0 0 2px transparent}}
+.item .meta{flex:1;min-width:0}
+.item .no:empty{display:none}
+/* 노래방 번호를 브랜드 색으로 (한국·일본 전체 목록이나 노래방 필터를 2개 이상 골랐을 때) — 나무위키 노래방 목록·브랜드 문서의 색 */
+/* 노래방 번호: 보컬 태그처럼 반투명 칩 (브랜드 색이 없으면 회색) — 글자는 브랜드 색을 조금 밝게 */
+.item .no{--bc:var(--muted);flex:none;min-width:30px;font-size:12px;font-variant-numeric:tabular-nums;text-align:center;padding:0 5px;border-radius:999px;
+  color:color-mix(in srgb,var(--bc) 78%,#fff);background:color-mix(in srgb,var(--bc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--bc) 55%,transparent)}
+body.simple .item .thumb{display:none}  /* 간단 표시: 목록 썸네일 숨김 (player_screen.js applySimple) */
+.thumb{flex:none;width:48px;height:27px;border-radius:4px;object-fit:cover;background:var(--chip);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted)}
+.item .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .a{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badges{display:flex;gap:4px;flex:none}
+/* 곡 오른쪽 자동 싱크 인식 일치 % (가사 위 '자동 싱크 · 인식 일치' 칩과 같은 색 — 70% 이상 초록, 아래는 주황 · 100% 는 생략) */
+.pct{flex:none;font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pct.ok{color:var(--ok)}.pct.warn{color:var(--warn)}
+.b{font-size:11px;padding:0 6px;border-radius:999px;background:var(--chip);color:var(--muted);white-space:nowrap}
+.b.ok{color:var(--ok)}.b.warn{color:var(--warn)}.b.src{color:var(--accent)}.b.err{color:var(--err)}
+/* 재생 영역 */
+.main{display:flex;flex-direction:column;min-height:0;min-width:0}
+.now{padding:14px 20px 10px;border-bottom:1px solid var(--line);background:var(--card)}
+.nowtop{display:flex;gap:14px;align-items:center}
+.nowtop .info{flex:1;min-width:0}
+#nowCover{flex:none;width:128px;height:72px;border-radius:8px;object-fit:cover;background:var(--chip);cursor:zoom-in}
+#nowCover[hidden]{display:none}
+.titleline{display:flex;align-items:baseline;gap:12px;min-width:0}
+.detail{flex:1;min-width:0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.detail span+span::before{content:"·";margin:0 6px}
+.now h2{flex:0 1 auto;font-size:20px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.now .artist{color:var(--muted)}
+.now .reldate{font-size:12px;color:var(--muted);margin-bottom:8px;min-height:6px}
+/* 원곡 영상 (영상 보기를 켜면 맨 위, 곡 정보는 그 아래) */
+#videoBox{background:#000;border-bottom:1px solid var(--line);display:flex;justify-content:center}
+#videoBox[hidden]{display:none}
+/* 영상 칸: 가로를 채우되 높이는 창의 70%까지 (아래 30%에 곡 정보·버튼·가사가 늘 보이게 — 오른쪽 칸 전체 스크롤은 없음) */
+#videoBox .frame{width:100%;max-width:calc(100vh / var(--ui-zoom) * .7 * 16 / 9);aspect-ratio:16/9}
+#videoBox{flex:none}
+/* 영상이 있을 때 가사 칸은 작으니 아래 여백(마지막 줄을 가운데로 올리는 자리)도 작게 — 여백이 칸보다 크면 칸 밖으로 넘침 */
+/* 영상 숨김(서버 없이 연 화면의 온라인 곡): 중계 플레이어는 소리를 내야 해서 지우지 않고 보이지 않게만 */
+.main:has(#videoBox:not([hidden])){overflow:hidden}
+.main:has(#videoBox:not([hidden])) #lyrics{padding-top:8px;padding-bottom:40px}
+#videoBox iframe,#videoBox .frame>div{width:100%;height:100%;border:0;display:block}a.btn{display:inline-block;padding:6px 12px;border-radius:6px;border:1px solid var(--line);background:var(--card);text-decoration:none;color:var(--text);white-space:nowrap}
+a.btn[hidden]{display:none}
+/* 영상이 없거나 막힌 곡: mp3 썸네일을 꽉 차게 + 맨 위 가운데에 안내 */
+.vfallback{position:relative;width:100%;height:100%;background:#000 center/cover no-repeat}
+.vfallback .vmsg{position:absolute;left:50%;top:10px;transform:translateX(-50%);max-width:92%;padding:6px 12px;border-radius:8px;
+  background:rgba(0,0,0,.6);color:#e6e9ee;font-size:13px;text-align:center;line-height:1.5}
+.vfallback .vmsg a{color:#4fd1ff}
+.vfallback .vmsg button{margin-left:6px;padding:1px 8px;font-size:12px}
+/* 오류 신고 창 */
+#reportDlg{width:min(560px,94vw)}
+#reportDlg .rlabel{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);margin-bottom:8px}
+#reportDlg select,#reportQ,#reportWho{width:100%;box-sizing:border-box}
+.rsong{padding:6px 10px;border-radius:8px;background:var(--chip);color:var(--text)}
+.rlist{max-height:180px;overflow:auto}
+.rlist .ri{padding:4px 8px;border-radius:6px;cursor:pointer;color:var(--text)}
+.rlist .ri:hover{background:var(--chip)}
+#reportText{width:100%;min-height:120px;resize:vertical;box-sizing:border-box}
+/* 썸네일 크게 보기 */
+#coverDlg{width:auto;max-width:94vw;background:transparent;border:0}
+#coverDlg img{display:block;max-width:94vw;max-height:88vh;border-radius:10px;cursor:zoom-out}
+/* 필터 패널: 조건 고르기 (그룹 만들기 · 가나다 · 칸별 선택) */
+.fpanel{margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.fpanel[hidden]{display:none}
+.fhead{display:flex;align-items:center;gap:4px;margin-bottom:8px}
+.fhead .grow{flex:1}
+.fhead button{padding:2px 8px;font-size:12px}
+.fhead .ib{font-size:14px;padding:2px 5px}
+.fhead [data-new="exc"]{color:var(--err)}
+.fhelp{cursor:help;width:20px;height:20px;border-radius:50%;border:1px solid var(--line);color:var(--muted);font-size:11px;display:inline-flex;align-items:center;justify-content:center}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.fgrid select{width:100%;font-size:12.5px;padding:4px 6px}
+/* 필터 목록 칸 (보컬·프로듀서·태그 등): 누르면 펼쳐지는 목록 맨 위에 검색창 — 엑셀 필터처럼 글자를 치면 그 글자가 든 항목만.
+   원래 select 는 숨겨 두고 항목 원본으로만 씀 */
+.fgrid select.fdd-src{display:none}
+.fdd{min-width:0}
+.fdd[hidden]{display:none}
+.fdd-btn{width:100%;display:flex;align-items:center;gap:4px;font-size:12.5px;padding:4px 6px;text-align:left}
+.fdd-btn span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fdd-btn svg{flex:none;width:12px;height:12px;opacity:.6;transition:transform .15s}
+.fdd.open .fdd-btn{border-color:var(--accent)}
+.fdd.open .fdd-btn svg{transform:rotate(180deg)}
+.fddpop{position:fixed;z-index:60;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:var(--card);
+  box-shadow:0 8px 24px rgba(0,0,0,.35);overflow:hidden}
+.ghform{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0}
+.ghform input{flex:1;min-width:120px}
+.fdd-top{display:flex;gap:4px;align-items:center;margin:6px}
+.fdd-top input{flex:1;min-width:0}
+.fdd-add{flex:none;padding:4px 10px;font-size:12px}
+.fdd-opt .fdd-ck{margin:0 6px 0 0;vertical-align:-2px;cursor:pointer}
+.fddpop input[type=search]{padding:5px 8px;font-size:12.5px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text)}
+.fdd-list{overflow:auto;padding:0 4px 4px}
+.fdd-grp{padding:6px 6px 2px;font-size:11px;font-weight:700;color:var(--muted)}
+.fdd-opt{padding:4px 8px;font-size:12.5px;border-radius:5px;cursor:pointer;overflow-wrap:anywhere}
+.fdd-opt:hover,.fdd-opt.hl{background:var(--accent-soft)}
+.fdd-opt .n{color:var(--muted);font-size:11px;margin-left:4px}
+.fdd-none{padding:8px;font-size:12px;color:var(--muted)}
+.fgrid .solo{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);white-space:nowrap;cursor:pointer}
+.fgrid .solo.off{opacity:.45;cursor:default}
+/* 필터 그룹 (위 목록): 그룹 = 한 줄 상자. 상자 안 조건은 모두 맞아야(교집합), 상자끼리는 하나라도(합집합), 빨간 상자(−)는 빼기.
+   선택된 상자(밝은 테두리)에 새 조건이 들어감 */
+.fchips{display:flex;flex-direction:column;gap:3px;margin-top:8px}
+.fchips:empty{display:none}
+.fgroup{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:4px 4px 4px 4px;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;cursor:pointer;background:var(--bg)}
+.fgroup.exc{border-left-color:var(--err)}
+.fgroup.cur{border-color:var(--accent);border-left-width:3px;background:var(--accent-soft)}
+.fgroup.exc.cur{border-color:var(--err);background:color-mix(in srgb,var(--err) 10%,transparent)}
+.fgroup .gh{flex:none;width:18px;height:18px;padding:0;border-radius:50%;border:0;font-size:13px;font-weight:800;line-height:18px;text-align:center;background:var(--accent);color:var(--accent-text)}
+.fgroup.exc .gh{background:var(--err);color:#111}
+.fgroup .empty{font-size:11.5px;color:var(--muted);font-style:italic;margin:0;line-height:20px}  /* 목록의 '곡이 없습니다'(.empty) 여백을 받지 않게 → 조건 하나 든 그룹과 같은 높이 */
+.fgroup .gx{margin-left:auto;border:0;background:transparent;color:var(--muted);padding:0 5px;font-size:12px;line-height:1.4;border-radius:999px;opacity:.6}
+.fgroup:hover .gx{opacity:1}
+.fsep{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--muted);letter-spacing:.05em}
+.fsep::before,.fsep::after{content:"";flex:1;height:1px;background:var(--line)}
+.fchip{display:inline-flex;align-items:center;font-size:12px;border-radius:999px;padding:1px 1px 1px 8px;max-width:100%;
+  color:var(--text);background:var(--chip);box-shadow:inset 0 0 0 1px var(--line)}
+.fchip .k{color:var(--muted);font-size:10.5px;margin-right:4px}
+.fchip .v{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fgroup.exc .fchip .v{text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--err) 70%,transparent)}
+.fchip button,.fgroup .gx,.fgroup .gh{cursor:pointer}
+.fchip button{border:0;background:transparent;color:var(--muted);padding:0 6px;font-size:12px;line-height:1.3;border-radius:999px}
+.fchip button:hover,.fgroup .gx:hover{background:color-mix(in srgb,currentColor 18%,transparent);color:var(--text)}
+/* 오프라인 */
+.offnote{margin:10px 14px 0;padding:10px;border-radius:8px;background:var(--chip);font-size:13px;line-height:1.6}
+.offnote .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.6}
+.ctrl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ctrl .play{font-size:30px;color:var(--text);min-width:40px}  /* 재생/일시정지: 동그라미 없이 아이콘만 (조금 크게) */
+#btnOverlaySet{font-size:22px}
+.seek{display:flex;align-items:center;gap:8px;flex:1;min-width:220px}
+.time{font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted);white-space:nowrap;min-width:34px;text-align:center}
+/* 곡 정보: 나무위키 곡 문서의 분류(칩) · 각주(작게) — 재생 막대와 영상 버튼 사이 한 줄 */
+.songmeta{flex:1 0 100%;min-width:0}
+.songmeta .cats{display:flex;flex-wrap:wrap;gap:4px}
+.songmeta .b.vocal{color:var(--vc);background:color-mix(in srgb,var(--vc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vc) 55%,transparent)}
+.songmeta .b.kara{--bc:var(--muted);font-weight:600;color:color-mix(in srgb,var(--bc) 78%,#fff);background:color-mix(in srgb,var(--bc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--bc) 55%,transparent)}
+.songmeta .b.inner{color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+/* 한국·일본 목록 태그: 보컬 칩과 같은 모양(연한 바탕 + 얇은 테두리) · 한국 흰색, 일본 빨간색 */
+.songmeta .b.inner.ko{--vc:rgb(235 235 240)}
+.songmeta .b.inner.ja{--vc:rgb(255 95 105)}
+.songmeta .b.inner.ko,.songmeta .b.inner.ja{color:var(--vc);background:color-mix(in srgb,var(--vc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vc) 55%,transparent)}
+.songmeta .fn{margin-top:4px;font-size:11.5px;color:var(--muted);line-height:1.5}
+.songmeta .fn div{overflow-wrap:anywhere}
+/* 직접 적은 특이사항: 곡 정보 아래 (누르면 고치기) · 목록 오른쪽 [특이사항] */
+.songmeta .memo{margin-top:6px;padding:6px 10px;border-left:3px solid var(--warn);border-radius:6px;background:color-mix(in srgb,var(--warn) 9%,transparent);
+  font-size:12.5px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;cursor:pointer}
+.songmeta .memo .when{display:block;margin-top:2px;font-size:11px;color:var(--muted)}
+.b.memo{color:var(--warn);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--warn) 55%,transparent);background:color-mix(in srgb,var(--warn) 12%,transparent)}
+#memoText{height:28vh}
+#vol{flex:none;width:93px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 20px;border-bottom:1px solid var(--line);background:var(--card)}
+.toolbar .sep{width:1px;height:24px;background:var(--line)}
+.toolbar .grow{flex:1}
+.toolbar .lbl{font-size:11px;color:var(--muted);margin-right:-2px}
+.chip{background:var(--chip);border-radius:999px;padding:3px 10px;font-size:12px;white-space:nowrap}
+.chip.ok{color:var(--ok)}.chip.warn{color:var(--warn)}.chip.err{color:var(--err)}
+.offset{display:flex;align-items:center;gap:4px}
+.offset span{font-variant-numeric:tabular-nums;min-width:58px;text-align:center;font-size:13px}
+label.inline{display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer}
+.editbar{display:none;padding:10px 20px;background:var(--hl);border-bottom:1px solid var(--line);font-size:13px;gap:8px;align-items:center;flex-wrap:wrap}
+.editbar.show{display:flex}
+kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:12px;background:var(--card)}
+/* 가사 */
+#lyrics{position:relative;flex:1;overflow-y:auto;padding:24px 20px 45vh;min-height:0;scroll-behavior:smooth}
+.empty{color:var(--muted);text-align:center;margin-top:60px;line-height:1.8}
+.g{padding:10px 14px;margin:0 auto 6px;max-width:820px;border-radius:10px;cursor:pointer;opacity:.5;transition:opacity .2s,background .2s;position:relative}
+.nosync .g{opacity:1}
+.g:hover{opacity:.85;background:var(--chip)}
+.g.cur{opacity:1;background:var(--accent-soft)}
+.g.past{opacity:.38}
+.g .o{font-size:20px;font-weight:600;line-height:1.45}
+.g.cur .o{color:var(--accent)}
+.g .r{font-size:14px;color:var(--muted)}
+.g .r.vc{opacity:.8}
+.g .t{font-size:15px}
+.hide-r .g .r,.hide-t .g .t,.hide-p .g .part{display:none}
+/* 간단 표시: 가사는 보컬 색·지금 묶음 강조색 없이 일반 글자색 (파트 표시의 색 점은 그대로) */
+body.simple #lyrics .g.cur .o,body.simple #lyrics .o.vc,body.simple #lyrics .t.vc{color:var(--text)!important}
+body.simple #lyrics .r.vc{color:var(--muted)!important;opacity:1}
+body.simple #lyrics .vcm{background:none;-webkit-text-fill-color:currentColor}
+/* 파트: 이 묶음을 부르는 보컬 (나무위키 가사의 보컬 색) · 참고: 가사 위의 안내 */
+.g .part{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:var(--muted);margin-bottom:2px}
+.g .part i{width:9px;height:9px;border-radius:50%;background:var(--pc,var(--muted));box-shadow:0 0 0 1px rgba(127,127,127,.35)}
+.lnotes{max-width:820px;margin:0 auto 10px;padding:6px 12px;border-radius:8px;background:var(--chip);color:var(--muted);font-size:12.5px}
+.g .prog{position:absolute;left:14px;right:14px;bottom:4px;height:2px;border-radius:2px;background:transparent;overflow:hidden}
+.g.cur .prog i{display:block;height:100%;width:0;background:var(--accent)}
+.g .stamp{display:none;position:absolute;right:10px;top:8px;font-size:12px;gap:4px;align-items:center}
+.editing .g .stamp{display:flex}
+.editing .g{opacity:1}
+.g.cursor{outline:2px dashed var(--warn);outline-offset:-2px}
+.g.guess .o::after{content:"추정";font-size:10px;font-weight:400;color:var(--warn);border:1px solid var(--warn);border-radius:4px;padding:0 4px;margin-left:8px;vertical-align:middle}
+.hide-guess .g.guess .o::after{display:none}
+.stamp button{padding:0 6px;font-size:12px}
+.stamp .tv{font-variant-numeric:tabular-nums;color:var(--muted);min-width:46px;text-align:center}
+/* 대화상자 */
+.dlg-body{padding:14px 16px}
+#lyrViewText{margin:0;height:56vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 ui-monospace,Consolas,"Malgun Gothic",monospace;
+  padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);user-select:text;-webkit-user-select:text;cursor:text}
+.dlg-body textarea{width:100%;height:52vh;font:13px/1.55 ui-monospace,Consolas,"Malgun Gothic",monospace;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);resize:vertical}
+.hint{color:var(--muted);font-size:12px;margin:0 0 8px}
+
+/* 서버 없이 연 화면: 어디서 열지 고르는 팝업 (제대로 열려야만 닫힘) */
+/* 서버 없이 연 화면: 곡 목록을 읽는 동안 가운데 로딩 막대 */
+#loadBox{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgb(0 0 0 / .45)}
+#loadBox[hidden]{display:none}
+#loadBox .lb{width:min(360px,86vw);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;box-shadow:0 10px 30px rgb(0 0 0 / .4)}
+#loadBox .lt{font-size:14px;margin-bottom:10px}
+#loadBox .ls{font-size:12px;color:var(--muted);margin-top:8px}
+#loadBox .lbar{height:6px;border-radius:999px;background:var(--chip);overflow:hidden;position:relative}
+#loadBox .lbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+#loadBox .lbar.busy i{width:35%!important;position:absolute;animation:lbusy 1.1s ease-in-out infinite}
+@keyframes lbusy{0%{left:-35%}100%{left:100%}}
+.offdlg{width:min(600px,94vw)}
+.offdlg .dlg-body{white-space:normal;font-size:13px}
+/* background-play notice: the one warning line bigger (user: hard to read) · text field + 📋 copy button in one row */
+.occwarn{font-size:17px;font-weight:700;margin:2px 0 12px}
+.occrow{display:flex;gap:6px;margin:4px 0 8px}
+.occrow input{flex:1;min-width:0}
+.occrow button{flex:none;padding:2px 10px}
+.offdlg .offsec{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.offdlg .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.offdlg .offerr{margin-top:10px;color:var(--err);white-space:pre-wrap;min-height:1em}
