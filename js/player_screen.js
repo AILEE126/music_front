@@ -176,6 +176,14 @@ function openDD(id) {
     else if (e.key === "Escape") { e.preventDefault(); closeDD(); }
   };
   p.querySelector(".fdd-list").onclick = e => {
+    if (e.target.closest(".fdd-all")) {  // 전체 선택: every value matching the search box (user request — top of the list)
+      e.stopPropagation();  // the list is redrawn → the clicked node is detached and would look like an outside click
+      const vs = ddVisible(), all = vs.length && vs.every(v => ddSel.has(v));
+      vs.forEach(v => all ? ddSel.delete(v) : ddSel.add(v));
+      const b = p.querySelector(".fdd-add"); b.disabled = !ddSel.size; b.textContent = ddSel.size ? `추가 ${ddSel.size}` : "추가";
+      renderDD();
+      return;
+    }
     const o = e.target.closest(".fdd-opt"); if (!o) return;
     if (e.target.closest(".fdd-ck")) {  // 체크박스: 고르기만 (추가는 '추가' 단추)
       e.target.checked ? ddSel.add(o.dataset.v) : ddSel.delete(o.dataset.v);
@@ -209,7 +217,18 @@ function renderDD() {
       + (ddOpen === "fVal" ? `<input type="checkbox" class="fdd-ck"${ddSel.has(o.value) ? " checked" : ""}>` : "")
       + `${esc(name(o))}${cnt(o) ? `<span class="n">${cnt(o)}</span>` : ""}</div>`).join("");
   }
+  if (html && ddOpen === "fVal") {  // 맨 위 '전체 선택' (찾은 값 모두 체크 / 다시 누르면 모두 해제)
+    const vs = ddVisible(), on = vs.filter(v => ddSel.has(v)).length;
+    html = `<div class="fdd-all"><input type="checkbox"${on && on === vs.length ? " checked" : ""}> <b>전체 선택</b><span class="n">${vs.length}</span></div>` + html;
+  }
   p.querySelector(".fdd-list").innerHTML = html || '<div class="fdd-none">맞는 항목이 없습니다</div>';
+  const a = p.querySelector(".fdd-all input");
+  if (a) { const vs = ddVisible(), on = vs.filter(v => ddSel.has(v)).length; a.indeterminate = on > 0 && on < vs.length; }
+}
+/* 값 칸에서 지금 찾기 글자에 맞는 값들 (전체 선택용) */
+function ddVisible() {
+  const p = $("fddPop"), q = p ? fold(p.querySelector("input").value.trim()) : "";
+  return [...$("fVal").querySelectorAll("option")].filter(o => o.value && (!q || fold(o.text.replace(/ \(\d+\)$/, "")).includes(q))).map(o => o.value);
 }
 function pickDD(v) {
   const sel = $(ddOpen);

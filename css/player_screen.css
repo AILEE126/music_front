@@ -139,6 +139,9 @@ a.btn[hidden]{display:none}
 .fdd-opt:hover,.fdd-opt.hl{background:var(--accent-soft)}
 .fdd-opt .n{color:var(--muted);font-size:11px;margin-left:4px}
 .fdd-none{padding:8px;font-size:12px;color:var(--muted)}
+.fdd-all{display:flex;align-items:center;gap:6px;padding:5px 8px;margin-bottom:3px;border-bottom:1px solid var(--line);font-size:12.5px;cursor:pointer}.fdd-all .n{color:var(--muted);font-size:11px;margin-left:auto}
+/* 목록 곡 수 (user request: filter result count stands out) */
+#libInfo>b:first-child{font-size:17px;font-weight:800;color:var(--accent)}
 .fgrid .solo{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);white-space:nowrap;cursor:pointer}
 .fgrid .solo.off{opacity:.45;cursor:default}
 /* 필터 그룹 (위 목록): 그룹 = 한 줄 상자. 상자 안 조건은 모두 맞아야(교집합), 상자끼리는 하나라도(합집합), 빨간 상자(−)는 빼기.
