@@ -8,6 +8,7 @@ function on(target, ev, fn) { target.addEventListener(ev, fn); cleanups.push(() 
 window.addEventListener("pagehide", () => cleanups.forEach(f => f()));  // 화면을 떠나면 바깥 재생기에 건 연결 해제
 
 let LIB = {items: [], sites: {}}, view = [], cur = null, song = null;
+let editShift = 0;  // +/− pushed while editing (shown next to the buttons)
 let times = null, offset = 0, curIdx = -1, editing = false, editTimes = null, editOk = null, cursor = 0;
 let userScrollAt = 0;
 
@@ -593,13 +594,17 @@ function renderSyncChip() {
     c.title = "고친 싱크가 음원 관리의 확인을 기다리는 중입니다. 반영되면 본 싱크가 되고, 버려지면 전 싱크로 돌아갑니다.\n" + c.title;
   }
   c.textContent = txt; c.className = cls;
-  $("offVal").textContent = (offset > 0 ? "+" : offset < 0 ? "−" : "±") + Math.abs(offset).toFixed(1) + "초";
+  showOff();
   const has = !!(song && song.groups.length), fail = song && song.sync_fail;
   $("failChip").hidden = !fail;
   if (fail) { $("failChip").textContent = `자동 싱크 실패: ${fail.reason}`; $("failChip").title = `${fail.at} · 모델 ${fail.model || "?"}`; }
   $("btnEdit").disabled = !has;
-  $("offMinus").disabled = $("offPlus").disabled = !times;
+  $("offMinus").disabled = $("offPlus").disabled = !times && !editing;
   $("btnLyrics").disabled = !song || !song.raw;
+}
+function showOff() {
+  const v = editing ? editShift : offset;
+  $("offVal").textContent = (v > 0 ? "+" : v < 0 ? "−" : "±") + Math.abs(v).toFixed(1) + "초";
 }
 function renderLyrics() {
   const box = $("lyrics");
@@ -719,6 +724,14 @@ for (const [id, cls] of [["showR", "hide-r"], ["showT", "hide-t"], ["showP", "hi
 }
 let offTimer = null;
 function nudge(d) {
+  // +/− now live in the 직접 맞추기 guide (user request): they shift every stamped time; kept only by 저장
+  if (editing) {
+    if (!editTimes.some(x => x != null)) return;
+    editTimes = editTimes.map(x => x == null ? x : Math.max(0, +(x + d).toFixed(2)));
+    editShift = Math.round((editShift + d) * 10) / 10;
+    showOff(); renderStamps(); tick(true);
+    return;
+  }
   if (!times) return;
   offset = Math.round((offset + d) * 10) / 10;
   renderSyncChip(); tick(true);
@@ -735,18 +748,21 @@ function startEdit() {
   if (!song || !song.groups.length) return;
   editing = true; SHELL.editing = true;
   editTimes = song.groups.map((_, i) => times ? +(times[i] + offset).toFixed(2) : null);
+  editShift = offset;  // the song's current push is baked into editTimes; show it as the start value
   // 묶음마다 믿을 만한 시간인지: 인식으로 맞았거나 손으로 찍음 → 안 고친 '추정' 묶음은 저장해도 추정으로 남음
   const m = (song.sync && song.sync.matched) || [];
   editOk = song.groups.map((_, i) => !!times && (song.sync.method === "manual" || m[i] !== false));
   cursor = 0;
   if (times) { const t = audio.currentTime; cursor = Math.max(0, editTimes.findIndex(x => x > t)); }
   $("editbar").classList.add("show"); $("btnEdit").classList.add("on");
+  $("offMinus").disabled = $("offPlus").disabled = false; showOff();
   $("lyrics").classList.add("editing", "nosync");
   renderStamps();
 }
 function stopEdit() {
   editing = false; editTimes = null; editOk = null; SHELL.editing = false;
   $("editbar").classList.remove("show"); $("btnEdit").classList.remove("on");
+  showOff(); $("offMinus").disabled = $("offPlus").disabled = !times;
   $("lyrics").classList.remove("editing");
   $("lyrics").classList.toggle("nosync", !times);
   $("lyrics").querySelectorAll(".g.cursor").forEach(el => el.classList.remove("cursor"));
@@ -818,7 +834,7 @@ function applySimple() {
   document.body.classList.toggle("simple", SIMPLE);
   $("btnSimple").classList.toggle("on", SIMPLE);
   $("btnVideo").disabled = SIMPLE;
-  $("btnVideo").title = SIMPLE ? "간단 표시 중에는 영상을 접습니다 (왼쪽 목록의 '간단'을 끄면 보임)" : "원곡 영상 보기 · 숨기기 (인터넷 필요)";
+  $("btnVideo").title = SIMPLE ? "간단 표시 중에는 영상을 접습니다 (왼쪽 목록의 '간단'을 끄면 보임)" : "원곡 영상 보기 · 숨기기 (인터넷 필요) · 끌면 영상 높이 조절";
 }
 $("btnSimple").onclick = () => { SIMPLE = !SIMPLE; store.set("simple", SIMPLE); applySimple(); showVideo(); renderRows(true); SHELL.notify(); };  // 썸네일이 빠져 줄 높이가 바뀜 → 다시 잼 · 오버레이 글자색도 바로
 applySimple();
@@ -840,29 +856,38 @@ function showVideo() {
   $("videoFrame").innerHTML = `<div class="vfallback" ${bg}><div class="vmsg">${esc(msg)}
     ${cur.video ? `<a href="${esc(cur.video)}" target="_blank" rel="noopener">원곡 페이지 ↗</a>` : ""}</div></div>`;
 }
-/* Video height (user request): drag the bar under the video; the video keeps 16:9, so it shrinks/grows with it.
-   Kept as a share of the window height (--vid-f, 10–85%) so it still fits after a window resize. Double-click → default 70%. */
+/* Video tab (user request): a short click folds/unfolds the video, a drag (video shown) sets its height —
+   the video keeps 16:9, so it shrinks/grows with it. Kept as a share of the window height (--vid-f, 10–85%)
+   so it still fits after a window resize. The old grip bar under the video was removed. */
 const VID_F = f => { f = Math.min(.85, Math.max(.1, f)); document.documentElement.style.setProperty("--vid-f", f); return f; };
 {
   const saved = store.get("videoH", null);
   if (saved) VID_F(saved);
-  const grip = $("videoGrip");
+  const tab = $("btnVideo");
   let drag = null;
-  grip.addEventListener("pointerdown", e => {
-    drag = {y: e.clientY, h: $("videoFrame").getBoundingClientRect().height};
-    grip.setPointerCapture(e.pointerId); grip.classList.add("drag"); e.preventDefault();
+  tab.addEventListener("pointerdown", e => {
+    if (SIMPLE || e.button !== 0) return;
+    drag = {y: e.clientY, h: $("videoFrame").getBoundingClientRect().height, moved: false};
+    tab.setPointerCapture(e.pointerId); e.preventDefault();
   });
-  grip.addEventListener("pointermove", e => {
+  tab.addEventListener("pointermove", e => {
     if (!drag) return;
+    if (!drag.moved && Math.abs(e.clientY - drag.y) < 4) return;  // under 4px = a click
+    if ($("videoBox").hidden) return;  // nothing to resize while folded
+    drag.moved = true; tab.classList.add("drag");
     drag.f = VID_F((drag.h + e.clientY - drag.y) / innerHeight);
     dispatchEvent(new Event("resize"));  // the bridge player over the video follows at once (play_engine placeNow)
   });
-  const end = () => { if (!drag) return; if (drag.f) store.set("videoH", drag.f); drag = null; grip.classList.remove("drag"); };
-  grip.addEventListener("pointerup", end);
-  grip.addEventListener("pointercancel", end);
-  grip.addEventListener("dblclick", () => { document.documentElement.style.removeProperty("--vid-f"); store.set("videoH", null); dispatchEvent(new Event("resize")); });
+  const end = (e, cancel) => {
+    if (!drag) return;
+    const d = drag; drag = null; tab.classList.remove("drag");
+    if (d.moved) { if (d.f) store.set("videoH", d.f); return; }
+    if (!cancel) { VID.on = !VID.on; store.set("video", VID.on); showVideo(); }  // short click: fold / unfold
+  };
+  tab.addEventListener("pointerup", e => end(e, false));
+  tab.addEventListener("pointercancel", e => end(e, true));
+  tab.addEventListener("keydown", e => { if (e.key === "Enter" && !SIMPLE) { e.preventDefault(); VID.on = !VID.on; store.set("video", VID.on); showVideo(); } });
 }
-$("btnVideo").onclick = () => { if (SIMPLE) return; VID.on = !VID.on; store.set("video", VID.on); showVideo(); };
 $("btnCmt").onclick = () => { audio.comments = !audio.comments; showVideo(); };
 for (const ev of ["sourcechange", "emptied", "error", "loadedmetadata"]) on(audio, ev, showVideo);  // 중계 플레이어가 바뀜·뜸·못 틂
 cleanups.push(() => SHELL.placeVideo(null));  // 화면을 떠나면 영상 칸이 없어짐 → 접음 (소리는 그대로)
@@ -1068,6 +1093,11 @@ document.addEventListener("keydown", e => {
   else if (e.key === "ArrowRight") audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 5);
   else if (e.key === "ArrowLeft") audio.currentTime = Math.max(0, audio.currentTime - 5);
 });
+
+/* 가사 도구 줄 접기 · 펴기 (user request; remembered) */
+function applyBar(fold) { document.body.classList.toggle("barfold", fold); $("btnBar").title = fold ? "가사 도구 펴기" : "가사 도구 접기"; }
+applyBar(!!store.get("barFold", false));
+$("btnBar").onclick = () => { const f = !document.body.classList.contains("barfold"); store.set("barFold", f); applyBar(f); };
 
 /* ================= 시작 ================= */
 (async () => {

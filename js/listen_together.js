@@ -37,6 +37,7 @@ let ltApplying = 0;  // 방장 상태를 따라 하는 중 (이때 바뀐 건 �
 const ltQuiet = fn => { ltApplying++; try { return fn(); } finally { ltApplying--; } };
 const ltName = () => $("ltName").value.trim();
 const ltCrownSvg = () => `<svg class="ltcrown" viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-label="방장"><path d="M3 7l4.5 4L12 4l4.5 7L21 7l-2 12H5L3 7z"/></svg>`;
+const ltPenSvg = () => `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/><path d="M14.5 5.5l3 3"/></svg>`;
 const ltKey = n => String(n || "").normalize("NFKC").trim().toLowerCase();  // nickname compare
 const ltNick = n => (typeof n === "string" ? n : (n && n.name) || "");
 /* the nickname is taken by someone in a room right now (my own current room doesn't count — I am leaving it) */
@@ -377,6 +378,7 @@ function ltErrText(e) {
   return "같이듣기 연결 오류 (" + (e.type || e.message || e) + ")";
 }
 function ltLeave(quiet) {
+  LT.titleEdit = false;
   if (LT.role === "host") { LT.conns.forEach((_, c) => ltSend(c, {t: "bye"})); clearTimeout(ltAnnT); ltAnnounce({t: "gone", code: LT.code}); }
   ltLobbyStop();
   const peer = LT.peer;
@@ -562,7 +564,8 @@ function ltRender() {
   if (!LT.role) return;
   const hostName = LT.members[0] || (LT.role === "host" ? LT.me : "");
   const title = LT.title || (hostName ? `${hostName}님의 방` : "");
-  $("ltRoomTitle").innerHTML = `${esc(title)} ${ltLockSvg(LT.open)}`;  // user request: title + lock only, big and centred
+  if (!LT.titleEdit) $("ltRoomTitle").innerHTML = `<span class="tt">${esc(title)}</span> ${ltLockSvg(LT.open)}${
+    LT.role === "host" ? `<button type="button" class="ltpen" title="방 제목 바꾸기">${ltPenSvg()}</button>` : ""}`;  // user request: title + lock, big and centred · host: ✏ renames
   $("ltRoomHint").textContent = "곡 재생 제어는 방장만 가능합니다.";
   $("ltRoomHint").hidden = LT.role === "host";
   const mem = LT.members.length ? LT.members : [hostName];
@@ -571,6 +574,30 @@ function ltRender() {
   $("ltLeave").textContent = LT.role === "host" ? "방 닫기" : "나가기";
   ltRenderReqs();
 }
+/* host renames the room (user request: pencil next to the title, host only) — guests and other screens get it at once */
+function ltTitleEdit() {
+  if (LT.role !== "host" || LT.titleEdit) return;
+  LT.titleEdit = true;
+  const box = $("ltRoomTitle");
+  box.innerHTML = `<input type="text" id="ltTitleIn" maxlength="40" autocomplete="off" spellcheck="false">`;
+  const inp = $("ltTitleIn");
+  inp.value = LT.title || `${LT.me}님의 방`; inp.focus(); inp.select();
+  let done = false;
+  const end = save => {
+    if (done) return; done = true;
+    LT.titleEdit = false;
+    const v = inp.value.trim();
+    if (save && LT.role === "host" && v !== LT.title) { LT.title = v || `${LT.me}님의 방`; ltMembers(); }  // members msg carries the title
+    else ltRender();
+  };
+  inp.addEventListener("keydown", e => {
+    if (e.isComposing) return;
+    if (e.key === "Enter") { e.preventDefault(); end(true); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); end(false); }  // don't close the dialog
+  });
+  inp.addEventListener("blur", () => end(true));
+}
+$("ltRoomTitle").addEventListener("click", e => { if (e.target.closest(".ltpen")) ltTitleEdit(); });
 const LT_REQ_STATE = {wait: "요청중", queued: "재생대기", playing: "재생중"};
 const LT_REQ_PAGE = 5;  // user request: 5 at a time, more → pages
 function ltRenderReqs() {

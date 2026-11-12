@@ -5,7 +5,12 @@ html,body{height:100%}
 .app{display:grid;grid-template-columns:340px minmax(0,1fr);height:calc(100vh / var(--ui-zoom))}  /* 화면을 줄여도(--ui-zoom) 창 높이에 꽉 차게 */
 .app.nolist{grid-template-columns:minmax(0,1fr)}
 .app.nolist .side{display:none}
-#btnList{flex:none;align-self:flex-start;padding:4px 9px}
+.now{position:relative}
+.nowtop{padding-left:10px}  /* room for the list tab */
+#btnList{position:absolute;left:-1px;top:14px;width:18px;height:56px;border-left:0;border-radius:0 9px 9px 0}  /* same size as the lyrics tab · left:-1px covers the list's border line (user request) */
+#btnList::before{content:"";position:absolute;top:0;bottom:0;left:-2px;width:3px;background:var(--card)}  /* covers the list's border line next to the tab — left:-1px alone left a thin line at zoomed sizes / after re-layout (user request) */
+#btnList svg{transform:rotate(90deg)}  /* list fold tab on the left edge, same grip turned (user request) */
+#btnList.on{color:var(--text)}
 /* 좁은 창: 목록 위·재생 아래 한 칸 배치. 기준 너비는 화면 축소(--ui-zoom .8)에 맞춘 값 (860px × .8 — 미디어 쿼리는 줄이기 전 창 너비로 잼) */
 @media (max-width:688px){.app{grid-template-columns:minmax(0,1fr);height:auto}.side{max-height:45vh;border-right:none}.now,.toolbar{padding-left:16px;padding-right:16px}#lyrics{padding:16px 16px 40vh;max-height:70vh}.seek{min-width:0;flex-basis:100%;order:5}}
 /* 곡 목록 */
@@ -84,15 +89,19 @@ body.simple .item .thumb{display:none}  /* 간단 표시: 목록 썸네일 숨�
 #videoBox[hidden]{display:none}
 /* 영상 칸: 가로를 채우되 높이는 창의 70%까지 (아래 30%에 곡 정보·버튼·가사가 늘 보이게 — 오른쪽 칸 전체 스크롤은 없음) */
 #videoBox .frame{width:100%;max-width:calc(100vh / var(--ui-zoom) * var(--vid-f, .7) * 16 / 9);aspect-ratio:16/9}
-/* user request: drag bar under the video sets its height (--vid-f = share of the window height, remembered); 16:9 kept */
-#videoGrip{flex:none;height:8px;margin-top:-4px;margin-bottom:-4px;position:relative;z-index:5;cursor:ns-resize;touch-action:none}
-#videoGrip::after{content:"";position:absolute;left:50%;top:2px;width:44px;height:4px;margin-left:-22px;border-radius:2px;background:var(--line);opacity:.8}
-#videoGrip:hover::after,#videoGrip.drag::after{background:var(--accent);opacity:1}
-#videoBox[hidden]+#videoGrip{display:none}
+/* video tab (user request): hangs from the player box's top edge at the right — click folds/unfolds the video,
+   drag sets its height (--vid-f = share of the window height, remembered; 16:9 kept) */
+#btnVideo{position:absolute;top:-1px;right:20px;width:56px;height:30px;border-top:0;border-radius:0 0 9px 9px;z-index:3;touch-action:none}
+#btnVideo::before{content:"";position:absolute;left:0;right:0;top:-1px;height:2px;background:var(--card)}  /* covers the video's bottom line inside the tab */
+#btnVideo svg{width:16px;height:10px}
+#btnVideo.on{color:var(--text);background:var(--card);border-color:var(--line)}  /* not the common "on" button look */
+#btnVideo.on:not(:disabled){cursor:ns-resize}
+#btnVideo.drag{color:var(--accent)}
+#btnVideo:disabled{opacity:.4;cursor:default}
 #videoBox{flex:none}
 /* 영상이 있을 때 가사 칸은 작으니 아래 여백(마지막 줄을 가운데로 올리는 자리)도 작게 — 여백이 칸보다 크면 칸 밖으로 넘침 */
 /* 영상 숨김(서버 없이 연 화면의 온라인 곡): 중계 플레이어는 소리를 내야 해서 지우지 않고 보이지 않게만 */
-.main:has(#videoBox:not([hidden])){overflow:hidden}
+.main:has(#videoBox:not([hidden])){overflow-x:visible;overflow-y:clip}  /* clip only up/down: hidden also cut the list tab poking 1px left over the list border, so the line came back with the video (user request) */
 .main:has(#videoBox:not([hidden])) #lyrics{padding-top:8px;padding-bottom:40px}
 #videoBox iframe,#videoBox .frame>div{width:100%;height:100%;border:0;display:block}a.btn{display:inline-block;padding:6px 12px;border-radius:6px;border:1px solid var(--line);background:var(--card);text-decoration:none;color:var(--text);white-space:nowrap}
 a.btn[hidden]{display:none}
@@ -150,6 +159,10 @@ a.btn[hidden]{display:none}
 #ltRoom .hint{text-align:center;margin-top:10px}
 .ltroomtitle{display:flex;align-items:center;justify-content:center;gap:8px;padding:4px 64px 0;font-size:21px;font-weight:700;min-width:0;overflow:hidden;white-space:nowrap}  /* centred, big (user request) */
 .ltroomtitle .ltico{width:19px;height:19px}
+.ltroomtitle .tt{overflow:hidden;text-overflow:ellipsis}
+.ltpen{flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border:0;border-radius:6px;background:none;color:var(--muted);cursor:pointer}
+.ltpen:hover{color:var(--text);background:var(--chip)}
+#ltTitleIn{width:100%;max-width:340px;height:32px;font-size:17px;font-weight:700;text-align:center}
 .ltpwask{margin-top:10px;padding:10px;border:1px solid var(--accent);border-radius:8px;font-size:13px}
 .ltmembers{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
 .ltmembers li{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;background:var(--chip);font-size:13px}
@@ -270,6 +283,8 @@ body.lt-guest #streamHost{pointer-events:none}
 .offnote .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.6}
 .ctrl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#btnReport{order:99;margin-left:auto;padding:0;border:0;background:none;color:var(--muted);font-size:11px;text-decoration:underline;text-underline-offset:2px;cursor:pointer}  /* user request: small underlined text, right end */
+#btnReport:hover{color:var(--text)}
 .ctrl .play{font-size:30px;color:var(--text);min-width:40px}  /* 재생/일시정지: 동그라미 없이 아이콘만 (조금 크게) */
 #btnOverlaySet{font-size:22px}
 .seek{display:flex;align-items:center;gap:8px;flex:1;min-width:220px}
@@ -288,6 +303,16 @@ a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.
 .songmeta .fn div{overflow-wrap:anywhere}
 #vol{flex:none;width:93px}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 20px;border-bottom:1px solid var(--line);background:var(--card)}
+/* fold tabs (user request: tab shape, no arrows) — lyrics-tool bar: hangs under the bar's bottom line, centred;
+   folded → the bar is gone and the tab hangs under the player box */
+/* no text, just a ||| grip (user request): an inline svg (crisp at any page zoom; css-gradient lines came out uneven) */
+.tab{display:flex;align-items:center;justify-content:center;padding:0;color:var(--muted);background:var(--card);border:1px solid var(--line);min-width:0;cursor:pointer}
+.tab svg{display:block;width:14px;height:10px;flex:none}
+.tab:hover{color:var(--text)}
+.bartab{position:relative;height:0;z-index:3;flex:none}
+.bartab .tab{position:absolute;top:-1px;left:calc(50% - 28px);width:56px;height:19px;border-top:0;border-bottom:0;border-radius:0 0 9px 9px}  /* top:-1px covers the bar's bottom line · no bottom line (user request) · no transform (blurs) · 19px: the hidden top px + missing bottom line, so it looks as big as the list tab */
+body.barfold .toolbar{display:none}
+.bartab .tab::before{content:"";position:absolute;left:0;right:0;top:-1px;height:2px;background:var(--card)}  /* covers the bar's bottom line inside the tab — top:-1px alone left a thin line at zoomed sizes (user request) · side lines stay */
 .toolbar .sep{width:1px;height:24px;background:var(--line)}
 .toolbar .grow{flex:1}
 .toolbar .lbl{font-size:11px;color:var(--muted);margin-right:-2px}
@@ -296,8 +321,17 @@ a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.
 .offset{display:flex;align-items:center;gap:4px}
 .offset span{font-variant-numeric:tabular-nums;min-width:58px;text-align:center;font-size:13px}
 label.inline{display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer}
-.editbar{display:none;padding:10px 20px;background:var(--hl);border-bottom:1px solid var(--line);font-size:13px;gap:8px;align-items:center;flex-wrap:wrap}
+/* 발음·번역·파트: three joined on/off buttons (user request) — label wraps a hidden checkbox, so the checkbox code stays */
+.seg{display:flex}
+.seg label{display:flex;align-items:center;padding:7px 12px;line-height:normal;font-size:13px;border:1px solid var(--line);margin-left:-1px;background:var(--card);color:var(--muted);cursor:pointer;user-select:none}
+.seg label:first-child{margin-left:0;border-radius:6px 0 0 6px}
+.seg label:last-child{border-radius:0 6px 6px 0}
+.seg label:hover{color:var(--text)}
+.seg label:has(input:checked){position:relative;z-index:1;background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}  /* same look as an "on" button */
+.editbar{display:none;padding:22px 20px 10px;background:var(--hl);border-bottom:1px solid var(--line);font-size:13px;gap:8px;align-items:center;flex-wrap:wrap}
 .editbar.show{display:flex}
+.editbar>span{flex-basis:100%}
+.editrow{display:flex;align-items:center;gap:8px;width:100%}  /* +/− at the bottom-left, save · cancel at the right */
 kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:12px;background:var(--card)}
 /* 가사 */
 #lyrics{position:relative;flex:1;overflow-y:auto;padding:24px 20px 45vh;min-height:0;scroll-behavior:smooth}

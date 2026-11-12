@@ -50,10 +50,10 @@
 
   <main class="main">
     <div id="videoBox" hidden><div class="frame" id="videoFrame"></div></div><!-- 재생 중인 온라인 곡의 중계 플레이어가 이 칸 위에 겹쳐 보임 -->
-    <div id="videoGrip" title="끌어서 영상 높이 조절 (영상은 비율 그대로 줄고 늘어남) · 두 번 누르면 처음 크기로"></div>
     <div class="now">
+      <button class="tab" id="btnVideo" title="원곡 영상 보기 · 숨기기 (인터넷 필요) · 끌면 영상 높이 조절" aria-label="원곡 영상 보기 · 숨기기"><svg viewBox="0 0 16 10" aria-hidden="true"><rect x="1" y="1.5" width="9.5" height="7" rx="1.5" fill="currentColor"/><path d="M11.5 4.3 15 2.4v5.2l-3.5-1.9z" fill="currentColor"/></svg></button><!-- user request: video on/off as a tab at the player box's top-right · click folds, drag resizes (old grip bar removed) -->
       <div class="nowtop">
-        <button id="btnList" title="곡 목록 접기 / 펴기">☰</button>
+        <button class="tab" id="btnList" title="곡 목록 접기 / 펴기" aria-label="곡 목록 접기 / 펴기"><svg viewBox="0 0 14 10" aria-hidden="true"><path d="M3 1.5v7M7 1.5v7M11 1.5v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button><!-- user request: tab shape, same place -->
         <img id="nowCover" alt="" title="누르면 크게 보기 · 오른쪽 클릭하면 썸네일 저장" hidden>
         <div class="info">
           <div class="titleline"><h2 id="nowTitle">곡을 선택하세요</h2><span class="detail" id="nowDetail"></span></div>
@@ -71,12 +71,11 @@
         <button class="ib mode" id="btnPlayQueue" title="재생 대기열 (다음에 틀 곡 · 지난 곡)" hidden></button>
         <button class="ib vol" id="btnMute" title="음소거 / 해제"></button><input type="range" class="bar-range" id="vol" min="0" max="1" step="0.01" value="0.8" title="음량">
         <div class="songmeta" id="songMeta" hidden></div>
-        <button id="btnReport" title="곡의 문제 알리기 (싱크·가사·곡 정보·재생 등) — 음원 관리 › 오류 신고에 남음">🚩 오류 신고</button>
-        <button id="btnVideo" title="원곡 영상 보기 · 숨기기 (인터넷 필요)">🎬 영상</button>
         <button id="btnCmt" title="니코니코 댓글 켜기 · 끄기 (다음 곡에도 그대로)" hidden>💬 댓글</button>
         <button id="btnListen" title="같이듣기 — 방을 만들면 나오는 번호를 넣은 사람과 같은 곡을 같은 위치로 같이 들음">🎧 같이듣기</button>
         <a class="btn" id="btnSrc" target="_blank" rel="noopener" title="원곡 영상 페이지를 새 탭으로" hidden>원곡 ↗</a>
         <a class="btn" id="btnWiki" target="_blank" rel="noopener" title="나무위키 곡 문서를 새 탭으로" hidden>위키 ↗</a>
+        <button id="btnReport" title="곡의 문제 알리기 (싱크·가사·곡 정보·재생 등) — 음원 관리 › 오류 신고에 남음">오류신고</button><!-- user request: small underlined text at the right end -->
       </div>
     </div>
 
@@ -84,25 +83,30 @@
       <span class="chip" id="syncChip">싱크 없음</span>
       <span class="chip err" id="failChip" hidden></span>
       <span class="sep"></span>
-      <div class="offset" title="가사가 노래보다 빠르면 +, 느리면 −">
-        <button id="offMinus">−</button><span id="offVal">±0.0초</span><button id="offPlus">+</button>
-      </div>
       <button id="btnEdit" title="가사 줄마다 시간을 직접 찍어 싱크 맞추기">직접 맞추기</button>
       <span class="sep"></span>
       <button id="btnLyrics" title="가사 txt 미리보기 · 끌어서 복사 · txt로 받기">가사 보기</button>
       <span class="grow"></span>
-      <label class="inline"><input type="checkbox" id="showR" checked> 발음</label>
-      <label class="inline"><input type="checkbox" id="showT" checked> 번역</label>
-      <label class="inline" title="이 줄을 부르는 보컬 (나무위키 가사에 보컬별 색 구분이 있는 곡)"><input type="checkbox" id="showP" checked> 파트</label>
+      <div class="seg" title="가사 줄 보이기 · 숨기기"><!-- user request: three joined on/off buttons instead of checkboxes -->
+        <label><input type="checkbox" id="showR" checked hidden>발음</label><label><input type="checkbox" id="showT" checked hidden>번역</label><label title="이 줄을 부르는 보컬 (나무위키 가사에 보컬별 색 구분이 있는 곡)"><input type="checkbox" id="showP" checked hidden>파트</label>
+      </div>
       <button class="ovpow" id="btnOverlayPower">오버레이 켜기</button>
       <button class="ib" id="btnOverlaySet" title="가사 오버레이 설정 (programs\WEB\tools\lyrics_overlay.bat 로 켜는 바탕 투명 가사 창)">⚙&#xFE0E;</button>
     </div>
 
+    <div class="bartab"><button class="tab" id="btnBar" title="가사 도구 접기 · 펴기" aria-label="가사 도구 접기 · 펴기"><svg viewBox="0 0 14 10" aria-hidden="true"><path d="M3 1.5v7M7 1.5v7M11 1.5v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></div><!-- user request: a tab hanging under the lyrics-tool bar folds / unfolds it · stays on the bar, not the sync guide -->
+
     <div class="editbar" id="editbar">
       <span>재생하면서 각 묶음이 시작될 때 <kbd>Space</kbd> 또는 <kbd>↓</kbd> — 점선 묶음에 지금 시간을 찍습니다. <kbd>↑</kbd> 한 묶음 뒤로, 묶음을 누르면 그 묶음부터.</span>
-      <span style="flex:1"></span>
-      <button class="primary" id="btnEditSave">저장</button><button id="btnEditCancel">취소</button>
+      <div class="editrow">
+        <div class="offset" title="가사가 노래보다 빠르면 +, 느리면 − (찍은 시간 전체를 밂 · 저장해야 남음)"><!-- user request: moved to the sync guide's bottom-left -->
+          <button id="offMinus">−</button><span id="offVal">±0.0초</span><button id="offPlus">+</button>
+        </div>
+        <span style="flex:1"></span>
+        <button class="primary" id="btnEditSave">저장</button><button id="btnEditCancel">취소</button>
+      </div>
     </div>
+
 
     <div id="lyrics"><div class="empty">곡을 선택하면 가사가 여기에 표시됩니다.</div></div>
   </main>
