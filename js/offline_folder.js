@@ -93,7 +93,7 @@ var OFFDIR = (() => {
           video: g("TXXX:VIDEO") || g("TXXX:SOURCE"), videos: [], nico: "", tags: [], nums: {}, ord: {local: 0},
           cover: cover ? 1 : 0, _url: url, _cover: cover, _side: side || null,
           lyrics: sj && sj.groups && sj.groups.length ? "own" : "", sync, method: sj && sj.sync ? sj.sync.method || "" : "",
-          score: sj && sj.sync ? sj.sync.score : null, vocals: [], categories: [], notes: [], memo: null});
+          score: sj && sj.sync ? sj.sync.score : null, vocals: [], categories: [], notes: []});
       };
       const queue = mp3s.slice(), run = async () => { while (queue.length) { await one(queue.shift()); k++; } };
       await Promise.all(Array.from({length: 6}, run));

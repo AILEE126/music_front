@@ -1,6 +1,6 @@
 /* player_screen.html 화면 동작 — 서버 없이 html 을 바로 열어 씀 (서버·음원 관리와 따로)
    곡 목록·가사·싱크는 깃허브(토큰) 또는 고른 Server\data 폴더(서버 PC)에서 읽음 (local_files.js) · 오프라인 mp3 는 고른 mp3 폴더 (offline_folder.js)
-   특이사항·싱크 밀기·직접 맞추기·오류 신고는 그곳에 바로 저장. 싱크 만들기·가사 받기 등은 서버 PC 의 음원 관리에서 */
+   싱크 밀기·직접 맞추기·오류 신고는 그곳에 바로 저장. 싱크 만들기·가사 받기 등은 서버 PC 의 음원 관리에서 */
 const SHELL = makePlayer($("audioLocal"));  // 재생기 (play_engine.js)
 const audio = SHELL.audio;
 const cleanups = [];
@@ -419,7 +419,6 @@ window.addEventListener("resize", () => renderRows(true));
 function itemHtml(it, i) {
   const bs = [], showNo = rowShowNo;
   // 가사 출처: 나무위키 곡 문서 / 보카로 가사 위키에서 받음 / 직접 넣음 / 다른 곡 가사 연결
-  if (it.memo) bs.push(`<span class="b memo" title="특이사항 (${esc(it.memo.saved)})&#10;${esc(it.memo.text)}">특이사항</span>`);
   // 가사·싱크 표시: 노래방 곡·오프라인 곡·싱크가 있는 곡만 (가사 위키 곡 대부분은 가사를 고를 때 읽고 싱크가 없음).
   // 보통인 상태(나무위키 가사 · 자동 싱크)는 표시하지 않고, 없거나 다른 경우만 표시
   const show = it.karaoke || it.site === "local" || !!it.sync;
@@ -559,34 +558,10 @@ function renderMeta(it) {
     ...kara.map(([t, b]) => `<span class="b kara" style="--bc:${BRAND_COLOR[b]}" title="노래방 수록">${esc(t)}</span>`),
     ...inner.map(tagChip),
     ...(it.categories || []).map(c => `<span class="b" title="나무위키 분류">${esc(c)}</span>`)];
-  const memo = it.memo;
-  box.hidden = !chips.length && !notes.length && !memo;
+  box.hidden = !chips.length && !notes.length;
   box.innerHTML = (chips.length ? `<div class="cats">${chips.join("")}</div>` : "")
-    + (notes.length ? `<div class="fn" title="노래방 수록 목록의 각주">${notes.map(n => `<div>※ ${esc(n)}</div>`).join("")}</div>` : "")
-    + (memo ? `<div class="memo" id="memoBox" title="직접 적은 특이사항 — 누르면 고치기">📝 ${esc(memo.text)}<span class="when">${esc(memo.saved)} 저장</span></div>` : "");
-  if ($("memoBox")) $("memoBox").onclick = openMemo;
+    + (notes.length ? `<div class="fn" title="노래방 수록 목록의 각주">${notes.map(n => `<div>※ ${esc(n)}</div>`).join("")}</div>` : "");
 }
-/* 특이사항 창: 곡마다 직접 적는 메모 (저장할 때 날짜·시각을 같이 기록, 빈 글로 저장하면 지움) */
-function openMemo() {
-  if (!cur) return;
-  $("memoTitle").textContent = `특이사항 · ${cur.title}`;
-  $("memoText").value = cur.memo ? cur.memo.text : "";
-  $("memoHint").textContent = cur.memo ? `마지막 저장: ${cur.memo.saved}` : "아직 적은 특이사항이 없습니다.";
-  $("memoClear").hidden = !cur.memo;
-  $("memoDlg").showModal();
-  $("memoText").focus();
-}
-async function saveMemo(text) {
-  let r;
-  try { r = await post("/api/memo", {site: cur.site, name: cur.name, text}); } catch (e) { uiAlert(e.message); return; }
-  for (const x of [cur, ...allItems().filter(x => keyOf(x) === keyOf(cur))]) x.memo = r.memo;
-  $("memoDlg").close();
-  renderMeta(cur); renderFilterOptions(); renderList();
-}
-$("btnMemo").onclick = openMemo;
-$("memoSave").onclick = () => saveMemo($("memoText").value);
-$("memoCancel").onclick = () => $("memoDlg").close();
-$("memoClear").onclick = async () => { if (await uiConfirm("이 곡의 특이사항을 지울까요?", "지우기")) saveMemo(""); };
 async function loadSong() {
   const it = cur; if (!it) return;
   let s;
@@ -851,7 +826,6 @@ function showVideo() {
   const on = VID.on && !!cur && !SIMPLE, playing = !!cur && !!SHELL.now && keyOf(SHELL.now) === keyOf(cur);
   const live = on && playing && audio.bridged && !audio.error;
   $("btnVideo").classList.toggle("on", VID.on);
-  $("btnMemo").disabled = !cur;
   $("videoBox").hidden = !on;
   $("nowCover").hidden = !cur || !hasCover(cur) || on || SIMPLE;  // 영상 모드에서는 썸네일을 영상 자리에 · 간단 표시는 숨김
   SHELL.placeVideo(live ? $("videoFrame") : null);
@@ -1100,11 +1074,5 @@ document.addEventListener("keydown", e => {
   renderModes();
   cleanups.push(SHELL.subscribe(now => { renderModes(); showSong(now); }));
   cleanups.push(SHELL.lsubscribe(() => tick(true)));
-  const onMemo = (it, memo) => {  // 재생기가 못 튼 곡 특이사항을 적음 → 목록·필터에 바로
-    for (const x of LIB.items.filter(x => keyOf(x) === keyOf(it))) x.memo = memo;
-    if (cur && keyOf(cur) === keyOf(it)) { cur.memo = memo; renderMeta(cur); }
-    renderFilterOptions(); renderList();
-  };
-  SHELL.memoSubs.add(onMemo); cleanups.push(() => SHELL.memoSubs.delete(onMemo));
   await offlineIntro();  // 곡 목록을 어디서 읽을지 (지난번 것이 그대로 열리면 바로)
 })();

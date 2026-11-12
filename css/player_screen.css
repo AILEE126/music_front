@@ -137,8 +137,13 @@ a.btn[hidden]{display:none}
 .ltroom{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px}
 .ltroom .who{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ltroom .meta{font-size:12px;color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ltroom .code{display:flex;gap:6px;width:100%;justify-content:flex-end}
 .ltkind{text-align:center;font-size:13px;color:var(--muted)}
+.ltroomtitle{text-align:center;font-size:17px;font-weight:700;margin-bottom:2px}
+.ltlink{display:flex;flex-direction:column;align-items:center;gap:4px;margin:4px 0 8px}
+#ltNewPw{width:9em;height:32px;box-sizing:border-box}
+#ltPwIn{width:10em;height:32px;box-sizing:border-box}
+.ltpwask{margin-top:10px;padding:10px;border:1px solid var(--accent);border-radius:8px;font-size:13px}
+.ltroom .here{font-size:12px;color:var(--accent);font-weight:600}
 .ltcode{font-size:40px;font-weight:700;letter-spacing:.12em;text-align:center;color:var(--accent);margin:6px 0}
 .ltmembers{margin:8px 0 0;padding-left:20px;line-height:1.7}
 .ltmembers .r{font-size:12px;color:var(--muted)}
@@ -235,12 +240,6 @@ a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.
 .songmeta .b.inner.ko,.songmeta .b.inner.ja{color:var(--vc);background:color-mix(in srgb,var(--vc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vc) 55%,transparent)}
 .songmeta .fn{margin-top:4px;font-size:11.5px;color:var(--muted);line-height:1.5}
 .songmeta .fn div{overflow-wrap:anywhere}
-/* 직접 적은 특이사항: 곡 정보 아래 (누르면 고치기) · 목록 오른쪽 [특이사항] */
-.songmeta .memo{margin-top:6px;padding:6px 10px;border-left:3px solid var(--warn);border-radius:6px;background:color-mix(in srgb,var(--warn) 9%,transparent);
-  font-size:12.5px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;cursor:pointer}
-.songmeta .memo .when{display:block;margin-top:2px;font-size:11px;color:var(--muted)}
-.b.memo{color:var(--warn);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--warn) 55%,transparent);background:color-mix(in srgb,var(--warn) 12%,transparent)}
-#memoText{height:28vh}
 #vol{flex:none;width:93px}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 20px;border-bottom:1px solid var(--line);background:var(--card)}
 .toolbar .sep{width:1px;height:24px;background:var(--line)}

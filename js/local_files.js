@@ -1,4 +1,4 @@
-/* 플레이어(서버 없이 html 을 바로 엶)가 곡 목록·가사·싱크·특이사항·영상 연결·오버레이 파일·오류 신고를 읽고 쓰는 곳 (LOCAL).
+/* 플레이어(서버 없이 html 을 바로 엶)가 곡 목록·가사·싱크·영상 연결·오버레이 파일·오류 신고를 읽고 쓰는 곳 (LOCAL).
    읽는 곳 둘 중 하나:
    · 깃허브에서 열기: 비공개 저장소를 토큰으로 (GitHub API — 폴더를 고르지 않아 회사 보안 프로그램에 안 걸림). 저장은 그 저장소에 커밋
    · 폴더 고르기 (서버 PC 만): 처음 한 번 고른 Server\data 폴더(곡 정보 파일만 — csv·json·txt)에서 계속 읽고 씀 — 브라우저 폴더 권한
@@ -6,8 +6,7 @@
      Data lives in Server\data, not WEB (user request: only WEB is zipped and handed out — others read GitHub).
      읽기: Server\data\export (서버가 써 둔 곡 목록·가사). 썸네일은 원곡 영상의 썸네일 주소(thumb)를 바로
    (오프라인 mp3 는 플레이어에서 고른 mp3 폴더 — offline_folder.js)
-     쓰기: 특이사항 → 서버와 같은 파일(Server\data\*.json)·같은 형식
-     싱크 밀기(±초)·직접 맞추기 → Server\data\sync_pending\<싱크 파일> + '싱크 수정' 오류 신고 (본 싱크 파일은 그대로 —
+     쓰기: 싱크 밀기(±초)·직접 맞추기 → Server\data\sync_pending\<싱크 파일> + '싱크 수정' 오류 신고 (본 싱크 파일은 그대로 —
      음원 관리에서 반영해야 바뀜. 그때까지 이 플레이어는 고친 싱크로 틂)
    화면의 api()·post() 는 모두 LOCAL.request() 로 옴 (shared_screen_helpers.js — 플레이어는 서버에 묻지 않음) */
 const CRLF = "\r\n", LF = "\n";
@@ -59,7 +58,7 @@ const LOCAL = {
     const info = await r.json();
     const prev = {gh: this.gh, dir: this.dir, base: this.base};  // 못 열면 전에 열려 있던 곳 그대로
     // Data lives on the 'data' branch (one commit the server keeps replacing — user request: no pile of data commits).
-    // Reads and writes (reports·memos·sync edits) both go there; repo without that branch yet → its default branch.
+    // Reads and writes (reports·sync edits) both go there; repo without that branch yet → its default branch.
     let ref = DATA_BRANCH;
     try {
       const b = await fetch(`${GH_API}/repos/${repo}/branches/${DATA_BRANCH}`, {headers: {Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json"}, cache: "no-store"});
@@ -125,7 +124,7 @@ const LOCAL = {
     this.dir = dir; this.gh = null; this.base = base;
   },
   get out() { return `${this.base}export`; },  // 서버가 화면용으로 써 둔 곡 목록·가사
-  get data() { return this.base; },  // 서버와 같이 쓰는 특이사항 등 (Server\data) · 영상 연결은 읽기만 (고치기는 음원 관리)
+  get data() { return this.base; },  // 서버와 같이 쓰는 파일 (Server\data: 오류 신고·싱크 수정 대기) · 영상 연결은 읽기만 (고치기는 음원 관리)
   get name() { return this.gh ? this.gh.repo : this.dir ? this.dir.name : ""; },
 
   /* ---- 파일 (고른 폴더 기준 경로 'a/b/c.json') ---- */
@@ -227,7 +226,6 @@ const LOCAL = {
     if ((q.name || body.name) && !this.items.size) await (this.itemsP = this.itemsP || this.library().finally(() => { this.itemsP = null; }));
     if (!post && u.pathname === "/api/lyrics") return this.lyrics(q.site, q.name);
     if (!post && u.pathname === "/api/stream/views") return this.streamViews(q.name);
-    if (post && u.pathname === "/api/memo") return this.saveMemo(body);
     if (post && u.pathname === "/api/report") return this.saveReport(body);
     if (post && u.pathname === "/api/sync/save") return body.times == null ? this.saveOffset(body) : this.saveTimes(body);
     if (["/api/now", "/api/ovset", "/api/ovprograms"].includes(u.pathname)) return this.overlay(u.pathname, post, body);
@@ -311,12 +309,12 @@ const LOCAL = {
     return it;
   },
 
-  /* 곡 목록: 서버가 써 둔 library.json + 지금 파일의 특이사항·영상 연결 (서버 없이 바꾼 특이사항도 바로) */
+  /* 곡 목록: 서버가 써 둔 library.json + 지금 파일의 영상 연결 */
   async library() {
     const text = this.libText || await this.readTextP(`${this.out}/library.json`, "곡 목록 받는 중", 0.1, 0.8).catch(() => null);
     this.libText = null;
-    this.progress("특이사항·영상 연결 읽는 중…", 0.85);
-    const [memos, links] = await Promise.all([this.readJson(`${this.data}song_memos.json`, {}), this.readJson(`${this.data}video_links.json`, {})]);
+    this.progress("영상 연결 읽는 중…", 0.85);
+    const links = await this.readJson(`${this.data}video_links.json`, {});
     this.progress("곡 목록 정리하는 중…", 0.92);
     let lib = null;
     try { lib = text ? JSON.parse(text.replace(/^﻿/, "")) : null; } catch (e) {}
@@ -324,7 +322,6 @@ const LOCAL = {
     this.items.clear();
     for (const it of lib.items) {
       this.items.set(it.site + "/" + it.name, it);
-      it.memo = memos[it.key] || null;
       this.applyLink(it, (links[it.key] || {}).url || "");
       Object.assign(it, this.synced.get(it.site + "/" + it.name) || {});  // 이번에 서버 없이 맞춘 싱크
     }
@@ -353,22 +350,7 @@ const LOCAL = {
     return d;
   },
 
-  /* ---- 저장 (서버의 song_memos.py · video_search_and_link.py · sync_save_and_lrc.py 와 같은 파일·같은 모양) ---- */
-  async saveMemo(d) {
-    const it = this.item(d.site, d.name);
-    const memo = await this.updateJson(`${this.data}song_memos.json`, m => {
-      let text = String(d.text || "").trim().slice(0, 5000);
-      if (d.add) {
-        const old = (m[it.key] || {}).text || "";
-        if (old.includes(text)) return m[it.key] || null;
-        text = `${old}\n${text}`.trim().slice(0, 5000);
-      }
-      if (text) m[it.key] = {text, saved: nowText()}; else delete m[it.key];
-      return m[it.key] || null;
-    });
-    it.memo = memo;
-    return {memo};
-  },
+  /* ---- 저장 (서버의 video_search_and_link.py · sync_save_and_lrc.py 와 같은 파일·같은 모양) ---- */
   /* 오류 신고: 신고 하나에 파일 하나 (Server\data\reports\<시각>_<번호>.json — 여럿이 보내도 안 겹침).
      깃허브에서 열면 그 저장소에 커밋 (WEB 만 받은 다른 사람도) · 폴더로 열면 그 폴더에 → 서버 PC 의 음원 관리 › 오류 신고가 git 으로 받아 봄 */
   async saveReport(d) {

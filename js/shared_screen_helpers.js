@@ -11,7 +11,7 @@ const store = {
 async function api(path, opt = {}) {
   // 오프라인 곡(고른 mp3 폴더): 그 폴더의 파일로 처리 (offline_folder.js)
   if (typeof OFFDIR !== "undefined" && OFFDIR && isLocalReq(path, opt)) return OFFDIR.request(path, opt);
-  // 그 밖(곡 정보·가사·특이사항·싱크 저장·오버레이 파일·오류 신고): 깃허브 또는 고른 Server\data 폴더 (local_files.js)
+  // 그 밖(곡 정보·가사·싱크 저장·오버레이 파일·오류 신고): 깃허브 또는 고른 Server\data 폴더 (local_files.js)
   return LOCAL.request(path, opt);
 }
 const post = (path, body) => api(path, {method: "POST", body: JSON.stringify(body)});

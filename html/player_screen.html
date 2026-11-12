@@ -75,7 +75,6 @@
         <button id="btnVideo" title="원곡 영상 보기 · 숨기기 (인터넷 필요)">🎬 영상</button>
         <button id="btnCmt" title="니코니코 댓글 켜기 · 끄기 (다음 곡에도 그대로)" hidden>💬 댓글</button>
         <button id="btnListen" title="같이듣기 — 방을 만들면 나오는 번호를 넣은 사람과 같은 곡을 같은 위치로 같이 들음">🎧 같이듣기</button>
-        <button id="btnMemo" title="이 곡의 특이사항 적기 (적은 날짜·시각과 함께 저장)">📝 특이사항</button>
         <a class="btn" id="btnSrc" target="_blank" rel="noopener" title="원곡 영상 페이지를 새 탭으로" hidden>원곡 ↗</a>
         <a class="btn" id="btnWiki" target="_blank" rel="noopener" title="나무위키 곡 문서를 새 탭으로" hidden>위키 ↗</a>
       </div>
@@ -131,14 +130,6 @@
   </div>
   <div class="dlg-foot"><span style="flex:1"></span><button id="reportCancel">취소</button><button class="primary" id="reportSend">전송</button></div>
 </dialog>
-<dialog id="memoDlg">
-  <div class="dlg-head" id="memoTitle">특이사항</div>
-  <div class="dlg-body">
-    <p class="hint" id="memoHint"></p>
-    <textarea id="memoText" spellcheck="false" placeholder="이 곡에 대해 기억해 둘 것 (예: 2절 가사가 음원과 다름, 영상이 다른 버전 등)"></textarea>
-  </div>
-  <div class="dlg-foot"><button id="memoClear" title="이 곡의 특이사항을 지움">지우기</button><span style="flex:1"></span><button id="memoCancel">취소</button><button class="primary" id="memoSave">저장</button></div>
-</dialog>
 <dialog id="lyrView"><!-- 온라인 스트리밍 곡: 가사 txt 미리보기 (끌어서 복사 · txt 로 받기) -->
   <div class="dlg-head" id="lyrViewTitle">가사</div>
   <div class="dlg-body">
@@ -159,13 +150,10 @@
             <label><input type="radio" name="ltKind" value="open" checked><span>🔓 공개방</span></label>
             <label><input type="radio" name="ltKind" value="secret"><span>🔒 비밀방</span></label>
           </div>
+          <input type="text" id="ltNewPw" placeholder="비밀번호 정하기" autocomplete="off" spellcheck="false" maxlength="20" hidden>
           <button class="primary" id="ltMake">방 만들기</button>
         </div>
         <p class="hint" id="ltKindHint"></p>
-      </div>
-      <div class="ltsec">
-        <div class="ltsec-head">열린 방 <button id="ltRefresh" class="ltsmall" title="방 목록 다시 찾기">↻ 새로고침</button></div>
-        <ul class="ltrooms" id="ltRooms"></ul>
       </div>
       <div class="ltsec">
         <div class="ltsec-head">번호로 들어가기</div>
@@ -173,12 +161,22 @@
       </div>
     </div>
     <div id="ltRoom" hidden>
+      <div class="ltroomtitle" id="ltRoomTitle"></div>
       <div class="ltkind" id="ltKindNow"></div>
       <div class="ltcode" id="ltCode"></div>
+      <div class="ltlink"><button id="ltCopyLink">🔗 바로 들어오는 링크 복사</button><span class="hint" id="ltPwNow"></span></div>
       <p class="hint" id="ltRoomHint"></p>
       <ul class="ltmembers" id="ltMembers"></ul>
     </div>
+    <div class="ltpwask" id="ltPwAsk" hidden>
+      <span>🔒 <b id="ltPwFor"></b> 비밀방이에요 — 비밀번호를 넣어 주세요</span>
+      <div class="ltrow"><input type="password" id="ltPwIn" placeholder="비밀번호" autocomplete="off" maxlength="20"><button class="primary" id="ltPwGo">들어가기</button><button id="ltPwNo">그만두기</button></div>
+    </div>
     <p class="ltstatus" id="ltStatus" hidden></p>
+    <div class="ltsec">
+      <div class="ltsec-head">열린 방 <button id="ltRefresh" class="ltsmall" title="방 목록 다시 찾기">↻ 새로고침</button></div>
+      <ul class="ltrooms" id="ltRooms"></ul>
+    </div>
   </div>
   <div class="dlg-foot"><button id="ltLeave" hidden></button><span style="flex:1"></span><button class="primary" id="ltClose">닫기</button></div>
 </dialog>

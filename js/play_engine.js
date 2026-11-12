@@ -2,7 +2,7 @@
    · 온라인 곡: 중계 페이지(WEB\tools\stream_bridge\index.html 을 GitHub Pages 에 올린 것)의 니코니코·유튜브 플레이어
      (파일로 연 화면은 주소가 없어 유튜브(오류 153)·니코니코 퍼가기 플레이어가 거부함 → https 주소인 중계 페이지를 거침)
    · 오프라인 곡: 고른 mp3 폴더의 mp3 (offline_folder.js)
-   makePlayer(audio): 곡 바꾸기 · 대기열(play_queue.js) · 가사(위 막대·오버레이용) · 가사 먼저 보이기 · 못 튼 곡 창·특이사항 기록 ·
+   makePlayer(audio): 곡 바꾸기 · 대기열(play_queue.js) · 가사(위 막대·오버레이용) · 가사 먼저 보이기 · 못 튼 곡 창·오류 신고 ·
    가사 오버레이 알림 · 영상 칸(placeVideo) 을 한곳에 */
 const BRIDGE_URL = store.get("bridgeUrl", "") || "https://ailee126.github.io/music-bridge/";  // 시험할 때만 브라우저 저장값 player.bridgeUrl 로 다른 주소
 /* 영상 주소 → {kind: yt|nico, id, url} */
@@ -120,7 +120,7 @@ class BridgePlayer {
   comments(on) { if (this.ref.kind === "nico") this.cmd("comments", on); }
   destroy() { clearTimeout(this.timer); removeEventListener("message", this.onMsg); this.frame.remove(); }
 }
-/* 중계 플레이어가 알려 준 오류 → 못 튼 까닭 (곡 특이사항에 남길 글) */
+/* 중계 플레이어가 알려 준 오류 → 못 튼 까닭 (자동 오류 신고에 남길 글) */
 function bridgeReason(code) {
   if (code === 100) return "원곡 영상이 삭제·비공개입니다";
   if (code === 101 || code === 150) return "원곡 영상이 퍼가기 금지라 이 화면에서 재생할 수 없습니다";
@@ -372,7 +372,6 @@ function makePlayer(el) {
        null 이면 1px 로 접음 (영상은 안 보여도 소리는 그대로). 화면을 떠나거나 영상을 숨길 때 null */
     placeVideo(target) { place = target || null; placeNow(); },
     notify() { sendNow(); },  // 오버레이에 바로 다시 알림 (플레이어의 발음·번역 체크가 바뀜)
-    memoSubs: new Set(),  // 화면이 구독: (곡, 새 특이사항) — 못 튼 곡을 특이사항에 적으면 목록·필터에 바로
   };
   addPlayQueue(P);  // 재생 목록·대기열·대기열 창
 
@@ -461,7 +460,7 @@ function makePlayer(el) {
   /* 온라인 곡을 못 틀면 (원곡 영상 삭제·비공개·퍼가기 금지 등) 화면 가운데 창에 남기고 다음 곡으로 — 멈추지 않고 계속 재생.
      창은 확인을 누를 때까지 떠 있고, 그사이 또 못 튼 곡은 같은 창 목록에 쌓임. 틀려던 곡이면 넘어감 (곡을 골랐거나 ▶ 를 누름 —
      처음 화면을 열어 지난 곡을 띄워만 둔 때는 창만). 연달아 10곡 넘게 못 틀면 멈춤.
-     못 튼 곡은 그 곡 특이사항에 까닭을 한 줄 남김 (나중에 플레이어 특이사항 필터로 찾게) — 인터넷이 안 된 때는 곡 문제가 아니라 안 남김 */
+     못 튼 곡은 오류 신고를 저절로 보냄 (user request: 특이사항 대신 — 관리의 에러·지금 할 일에 뜸). 인터넷이 안 된 때는 곡 문제가 아니라 안 보냄 */
   const fail = failDialog(), failShown = new Set();
   let failRun = 0;
   audio.addEventListener("playing", () => { failRun = 0; });
@@ -504,11 +503,14 @@ function makePlayer(el) {
 
   async function noteFail(it, reason) {
     const d = new Date(), ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    const text = /삭제|비공개/.test(reason) ? `원곡 영상 링크 삭제됨 — 재생 불가 (${ymd} 확인)` : `재생 못 함 — ${reason} (${ymd})`;
+    const sent = store.get("failReported", {}) || {};
+    if (sent[keyOf(it)] === ymd) return;  // same song: one report a day from this browser
+    const text = /삭제|비공개/.test(reason) ? "원곡 영상 링크 삭제됨 — 재생 불가" : `재생 못 함 — ${reason}`;
     try {
-      const r = await post("/api/memo", {site: it.site, name: it.name, add: true, text});
-      it.memo = r.memo;
-      P.memoSubs.forEach(f => { try { f(it, r.memo); } catch (e) { P.memoSubs.delete(f); } });
+      await post("/api/report", {kind: "재생이 안 됨 (영상 삭제·막힘)", text: text + " (플레이어가 저절로 보냄)", who: store.get("reportWho", "") || "자동",
+        song: {site: it.site, name: it.name, title: it.title, artist: it.artist || ""}, pos: null, source: ""});
+      for (const k of Object.keys(sent)) if (sent[k] !== ymd) delete sent[k];
+      sent[keyOf(it)] = ymd; store.set("failReported", sent);
     } catch (e) {}
   }
   return P;

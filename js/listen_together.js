@@ -2,15 +2,18 @@
    · 방 만들기: 6자리 번호가 새로 나옴 — 방을 닫거나 화면을 새로 열면 그 번호는 끝 (다음엔 새 번호)
    · 들어가기: 번호를 넣으면 방장(호스트)이 트는 곡·재생/멈춤·위치를 그대로 따라감 (음량은 각자)
    · 들어온 사람(손님)은 음량·나가기만 — ▶/⏸·⏭/⏮·위치 옮기기·다른 곡 틀기는 막음 (user request: 방장만 조작)
-   · 방 목록 (user request): 만든 방은 목록에 보임 — 공개방은 눌러서 바로 들어가고, 비밀방은 목록에 보이지만 번호를 넣어야 들어감
-   · 이름이 없으면 방을 만들거나 들어갈 수 없음 (user request, 한 글자도 됨)
+   · 방 목록 (user request): 만든 방은 모두 목록에 보임 — 공개방은 눌러서 바로, 비밀방은 방장이 정한 비밀번호를 넣어야 들어감.
+     방 안에 있을 때도 목록을 볼 수 있음. 메인 화면 버튼에 방 수 · 내 방 인원 (user request)
+   · 바로 들어오는 링크: 화면 주소 + #lt=<번호> (비밀방은 링크 + 비밀번호)
+   · 이름이 없으면 방을 만들거나 들어갈 수 없음 (user request, 한 글자도 됨) · 방 화면에 방장 이름
    서버가 없는 화면이라 브라우저끼리 바로 잇는 WebRTC(PeerJS — 번호로 서로 찾는 일만 PeerJS 공개 서버)를 씀.
    player_screen.js 다음에 읽음 (SHELL·audio·keyOf·LIB·OFFDIR·ONLINE 을 씀) */
 const LT_PEERJS = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
 const LT_PREFIX = "ailee126-noinjeong-lt-";  // PeerJS id = 이 앞머리 + 번호
 const LT_SLOTS = 8;  // room list: each open room also holds one "lobby-<n>" id that answers who/what (no server to list rooms)
 const ltSlotId = i => LT_PREFIX + "lobby-" + i;
-const LT = {role: "", code: "", open: true, lobby: null, lobbyAt: 0, peer: null, conns: new Map(), host: null, members: [], status: "", lastHeard: 0, lostAt: 0, retryAt: 0};
+const LT = {role: "", code: "", open: true, pw: "", lobby: null, lobbyAt: 0, peer: null, conns: new Map(), host: null,
+  members: [], status: "", lastHeard: 0, lostAt: 0, retryAt: 0, ask: ""};  // ask: code of a secret room waiting for its password
 const LT_SILENT = 70000;   // 방장 소식이 이만큼 없으면 끊긴 것으로 봄 (뒤에 깔린 탭은 브라우저가 타이머를 1분에 한 번까지 늦춤)
 const LT_GIVE_UP = 180000; // 손님: 이만큼 다시 잇지 못하면 나감
 let ltApplying = 0;  // 방장 상태를 따라 하는 중 (이때 바뀐 건 다시 보내지 않음)
@@ -29,12 +32,13 @@ function ltLoadPeerJs() {
   if (window.Peer) return Promise.resolve();
   return new Promise((res, rej) => {
     const s = document.createElement("script");
-    s.src = LT_PEERJS; s.onload = res; s.onerror = () => rej(new Error("같이듣기 연결 도구를 받지 못했습니다 (인터넷 확인)"));
+    s.src = LT_PEERJS; s.onload = res; s.onerror = () => { s.remove(); rej(new Error("같이듣기 연결 도구를 받지 못했습니다 (인터넷 확인)")); };
     document.head.appendChild(s);
   });
 }
 const ltNewCode = () => String(crypto.getRandomValues(new Uint32Array(1))[0] % 900000 + 100000);
 const ltShowCode = c => c.slice(0, 3) + " " + c.slice(3);
+const ltLink = code => location.href.split("#")[0] + "#lt=" + code;
 /* 재생하려는 중인가 (온라인 곡은 뜨는 동안 paused 라 재생 의도로 봄) */
 const ltIntent = () => audio.bridged ? !!audio.autoplay : !audio.paused;
 const ltStrip = it => Object.fromEntries(Object.entries(it).filter(([k]) => !k.startsWith("_")));
@@ -65,11 +69,11 @@ function ltMembers() {
   LT.conns.forEach((_, c) => ltSend(c, m));
   ltRender();
 }
-async function ltHost(open) {
+async function ltHost(open, pw) {
   if (ltNeedName()) return;
+  if (!open && !pw) { LT.status = "비밀방은 비밀번호를 정해 주세요"; ltRender(); return $("ltNewPw").focus(); }
   ltLeave(true);
-  ltScanStop();
-  LT.open = open !== false;
+  LT.open = open; LT.pw = open ? "" : pw;
   LT.status = "방을 만드는 중…"; ltRender();
   try { await ltLoadPeerJs(); } catch (e) { LT.status = e.message; return ltRender(); }
   ltHostPeer(ltNewCode(), 3);
@@ -83,9 +87,17 @@ function ltHostPeer(code, left) {
     LT.role = "host"; LT.code = code; LT.status = ""; LT.lostAt = 0; SHELL.follow = false;
     ltMembers();
     if (!LT.lobby) ltLobby(0);
+    ltScan();
   });
   peer.on("connection", c => {
-    c.on("open", () => { LT.conns.set(c, {name: (c.metadata && c.metadata.name) || "손님", seen: Date.now()}); ltMembers(); ltSend(c, {t: "state", s: ltState()}); });
+    c.on("open", () => {
+      const pw = (c.metadata && c.metadata.pw) || "";
+      if (!LT.open && pw !== LT.pw) {  // secret room: the host checks the password
+        ltSend(c, {t: "denied", why: pw ? "wrong" : "need"});
+        return setTimeout(() => { try { c.close(); } catch (e) {} }, 800);
+      }
+      LT.conns.set(c, {name: (c.metadata && c.metadata.name) || "손님", seen: Date.now()}); ltMembers(); ltSend(c, {t: "state", s: ltState()});
+    });
     c.on("data", m => ltHostGot(c, m));
     c.on("close", () => { if (LT.conns.delete(c)) ltMembers(); });
     c.on("error", () => { if (LT.conns.delete(c)) ltMembers(); });
@@ -94,9 +106,7 @@ function ltHostPeer(code, left) {
     if (LT.peer !== peer) return;
     if (LT.role !== "host") {  // 방을 열기 전
       if (e.type === "unavailable-id" && left > 0) { peer.destroy(); return ltHostPeer(ltNewCode(), left - 1); }  // 번호가 겹침 → 다른 번호
-      ltLeave(true); LT.status = ltErrText(e); ltRender();
-      if ($("listenDlg").open) ltScanStart();
-      return;
+      ltLeave(true); LT.status = ltErrText(e); return ltRender();
     }
     // Room already open (user report: the room broke after a while): a dropped link to the PeerJS server used to close it.
     // Guests already in talk to this browser directly and don't need that server — keep the room, reconnect in ltKeep.
@@ -104,7 +114,7 @@ function ltHostPeer(code, left) {
   });
   peer.on("disconnected", () => { if (LT.peer === peer && LT.role === "host") ltHostLost(); });
 }
-/* room list slot: take the first free lobby-<n> id; anyone who connects gets this room's card (code only for an open room) */
+/* room list slot: take the first free lobby-<n> id; anyone who connects gets this room's card */
 function ltLobby(i) {
   if (LT.role !== "host" || i >= LT_SLOTS) return;
   const p = new Peer(ltSlotId(i));
@@ -118,7 +128,8 @@ function ltLobby(i) {
   p.on("connection", c => {
     c.on("open", () => {
       const it = SHELL.now;
-      ltSend(c, {t: "room", name: ltName(), open: LT.open, code: LT.open ? LT.code : "", n: (LT.members.length || 1), song: it ? (it.title || "") : ""});
+      // secret rooms show their code too: the password set by the host is what keeps them closed
+      ltSend(c, {t: "room", name: ltName(), open: LT.open, code: LT.code, n: (LT.members.length || 1), song: it ? (it.title || "") : ""});
       setTimeout(() => { try { c.close(); } catch (e) {} }, 1500);
     });
   });
@@ -134,37 +145,50 @@ function ltHostGot(c, m) {
 }
 
 /* ---------- 손님 ---------- */
-async function ltJoin(code) {
+async function ltJoin(code, pw = "") {
   if (ltNeedName()) return;
   code = String(code || "").replace(/\D/g, "");
   if (code.length !== 6) { LT.status = "번호 6자리를 넣어 주세요"; return ltRender(); }
+  if (LT.role && code === LT.code) { LT.status = "지금 있는 방입니다"; return ltRender(); }
   ltLeave(true);
-  ltScanStop();
+  LT.pw = pw; LT.ask = "";
   LT.status = "들어가는 중…"; ltRender();
   try { await ltLoadPeerJs(); } catch (e) { LT.status = e.message; return ltRender(); }
   ltGuestPeer(code);
 }
-/* 손님 peer: 방장에게 잇기. 이미 들어와 있던 방(LT.role guest)이면 끊겨도 나가지 않고 ltKeep 이 다시 이음 */
+/* 손님 peer: 방장에게 잇기. 첫 소식이 오면 들어간 것 (비밀번호가 틀리면 방장이 "denied").
+   이미 들어와 있던 방(LT.role guest)이면 끊겨도 나가지 않고 ltKeep 이 다시 이음 */
 function ltGuestPeer(code) {
   const peer = LT.peer = new Peer();
   const fail = msg => {
     if (LT.peer !== peer) return;
     if (LT.role === "guest") return ltGuestLost();
     ltLeave(true); LT.status = msg; ltRender();
-    if ($("listenDlg").open) ltScanStart();  // back to the room list
   };
   peer.on("open", () => {
     if (LT.peer !== peer) return;
-    const c = peer.connect(LT_PREFIX + code, {reliable: true, metadata: {name: ltName()}});
+    const c = peer.connect(LT_PREFIX + code, {reliable: true, metadata: {name: ltName(), pw: LT.pw}});
     const t = setTimeout(() => { if (LT.peer === peer && LT.host !== c) fail("방에 들어가지 못했습니다 — 번호를 확인하거나 다시 해 보세요"); }, 15000);
-    c.on("open", () => {
-      clearTimeout(t);
-      if (LT.peer !== peer) return c.close();
-      LT.role = "guest"; LT.code = code; LT.host = c; LT.status = ""; LT.lastHeard = Date.now(); LT.lostAt = 0;
-      SHELL.follow = true;  // 곡이 끝나도 혼자 다음 곡으로 넘어가지 않음 (방장이 넘김)
-      ltRender();
+    c.on("data", m => {
+      if (LT.peer !== peer || !m) return;
+      if (m.t === "denied") {
+        clearTimeout(t);
+        const wasIn = LT.role === "guest";
+        ltLeave(true);
+        LT.ask = code;  // ask for the password and try again
+        LT.status = wasIn ? "방의 비밀번호가 바뀌었습니다" : m.why === "wrong" ? "비밀번호가 틀렸습니다" : "";
+        ltRender();
+        return $("ltPwIn").focus();
+      }
+      if (LT.host !== c) {  // first word from the host → in
+        clearTimeout(t);
+        LT.role = "guest"; LT.code = code; LT.host = c; LT.status = ""; LT.lastHeard = Date.now(); LT.lostAt = 0;
+        SHELL.follow = true;  // 곡이 끝나도 혼자 다음 곡으로 넘어가지 않음 (방장이 넘김)
+        ltRender();
+        ltScan();
+      }
+      ltGuestGot(m);
     });
-    c.on("data", m => { if (LT.host === c) ltGuestGot(m); });
     c.on("close", () => { if (LT.host === c) ltGuestLost(); });
   });
   peer.on("error", e => fail(e.type === "peer-unavailable" ? "그 번호의 방이 없습니다 — 번호를 확인해 주세요" : ltErrText(e)));
@@ -177,9 +201,8 @@ function ltGuestLost() {
   LT.status = "방장과 연결이 끊겨 다시 잇는 중…"; ltRender();
 }
 function ltGuestGot(m) {
-  if (!m) return;
   LT.lastHeard = Date.now();
-  if (m.t === "bye") { ltLeave(true); LT.status = "방장이 방을 닫았습니다"; return ltRender(); }
+  if (m.t === "bye") { ltLeave(true); LT.status = "방장이 방을 닫았습니다"; ltRender(); return ltScan(); }
   if (m.t === "members") { LT.members = m.list || []; return ltRender(); }
   if (m.t === "state") ltApply(m.s, performance.now());
 }
@@ -270,14 +293,14 @@ function ltKeep() {
   addEventListener("pagehide", () => ltLeave(true));
 }
 
-/* ---------- 방 목록 (방에 없을 때 창을 열어 두면 10초마다 다시 찾음) ---------- */
-const LTS = {peer: null, rooms: null, busy: false, timer: 0};
+/* ---------- 방 목록: 창을 열어 두면 10초마다, 닫혀 있어도 30초마다 (메인 버튼의 방 수) ---------- */
+const LTS = {peer: null, rooms: null, busy: false, at: 0};
 async function ltScan() {
-  if (LT.role || LTS.busy || !$("listenDlg").open) return;
-  LTS.busy = true; ltRenderRooms();
-  try { await ltLoadPeerJs(); } catch (e) { LTS.busy = false; LTS.rooms = []; LT.status = e.message; return ltRender(); }
+  if (LTS.busy) return;
+  LTS.busy = true; LTS.at = Date.now(); ltRenderRooms();
+  try { await ltLoadPeerJs(); } catch (e) { LTS.busy = false; LTS.rooms = LTS.rooms || []; return ltRenderRooms(); }
   const found = new Map();
-  const finish = () => { if (!LTS.busy) return; LTS.busy = false; LTS.rooms = [...found.values()]; ltRenderRooms(); };
+  const finish = () => { if (!LTS.busy) return; LTS.busy = false; LTS.rooms = [...found.values()]; ltRender(); };
   const ask = p => {
     for (let i = 0; i < LT_SLOTS; i++) {
       const c = p.connect(ltSlotId(i), {reliable: true});
@@ -293,78 +316,120 @@ async function ltScan() {
   setTimeout(finish, 9000);
 }
 function ltScanPeerDrop() { const p = LTS.peer; LTS.peer = null; if (p) try { p.destroy(); } catch (e) {} }
-function ltScanStart() { ltScanStop(); ltScan(); LTS.timer = setInterval(ltScan, 10000); }
-function ltScanStop() { clearInterval(LTS.timer); LTS.timer = 0; ltScanPeerDrop(); LTS.busy = false; }
+setInterval(() => {
+  if (document.hidden) return;
+  if (Date.now() - LTS.at >= ($("listenDlg").open ? 10000 : 30000)) ltScan();
+}, 5000);
 function ltRenderRooms() {
   const ul = $("ltRooms"), rooms = LTS.rooms;
   $("ltRefresh").disabled = LTS.busy;
   if (!rooms || !rooms.length) { ul.innerHTML = `<li class="empty">${!rooms || LTS.busy ? "방을 찾는 중…" : "지금 열린 방이 없습니다 — 방을 만들어 보세요"}</li>`; return; }
-  if (ul.contains(document.activeElement) && document.activeElement.matches(".code input")) return;  // don't wipe a code being typed
-  ul.innerHTML = rooms.map((r, i) => `<li class="ltroom">
-      <span class="who">${r.open ? "🔓" : "🔒"} ${esc(r.name || "이름 없음")}의 방</span>
+  ul.innerHTML = rooms.map((r, i) => {
+    const here = LT.role && r.code === LT.code;
+    return `<li class="ltroom">
+      <span class="who">${r.open ? "🔓" : "🔒"} ${esc(r.name || "이름 없음")}님의 방</span>
       <span class="meta">${r.n || 1}명${r.song ? " · ♪ " + esc(r.song) : ""}</span>
-      <button data-i="${i}" class="${r.open ? "primary" : ""}">${r.open ? "참여" : "번호 넣고 참여"}</button>
-      ${r.open ? "" : `<div class="code" hidden><input type="text" inputmode="numeric" maxlength="7" placeholder="입장 번호 6자리" autocomplete="off"><button class="primary" data-go="1">들어가기</button></div>`}
-    </li>`).join("");
+      ${here ? `<span class="here">지금 있는 방</span>` : `<button data-i="${i}" class="${r.open ? "primary" : ""}">${LT.role ? "이 방으로 옮기기" : "참여"}</button>`}
+    </li>`;
+  }).join("");
 }
 $("ltRooms").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
-  const li = b.closest(".ltroom");
-  if (b.dataset.go) return ltJoin(li.querySelector(".code input").value);
   const r = LTS.rooms && LTS.rooms[+b.dataset.i]; if (!r) return;
   if (r.open) return ltJoin(r.code);
-  const box = li.querySelector(".code"); box.hidden = false; box.querySelector("input").focus();
+  if (ltNeedName()) return;
+  LT.ask = r.code; LT.status = ""; ltRender(); $("ltPwIn").focus();  // secret room: password first
 });
-$("ltRooms").addEventListener("keydown", e => { if (e.key === "Enter" && e.target.matches(".code input")) ltJoin(e.target.value); });
 $("ltRefresh").onclick = () => ltScan();
 
 /* ---------- 화면 ---------- */
 function ltRender() {
-  const b = $("btnListen"), n = LT.members.length;
+  const b = $("btnListen"), n = LT.members.length, rooms = LTS.rooms ? LTS.rooms.length : 0;
   b.classList.toggle("on", !!LT.role);
-  b.textContent = LT.role ? `🎧 같이듣기 · ${n || 1}명` : "🎧 같이듣기";
+  b.textContent = "🎧 같이듣기" + (rooms ? ` · 방 ${rooms}개` : "") + (LT.role ? ` · 내 방 ${n || 1}명` : "");
   $("ltIdle").hidden = !!LT.role;
   $("ltRoom").hidden = !LT.role;
   $("ltStatus").textContent = LT.status;
   $("ltStatus").hidden = !LT.status;
   $("ltLeave").hidden = !LT.role;
-  $("ltMake").disabled = $("ltJoin").disabled = !ltName();
-  $("ltKindHint").textContent = ltKind() === "open"
-    ? "공개방: 방 목록에서 누르기만 하면 누구나 들어올 수 있어요"
-    : "비밀방: 방 목록에 보이지만, 번호를 알려 준 사람만 들어올 수 있어요";
+  const secret = ltKind() === "secret";
+  $("ltNewPw").hidden = !secret;
+  $("ltMake").disabled = !ltName() || (secret && !$("ltNewPw").value.trim());
+  $("ltJoin").disabled = $("ltPwGo").disabled = !ltName();
+  $("ltKindHint").textContent = secret
+    ? "비밀방: 방 목록에 보이지만, 정한 비밀번호를 넣어야 들어올 수 있어요"
+    : "공개방: 방 목록에서 누르거나 링크만 열면 누구나 바로 들어올 수 있어요";
+  $("ltPwAsk").hidden = !LT.ask;
+  if (LT.ask) {
+    const r = (LTS.rooms || []).find(r => r.code === LT.ask);
+    $("ltPwFor").textContent = r ? `${r.name}님의 방은` : `${ltShowCode(LT.ask)} 방은`;
+  }
   // guest: only volume and leaving — the play controls look disabled
   const guest = LT.role === "guest";
   for (const id of ["btnPlay", "btnPrev", "btnNext", "seek", "btnPlayView", "btnShuffle", "btnRepeat", "btnEdit"]) $(id).disabled = guest;
   document.body.classList.toggle("lt-guest", guest);
+  ltRenderRooms();
   if (!LT.role) return;
+  const hostName = LT.members[0] || (LT.role === "host" ? ltName() : "");
+  $("ltRoomTitle").textContent = hostName ? `${hostName}님의 방` : "";
   $("ltCode").textContent = ltShowCode(LT.code);
-  $("ltKindNow").textContent = LT.role === "host" ? (LT.open ? "🔓 공개방 · 방 목록에서 바로 들어올 수 있음" : "🔒 비밀방 · 이 번호를 넣어야 들어올 수 있음") : "";
+  const open = LT.role === "host" ? LT.open : !LT.pw;
+  $("ltKindNow").textContent = open ? "🔓 공개방 · 링크만 열면 바로 들어옴" : "🔒 비밀방 · 링크(또는 번호) + 비밀번호";
+  $("ltPwNow").textContent = LT.role === "host" && !LT.open ? `비밀번호: ${LT.pw} (따로 알려 주세요)` : "";
   $("ltRoomHint").textContent = LT.role === "host"
-    ? "이 번호를 같이 들을 사람에게 알려 주세요. 방을 닫으면 이 번호는 더 쓸 수 없습니다."
+    ? "이 번호나 링크를 같이 들을 사람에게 알려 주세요. 방을 닫으면 이 번호는 더 쓸 수 없습니다."
     : "방장이 트는 곡을 같이 듣는 중입니다. 곡 바꾸기·재생·멈춤·위치 옮기기는 방장만 할 수 있고, 여기서는 음량만 바꿀 수 있습니다.";
   $("ltMembers").innerHTML = LT.members.map((m, i) => `<li>${esc(m)}${i === 0 ? ' <span class="r">방장</span>' : ""}</li>`).join("");
   $("ltLeave").textContent = LT.role === "host" ? "방 닫기" : "나가기";
 }
-$("btnListen").onclick = () => {
-  $("ltName").value = store.get("reportWho", "");
+function ltOpenDlg() {
+  if (!$("listenDlg").open) $("listenDlg").showModal();
   ltRender();
-  $("listenDlg").showModal();
-  if (LT.role) return;
-  ltRenderRooms();
-  ltScanStart();
-  (ltName() ? $("ltJoinCode") : $("ltName")).focus();
+  if (Date.now() - LTS.at > 3000) ltScan();
+}
+$("btnListen").onclick = () => {
+  ltOpenDlg();
+  if (!LT.role) (ltName() ? $("ltJoinCode") : $("ltName")).focus();
 };
-$("listenDlg").addEventListener("close", ltScanStop);
 function ltKind() { return (document.querySelector('input[name="ltKind"]:checked') || {}).value || "open"; }
-document.querySelectorAll('input[name="ltKind"]').forEach(r => r.addEventListener("change", ltRender));
+document.querySelectorAll('input[name="ltKind"]').forEach(r => r.addEventListener("change", () => { ltRender(); if (ltKind() === "secret") $("ltNewPw").focus(); }));
+$("ltNewPw").addEventListener("input", ltRender);
+$("ltName").value = store.get("reportWho", "");  // 오류 신고의 보내는 사람과 같은 이름
 $("ltName").addEventListener("input", () => {
   store.set("reportWho", ltName());
   if (ltName()) { $("ltName").closest(".rlabel").classList.remove("need"); if (LT.status.startsWith("이름을")) LT.status = ""; }
   ltRender();
-});  // 오류 신고의 보내는 사람과 같은 이름
-$("ltMake").onclick = () => ltHost(ltKind() === "open");
+});
+$("ltMake").onclick = () => ltHost(ltKind() === "open", $("ltNewPw").value.trim());
 $("ltJoin").onclick = () => ltJoin($("ltJoinCode").value);
 $("ltJoinCode").addEventListener("keydown", e => { if (e.key === "Enter") ltJoin($("ltJoinCode").value); });
-$("ltLeave").onclick = () => { ltLeave(false); LTS.rooms = null; ltRenderRooms(); ltScanStart(); };
+$("ltPwGo").onclick = () => { const pw = $("ltPwIn").value; if (!pw) return $("ltPwIn").focus(); $("ltPwIn").value = ""; ltJoin(LT.ask, pw); };
+$("ltPwIn").addEventListener("keydown", e => { if (e.key === "Enter") $("ltPwGo").click(); });
+$("ltPwNo").onclick = () => { LT.ask = ""; $("ltPwIn").value = ""; LT.status = ""; ltRender(); };
+$("ltCopyLink").onclick = async () => {
+  await copyText(ltLink(LT.code));
+  LT.status = LT.role === "host" && !LT.open ? "링크를 복사했어요 — 비밀번호는 따로 알려 주세요" : "링크를 복사했어요";
+  ltRender();
+};
+$("ltLeave").onclick = () => { ltLeave(false); ltScan(); };
 $("ltClose").onclick = () => $("listenDlg").close();
+
+/* 바로 들어오는 링크 (#lt=<번호>): 시작 창(토큰)·불러오기가 끝난 뒤 같이듣기 창을 열고 들어감 */
+function ltFromLink() {
+  const m = /^#lt=(\d{6})$/.exec(location.hash);
+  if (!m) return;
+  history.replaceState(null, "", location.href.split("#")[0]);  // reload doesn't join again
+  const code = m[1];
+  const go = () => {
+    if (document.querySelector("dialog.offdlg[open]") || ($("loadBox") && !$("loadBox").hidden)) return setTimeout(go, 500);
+    ltOpenDlg();
+    $("ltJoinCode").value = code;
+    if (!ltName()) { LT.status = "링크로 들어가려면 이름을 넣고 '들어가기'를 눌러 주세요"; ltRender(); return $("ltName").focus(); }
+    ltJoin(code);
+  };
+  setTimeout(go, 800);
+}
+addEventListener("hashchange", ltFromLink);
+ltFromLink();
 ltRender();
+setTimeout(ltScan, 1500);

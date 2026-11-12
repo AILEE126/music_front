@@ -23,10 +23,10 @@ function prepItem(it) {
   it._year = /^\d{4}/.test(it.date || "") ? it.date.slice(0, 4) : "";
 }
 const KARA_RE = /^(TJ|금영|DAM|UGA|JOYSOUND)$/;
-const STATES = {lyrics: "가사 있음", nolyrics: "가사 없음", ok: "싱크됨", need: "싱크 필요", stale: "싱크 다시", resync: "재싱크 필요", fail: "싱크 실패", memo: "특이사항",
+const STATES = {lyrics: "가사 있음", nolyrics: "가사 없음", ok: "싱크됨", need: "싱크 필요", stale: "싱크 다시", resync: "재싱크 필요", fail: "싱크 실패",
                 "src:namu": "나무위키 가사", "src:vocaro": "VL 가사", "src:own": "직접 넣은 가사", "src:link": "연결 가사"};
 const FKIND = {
-  text: ["검색", (it, v) => `${Object.values(it.nums || {}).join(" ")} ${it.title} ${it.kara_title || ""} ${it.orig} ${it.reading} ${it.artist} ${it.singer} ${it.name} ${(it.memo || {}).text || ""}`.normalize("NFKC").toLowerCase().includes(fold(v))],
+  text: ["검색", (it, v) => `${Object.values(it.nums || {}).join(" ")} ${it.title} ${it.kara_title || ""} ${it.orig} ${it.reading} ${it.artist} ${it.singer} ${it.name}`.normalize("NFKC").toLowerCase().includes(fold(v))],
   ini: ["가나다", (it, v) => it._ini === v],
   singer: ["보컬", (it, v) => it._singers.includes(v)],
   solo: ["솔로", (it, v) => it._singers.length === 1 && it._singers[0] === v],
@@ -37,7 +37,7 @@ const FKIND = {
   year: ["년도", (it, v) => it._year === v],
   state: ["상태", (it, v) => v.startsWith("src:") ? it.lyrics === v.slice(4)
     : v === "lyrics" ? !!it.lyrics : v === "nolyrics" ? !it.lyrics : v === "ok" ? it.sync === "ok"
-    : v === "need" ? (it.site === "stream" ? !!(it.karaoke && it.sync !== "ok") : !!(it.lyrics && it.sync !== "ok")) : v === "stale" || v === "resync" ? it.sync === v : v === "fail" ? !!it.sync_fail : v === "memo" ? !!it.memo : false],
+    : v === "need" ? (it.site === "stream" ? !!(it.karaoke && it.sync !== "ok") : !!(it.lyrics && it.sync !== "ok")) : v === "stale" || v === "resync" ? it.sync === v : v === "fail" ? !!it.sync_fail : false],
 };
 /* 조건 칩 앞 작은 글자: 종류 (스트리밍 태그는 그 분류 — 시리즈·인원수) */
 const firstV = c => Array.isArray(c.v) ? c.v[0] || "" : c.v;
