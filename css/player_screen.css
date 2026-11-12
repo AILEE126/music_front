@@ -147,7 +147,7 @@ a.btn[hidden]{display:none}
 .ltrooms .ltempty{color:var(--muted);font-size:12.5px;padding:4px 2px}
 .ltrooms:empty{display:none}
 .ltroom{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px}
-.ltroom .who{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ltroom .who{font-weight:600;min-width:0;overflow-wrap:anywhere}  /* wraps, never '…' (user request) */
 .ltroom .meta{font-size:12px;color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ltroom button{height:30px}
 .ltroom .here{font-size:12px;color:var(--accent);font-weight:600}
@@ -157,9 +157,9 @@ a.btn[hidden]{display:none}
 #ltRoom .ltcopy{position:absolute;top:8px;right:8px}
 .ltmemhead{margin-top:12px;font-size:12px;color:var(--muted);text-align:center}
 #ltRoom .hint{text-align:center;margin-top:10px}
-.ltroomtitle{display:flex;align-items:center;justify-content:center;gap:8px;padding:4px 64px 0;font-size:21px;font-weight:700;min-width:0;overflow:hidden;white-space:nowrap}  /* centred, big (user request) */
+.ltroomtitle{display:flex;align-items:center;justify-content:center;gap:8px;padding:4px 64px 0;font-size:21px;font-weight:700;min-width:0}  /* centred, big (user request) */
 .ltroomtitle .ltico{width:19px;height:19px}
-.ltroomtitle .tt{overflow:hidden;text-overflow:ellipsis}
+.ltroomtitle .tt{min-width:0;overflow-wrap:anywhere;text-align:center}  /* long title wraps, never '…' (user request) */
 .ltpen{flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border:0;border-radius:6px;background:none;color:var(--muted);cursor:pointer}
 .ltpen:hover{color:var(--text);background:var(--chip)}
 #ltTitleIn{width:100%;max-width:340px;height:32px;font-size:17px;font-weight:700;text-align:center}

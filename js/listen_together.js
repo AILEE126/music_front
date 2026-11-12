@@ -564,8 +564,8 @@ function ltRender() {
   if (!LT.role) return;
   const hostName = LT.members[0] || (LT.role === "host" ? LT.me : "");
   const title = LT.title || (hostName ? `${hostName}님의 방` : "");
-  if (!LT.titleEdit) $("ltRoomTitle").innerHTML = `<span class="tt">${esc(title)}</span> ${ltLockSvg(LT.open)}${
-    LT.role === "host" ? `<button type="button" class="ltpen" title="방 제목 바꾸기">${ltPenSvg()}</button>` : ""}`;  // user request: title + lock, big and centred · host: ✏ renames
+  if (!LT.titleEdit) $("ltRoomTitle").innerHTML = `${ltLockSvg(LT.open)}<span class="tt">${esc(title)}</span>${
+    LT.role === "host" ? `<button type="button" class="ltpen" title="방 제목 바꾸기">${ltPenSvg()}</button>` : ""}`;  // user request: lock always before the title, big and centred · host: ✏ renames
   $("ltRoomHint").textContent = "곡 재생 제어는 방장만 가능합니다.";
   $("ltRoomHint").hidden = LT.role === "host";
   const mem = LT.members.length ? LT.members : [hostName];
@@ -638,8 +638,10 @@ function ltRenderPop() {
   if (!p) {
     p = document.createElement("div"); p.id = "ltReqPop"; p.className = "fddpop"; p.setAttribute("popover", "manual");
     p.innerHTML = '<div class="fdd-list"></div>'; document.body.appendChild(p);
-    p.querySelector(".fdd-list").onmousedown = e => {  // mousedown: keep focus in the search box
-      e.preventDefault();
+    const list = p.querySelector(".fdd-list");
+    list.onmousedown = e => e.preventDefault();  // keep focus in the search box
+    // choose on click, not mousedown (user request): hiding on mousedown let the rest of the tap land on 새로고침 under the box
+    list.onclick = e => {
       if (e.target.closest(".lt-back")) { ltOpt = null; ltHl = 0; return ltRenderPop(); }
       const o = e.target.closest(".fdd-opt"); if (!o) return;
       ltChoose(ltOpts()[+o.dataset.i]);
@@ -676,7 +678,7 @@ function ltChoose(o) {
   LT.reqPage = 9999;  // show the page with the newest one (clamped in render)
   if (LT.role === "host") ltHostRequest(o.it);
   else if (LT.host) ltSend(LT.host, {t: "req", key: keyOf(o.it), item: ltStrip(o.it)});  // the host's list comes right back
-  $("ltReqQ").value = ""; ltOpt = null; ltRenderPop(); ltRenderReqs();
+  ltRenderReqs();  // the songs stay open (user request: the box doesn't close on its own) — the request shows as 요청중 there
 }
 $("ltReqQ").addEventListener("input", () => { ltHl = 0; ltOpt = null; ltRenderPop(); });
 $("ltReqQ").addEventListener("focus", ltRenderPop);
