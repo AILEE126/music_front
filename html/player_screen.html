@@ -141,40 +141,39 @@
 <dialog id="listenDlg"><!-- 같이듣기 (listen_together.js) -->
   <div class="dlg-head">🎧 같이듣기</div>
   <div class="dlg-body">
-    <label class="rlabel">내 이름 <span class="req">(꼭 넣어야 방을 만들거나 들어갈 수 있어요)</span><input type="text" id="ltName" placeholder="이름 (한 글자도 돼요)" autocomplete="off" spellcheck="false" maxlength="40"></label>
+    <label class="ltfield"><span class="ltlabel"><span class="ltreq">*</span>닉네임</span>
+      <input type="text" id="ltName" autocomplete="off" spellcheck="false" maxlength="40">
+      <span class="lterr" id="ltNameErr" hidden>필수값입니다.</span></label>
     <div id="ltIdle">
       <div class="ltsec">
         <div class="ltsec-head">방 만들기</div>
         <div class="ltrow">
-          <div class="ltseg" role="radiogroup">
-            <label><input type="radio" name="ltKind" value="open" checked><span>🔓 공개방</span></label>
-            <label><input type="radio" name="ltKind" value="secret"><span>🔒 비밀방</span></label>
-          </div>
-          <input type="text" id="ltNewPw" placeholder="비밀번호 정하기" autocomplete="off" spellcheck="false" maxlength="20" hidden>
+          <button id="ltLock" class="ltlock" title="공개방 (누르면 비밀방)"></button>
+          <input type="text" id="ltTitle" placeholder="방 제목" autocomplete="off" spellcheck="false" maxlength="40">
+          <input type="text" id="ltNewPw" placeholder="비밀번호" autocomplete="off" spellcheck="false" maxlength="20" hidden>
           <button class="primary" id="ltMake">방 만들기</button>
         </div>
-        <p class="hint" id="ltKindHint"></p>
-      </div>
-      <div class="ltsec">
-        <div class="ltsec-head">번호로 들어가기</div>
-        <div class="ltrow"><input type="text" id="ltJoinCode" inputmode="numeric" placeholder="번호 6자리" autocomplete="off" maxlength="7"><button id="ltJoin">들어가기</button></div>
       </div>
     </div>
     <div id="ltRoom" hidden>
+      <button id="ltCopyLink" class="ltsmall ltcopy" title="방 바로가기 링크 복사">🔗 복사</button>
       <div class="ltroomtitle" id="ltRoomTitle"></div>
-      <div class="ltkind" id="ltKindNow"></div>
-      <div class="ltcode" id="ltCode"></div>
-      <div class="ltlink"><button id="ltCopyLink">🔗 바로 들어오는 링크 복사</button><span class="hint" id="ltPwNow"></span></div>
-      <p class="hint" id="ltRoomHint"></p>
+      <div class="ltmemhead">참여자 <span id="ltMemCount"></span></div>
       <ul class="ltmembers" id="ltMembers"></ul>
+      <p class="hint" id="ltRoomHint"></p>
+      <div class="ltrq" id="ltRq">
+        <ul class="ltreqlist" id="ltReqs"></ul>
+        <div class="ltpager" id="ltReqPager"></div>
+        <input type="search" id="ltReqQ" placeholder="신청곡 검색" autocomplete="off" spellcheck="false">
+      </div>
     </div>
     <div class="ltpwask" id="ltPwAsk" hidden>
-      <span>🔒 <b id="ltPwFor"></b> 비밀방이에요 — 비밀번호를 넣어 주세요</span>
+      <span><b id="ltPwFor"></b> 비밀번호를 넣어 주세요</span>
       <div class="ltrow"><input type="password" id="ltPwIn" placeholder="비밀번호" autocomplete="off" maxlength="20"><button class="primary" id="ltPwGo">들어가기</button><button id="ltPwNo">그만두기</button></div>
     </div>
     <p class="ltstatus" id="ltStatus" hidden></p>
     <div class="ltsec">
-      <div class="ltsec-head">열린 방 <button id="ltRefresh" class="ltsmall" title="방 목록 다시 찾기">↻ 새로고침</button></div>
+      <div class="ltsec-head">열린 방 <span class="ltscanat" id="ltScanAt"></span><button id="ltRefresh" class="ltsmall" title="방 목록 다시 찾기">↻ 새로고침</button></div>
       <ul class="ltrooms" id="ltRooms"></ul>
     </div>
   </div>

@@ -112,41 +112,84 @@ a.btn[hidden]{display:none}
 .rlist .ri:hover{background:var(--chip)}
 #reportText{width:100%;min-height:120px;resize:vertical;box-sizing:border-box}
 /* 같이듣기 창 */
-#listenDlg{width:min(440px,94vw)}
-#listenDlg .rlabel{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);margin-bottom:12px}
-#listenDlg .rlabel .req{font-size:11.5px}
-#listenDlg .rlabel.need input{border-color:var(--warn);box-shadow:0 0 0 1px var(--warn)}
+#listenDlg{width:min(460px,94vw)}
+#listenDlg .dlg-body{text-align:left}
 #listenDlg button{white-space:nowrap;flex:none}
+#listenDlg input[type=text],#listenDlg input[type=password]{height:32px;box-sizing:border-box;text-align:left}
+.ltfield{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.ltfield[hidden]{display:none}
+.ltlabel{font-size:13px;color:var(--muted)}
+.ltreq{color:#ff5a5a;margin-right:3px;font-weight:700}  /* required mark (user request: red *) */
+.lterr{font-size:12px;color:#ff5a5a}
+.ltfield.need input{border-color:#ff5a5a;box-shadow:0 0 0 1px #ff5a5a}
 .ltsec{border-top:1px solid var(--line);padding:10px 0 4px}
 .ltsec-head{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:6px}
-.ltsec-head .ltsmall{margin-left:auto}
+.ltsec-head .ltscanat{margin-left:auto;font-size:11.5px;font-weight:400;color:var(--muted)}
 .ltsmall{padding:2px 8px;font-size:12px;font-weight:400}
-#listenDlg .ltrow{display:flex;align-items:center;gap:8px;margin:6px 0}
+#listenDlg .ltrow{display:flex;align-items:center;gap:6px;margin:6px 0}
+#listenDlg .ltrow button{height:32px}
 #listenDlg .hint{margin:4px 0 0}
-.ltseg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
-.ltseg label{cursor:pointer}
-.ltseg input{position:absolute;opacity:0;pointer-events:none}
-.ltseg span{display:block;padding:6px 12px;font-size:13px;white-space:nowrap;color:var(--muted)}
-.ltseg input:checked+span{background:var(--chip);color:var(--text);font-weight:600}
-.ltseg label+label span{border-left:1px solid var(--line)}
-#ltJoinCode,.ltroom input{width:8em;height:32px;box-sizing:border-box;font-size:13px;text-align:center}
-#ltJoinCode:not(:placeholder-shown),.ltroom input:not(:placeholder-shown){font:600 16px ui-monospace,Consolas,monospace;letter-spacing:.2em}  /* digits spaced, placeholder plain */
-#listenDlg .ltrow button,.ltroom button{height:32px}
+.ltlock{width:36px;padding:0;display:inline-flex;align-items:center;justify-content:center}
+.ltico{color:#fff;flex:none;vertical-align:-2px}  /* white single-colour lock (user request) */
+#ltTitle{flex:1;min-width:0}
+#ltNewPw{width:7.5em}
+#ltPwIn{width:10em}
 .ltrooms{list-style:none;margin:0;padding:0;max-height:220px;overflow:auto}
 .ltrooms .empty{color:var(--muted);font-size:12.5px;padding:6px 2px}
 .ltroom{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px}
 .ltroom .who{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ltroom .meta{font-size:12px;color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ltkind{text-align:center;font-size:13px;color:var(--muted)}
-.ltroomtitle{text-align:center;font-size:17px;font-weight:700;margin-bottom:2px}
-.ltlink{display:flex;flex-direction:column;align-items:center;gap:4px;margin:4px 0 8px}
-#ltNewPw{width:9em;height:32px;box-sizing:border-box}
-#ltPwIn{width:10em;height:32px;box-sizing:border-box}
-.ltpwask{margin-top:10px;padding:10px;border:1px solid var(--accent);border-radius:8px;font-size:13px}
+.ltroom button{height:30px}
 .ltroom .here{font-size:12px;color:var(--accent);font-weight:600}
-.ltcode{font-size:40px;font-weight:700;letter-spacing:.12em;text-align:center;color:var(--accent);margin:6px 0}
-.ltmembers{margin:8px 0 0;padding-left:20px;line-height:1.7}
-.ltmembers .r{font-size:12px;color:var(--muted)}
+.ltroom.here{border-color:var(--accent);background:var(--accent-soft)}
+/* my room: a card that stands apart from the room list (user request) */
+#ltRoom{position:relative;padding:16px 14px 14px;margin-bottom:16px;border:1px solid var(--accent);border-radius:10px;background:var(--accent-soft)}
+#ltRoom .ltcopy{position:absolute;top:8px;right:8px}
+.ltmemhead{margin-top:12px;font-size:12px;color:var(--muted);text-align:center}
+#ltRoom .hint{text-align:center;margin-top:10px}
+.ltroomtitle{display:flex;align-items:center;justify-content:center;gap:8px;padding:4px 64px 0;font-size:21px;font-weight:700;min-width:0;overflow:hidden;white-space:nowrap}  /* centred, big (user request) */
+.ltroomtitle .ltico{width:19px;height:19px}
+.ltpwask{margin-top:10px;padding:10px;border:1px solid var(--accent);border-radius:8px;font-size:13px}
+.ltmembers{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
+.ltmembers li{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;background:var(--chip);font-size:13px}
+/* 곡 요청 */
+.ltrq{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.ltpager{display:flex;justify-content:flex-end;align-items:center;gap:4px;margin:2px 0 6px;font-size:12px;color:var(--muted)}
+.ltpager:empty{display:none}
+.ltpager button{height:22px;padding:0 7px;font-size:12px}
+#ltReqQ{width:100%;height:32px;box-sizing:border-box;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text)}
+/* search results: a dropdown like the main search (popover so it sits above the dialog) */
+#ltReqPop{margin:0;padding:0;color:var(--text);overflow:hidden}
+#ltReqPop .fdd-list{flex:1;min-height:0;overflow:auto}  /* only the list scrolls, never the box (the top was cut off) */
+#ltReqPop .fdd-grp{position:sticky;top:0;z-index:1;background:var(--card);margin:0 -4px;padding-left:10px;padding-right:10px}  /* group title stays on top while scrolling (user request) */
+#ltReqPop:not(:popover-open){display:none}
+#ltReqPop .fdd-opt{display:flex;align-items:center;gap:6px}
+#ltReqPop .fdd-opt .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#ltReqPop .fdd-opt .a{color:var(--muted);font-size:11.5px}
+#ltReqPop .lt-back{cursor:pointer}#ltReqPop .lt-back:hover{color:var(--text)}
+#ltReqPop .go{flex:none;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:6px;border:1px solid var(--line);background:var(--chip);color:var(--text);cursor:pointer}  /* looks like a button (user request) */
+#ltReqPop .fdd-opt:hover .go,#ltReqPop .fdd-opt.hl .go{background:var(--accent);color:var(--accent-text);border-color:var(--accent)}
+#ltReqPop .st{font-size:11px;padding:0 7px;border-radius:999px;white-space:nowrap;background:var(--chip);color:var(--muted)}
+#ltReqPop .st.wait{color:var(--warn)}#ltReqPop .st.queued{color:var(--ok)}
+/* 싱크 맞추는 순간 잠깐 (user request) */
+#ltSyncNote{position:fixed;inset:auto auto 18px 50%;transform:translateX(-50%);margin:0;padding:6px 14px;border:1px solid var(--line);border-radius:999px;
+  background:var(--card);color:var(--text);font-size:12.5px;box-shadow:0 6px 18px rgb(0 0 0 / .4)}
+#ltSyncNote:not(:popover-open){display:none}
+.ltreqlist{list-style:none;margin:0 0 6px;padding:0}
+.ltreqlist:empty{display:none}  /* no space kept for an empty list (user request) */
+.ltreqlist li{display:flex;align-items:center;gap:6px;padding:5px 4px;font-size:13px;border-radius:6px}
+.ltreqlist li:hover{background:var(--chip)}
+.ltreqlist li.empty{color:var(--muted);font-size:12.5px}
+.ltreqlist .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ltreqlist .a{color:var(--muted);font-size:12px}
+.ltreqlist .by{font-size:12px;color:var(--muted);white-space:nowrap}
+.ltreqlist .st{font-size:11.5px;padding:1px 8px;border-radius:999px;white-space:nowrap;background:var(--chip);color:var(--muted)}
+.ltreqlist .st.wait{color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn)}
+.ltreqlist .st.queued{color:var(--ok);box-shadow:inset 0 0 0 1px var(--ok)}
+.ltreqlist .st.playing{color:var(--accent-text);background:var(--accent)}
+.ltreqlist button{height:26px;padding:0 10px;font-size:12px}
+.ltmembers li.me{box-shadow:inset 0 0 0 1px var(--accent);font-weight:600}
+.ltcrown{color:#facc15;flex:none;vertical-align:-2px}  /* host: yellow crown (user request) */
 .ltstatus{margin:10px 0 0;color:var(--warn)}
 /* 같이듣기 손님: 재생 조작은 방장만 — 목록에서 곡을 눌러도 안 틂, 영상 클릭(재생/멈춤)도 막음 */
 body.lt-guest #list{cursor:not-allowed}
