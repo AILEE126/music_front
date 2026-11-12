@@ -18,6 +18,8 @@
    · 손님이 검색해서 요청 → '요청중' · 방장이 수락하면 '직접 넣은 곡'에 들어가고 '재생대기' →
      틀면 '재생중' → 다 틀고 다음 곡으로 넘어가면 사라짐. 요청곡과 상태는 방 안 모두에게 보임 (방장은 거절도 가능)
    · 대기열 (user request): 방장의 '직접 넣은 곡'·'다음 곡'을 손님도 그대로 받음 (중간에 끼워 넣은 곡도) — 손님은 대기열을 못 바꿈
+   · 방이 생기거나 닫히거나 인원이 바뀌면 다른 화면의 방 목록에 바로 보임 (user request): 열린 화면마다 'watch-<n>' 자리를 하나
+     맡아 두고(방 목록 찾기에 쓰는 peer), 방장이 그 자리들에 방 카드('room')·닫힘('gone')을 보냄 — 서버 없이 알리는 방법
    · 방 만들기 (user request 2026-11-12): 자물쇠 버튼 하나로 공개/비밀 전환 · 방 제목 지정 · 번호로 들어가기 없음 (목록·링크로만)
    서버가 없는 화면이라 브라우저끼리 바로 잇는 WebRTC(PeerJS — 번호로 서로 찾는 일만 PeerJS 공개 서버)를 씀.
    player_screen.js 다음에 읽음 (SHELL·audio·keyOf·LIB·OFFDIR·ONLINE 을 씀) */
@@ -25,6 +27,8 @@ const LT_PEERJS = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
 const LT_PREFIX = "ailee126-noinjeong-lt-";  // PeerJS id = 이 앞머리 + 번호
 const LT_SLOTS = 8;  // room list: each open room also holds one "lobby-<n>" id that answers who/what (no server to list rooms)
 const ltSlotId = i => LT_PREFIX + "lobby-" + i;
+const LT_WATCH = 16;  // open players that get told at once when a room appears / closes / changes
+const ltWatchId = i => LT_PREFIX + "watch-" + i;
 const LT = {uid: Math.random().toString(36).slice(2), role: "", code: "", me: "", open: true, pw: "", title: "", lock: false, linkCode: "", lobby: null, lobbyAt: 0, peer: null, conns: new Map(), host: null,
   members: [], status: "", lastHeard: 0, lostAt: 0, retryAt: 0, ask: "", rtt: 0, align: 0, qsig: "", lead: 0, seekAt: 0, reqs: []};  // ask: code of a secret room waiting for its password
 const LT_SILENT = 70000;   // 방장 소식이 이만큼 없으면 끊긴 것으로 봄 (뒤에 깔린 탭은 브라우저가 타이머를 1분에 한 번까지 늦춤)
@@ -120,6 +124,7 @@ function ltMembers() {
   const m = {t: "members", list: LT.members, title: LT.title, open: LT.open};
   LT.conns.forEach((_, c) => ltSend(c, m));
   ltRender();
+  ltAnnounceSoon();  // room opened / someone came or left → other screens at once
 }
 async function ltHost(open, pw, title) {
   if (ltNeedName()) return;
@@ -188,7 +193,7 @@ function ltLobby(i) {
     c.on("open", () => {
       const it = SHELL.now;
       // secret rooms show their code too: the password set by the host is what keeps them closed
-      ltSend(c, {t: "room", name: LT.me, members: LT.members.slice(1), title: LT.title, open: LT.open, code: LT.code, n: (LT.members.length || 1), song: it ? (it.title || "") : ""});
+      ltSend(c, ltCard());
       setTimeout(() => { try { c.close(); } catch (e) {} }, 1500);
     });
   });
@@ -228,6 +233,22 @@ function ltReqFollow() {
   });
   if (LT.reqs.map(r => r.id + r.state).join() !== before) ltSendReqs();
 }
+function ltCard() {  // this room as the room list shows it
+  const it = SHELL.now;
+  return {t: "room", name: LT.me, members: LT.members.slice(1), title: LT.title, open: LT.open, code: LT.code, n: (LT.members.length || 1), song: it ? (it.title || "") : ""};
+}
+/* tell every open player (their watch-<n> peer) about my room at once */
+function ltAnnounce(m) {
+  const p = LTS.peer;
+  if (!p || !p.open || p.destroyed) return;
+  for (let i = 0; i < LT_WATCH; i++) {
+    if (ltWatchId(i) === p.id) continue;
+    const c = p.connect(ltWatchId(i), {reliable: true});
+    c.on("open", () => { ltSend(c, m); setTimeout(() => { try { c.close(); } catch (e) {} }, 1000); });
+  }
+}
+let ltAnnT = 0;
+function ltAnnounceSoon() { clearTimeout(ltAnnT); ltAnnT = setTimeout(() => { if (LT.role === "host" && LT.code) ltAnnounce(ltCard()); }, 400); }
 function ltLobbyStop() { const p = LT.lobby; LT.lobby = null; if (p) try { p.destroy(); } catch (e) {} }
 function ltHostLost() {
   if (!LT.lostAt) LT.lostAt = Date.now();
@@ -356,7 +377,7 @@ function ltErrText(e) {
   return "같이듣기 연결 오류 (" + (e.type || e.message || e) + ")";
 }
 function ltLeave(quiet) {
-  if (LT.role === "host") LT.conns.forEach((_, c) => ltSend(c, {t: "bye"}));
+  if (LT.role === "host") { LT.conns.forEach((_, c) => ltSend(c, {t: "bye"})); clearTimeout(ltAnnT); ltAnnounce({t: "gone", code: LT.code}); }
   ltLobbyStop();
   const peer = LT.peer;
   LT.peer = null; LT.role = ""; LT.code = ""; LT.host = null; LT.members = []; LT.reqs = []; LT.reqPage = 0; LT.lead = 0; LT.conns = new Map(); LT.lostAt = 0; LT.retryAt = 0;
@@ -453,13 +474,7 @@ function ltScan(again) {
     };
     if (LTS.peer && LTS.peer.open && !LTS.peer.destroyed) return ask(LTS.peer);
     ltScanPeerDrop();
-    const p = LTS.peer = new Peer();
-    p.on("open", () => { if (LTS.peer === p) ask(p); });
-    p.on("error", e => {
-      if (LTS.peer !== p) return;
-      if (e.type === "peer-unavailable") return;  // empty slot
-      ltScanPeerDrop(); finish();
-    });
+    ltWatchPeer(0, p => p ? ask(p) : finish());
     setTimeout(finish, 9000);
   });
 }
@@ -473,12 +488,33 @@ function ltNow() {
   const d = new Date(), z = n => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`;
 }
+/* the room-list peer also takes a free watch-<n> id so hosts can tell this screen about rooms at once (none free → random id) */
+function ltWatchPeer(i, done) {
+  const p = LTS.peer = i < LT_WATCH ? new Peer(ltWatchId(i)) : new Peer();
+  let ok = false;
+  p.on("open", () => { if (LTS.peer !== p) return; ok = true; done(p); });
+  p.on("error", e => {
+    if (LTS.peer !== p) return;
+    if (e.type === "peer-unavailable") return;  // an empty lobby / watch slot
+    if (!ok && e.type === "unavailable-id") { p.destroy(); return ltWatchPeer(i + 1, done); }  // taken by another screen
+    if (!ok) { ltScanPeerDrop(); done(null); }
+  });
+  p.on("connection", c => c.on("data", ltWatchGot));
+}
+function ltWatchGot(m) {
+  if (!m || !m.code) return;
+  const rooms = (LTS.rooms || []).filter(r => r.code !== m.code);
+  if (m.t === "room") rooms.push(m);
+  else if (m.t !== "gone") return;
+  LTS.rooms = rooms; LTS.done = ltNow(); ltRender();
+}
 function ltScanPeerDrop() { const p = LTS.peer; LTS.peer = null; if (p) try { p.destroy(); } catch (e) {} }
 function ltRenderRooms() {
   const ul = $("ltRooms"), rooms = LTS.rooms;
   $("ltRefresh").disabled = LTS.busy;
   $("ltScanAt").textContent = LTS.busy ? "찾는 중…" : LTS.done ? `마지막 갱신 ${LTS.done}` : "";
-  if (!rooms || !rooms.length) { ul.innerHTML = `<li class="empty">${!rooms || LTS.busy ? "방을 찾는 중…" : "지금 열린 방이 없습니다 — 방을 만들어 보세요"}</li>`; return; }
+  // 'ltempty', not 'empty': the page's global .empty (main song list) is centred with a 60px top margin
+  if (!rooms || !rooms.length) { ul.innerHTML = !rooms || LTS.busy ? "" : `<li class="ltempty">열린 방이 없습니다</li>`; return; }  // while looking: the header says 찾는 중…
   ul.innerHTML = rooms.map((r, i) => {
     const here = LT.role && r.code === LT.code;
     return `<li class="ltroom${here ? " here" : ""}">
@@ -541,13 +577,14 @@ function ltRenderReqs() {
   if (!LT.role) return;
   const host = LT.role === "host", n = LT.reqs.length, pages = Math.max(1, Math.ceil(n / LT_REQ_PAGE));
   LT.reqPage = Math.min(LT.reqPage || 0, pages - 1);
+  $("ltReqQ").hidden = host;  // user request: the host has no request search (adds to the queue directly)
   const shown = LT.reqs.slice(LT.reqPage * LT_REQ_PAGE, (LT.reqPage + 1) * LT_REQ_PAGE);
   $("ltReqs").innerHTML = n ? shown.map(r => `<li data-id="${esc(r.id)}">
       <span class="t">${esc(r.title)}${r.artist ? ` <span class="a">${esc(shortName(r.artist))}</span>` : ""}</span>
       <span class="by">${esc(r.by)}</span>
       <span class="st ${r.state}">${LT_REQ_STATE[r.state] || r.state}</span>
       ${host && r.state === "wait" ? `<button class="primary ok">수락</button><button class="no">거절</button>` : ""}
-    </li>`).join("") : "";  // empty: nothing (user request — no reserved space, no notice)
+    </li>`).join("") : host ? `<li class="ltempty">신청곡이 없습니다</li>` : "";  // guest: nothing (search box below) · host: no search, so say it
   $("ltReqPager").innerHTML = pages > 1
     ? `<button data-p="-1"${LT.reqPage ? "" : " disabled"}>‹</button>${LT.reqPage + 1} / ${pages}<button data-p="1"${LT.reqPage < pages - 1 ? "" : " disabled"}>›</button>` : "";
   if ($("ltReqPop") && $("ltReqPop").matches(":popover-open")) ltRenderPop();
