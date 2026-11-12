@@ -110,9 +110,31 @@ a.btn[hidden]{display:none}
 /* 같이듣기 창 */
 #listenDlg{width:min(440px,94vw)}
 #listenDlg .rlabel{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);margin-bottom:12px}
-#listenDlg .ltrow{display:flex;align-items:center;gap:8px;margin:10px 0}
-#listenDlg .ltrow .hint{font-size:12px;color:var(--muted)}
-#ltJoinCode{width:9em;font-size:18px;letter-spacing:.15em;text-align:center}
+#listenDlg .rlabel .req{font-size:11.5px}
+#listenDlg .rlabel.need input{border-color:var(--warn);box-shadow:0 0 0 1px var(--warn)}
+#listenDlg button{white-space:nowrap;flex:none}
+.ltsec{border-top:1px solid var(--line);padding:10px 0 4px}
+.ltsec-head{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:6px}
+.ltsec-head .ltsmall{margin-left:auto}
+.ltsmall{padding:2px 8px;font-size:12px;font-weight:400}
+#listenDlg .ltrow{display:flex;align-items:center;gap:8px;margin:6px 0}
+#listenDlg .hint{margin:4px 0 0}
+.ltseg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.ltseg label{cursor:pointer}
+.ltseg input{position:absolute;opacity:0;pointer-events:none}
+.ltseg span{display:block;padding:6px 12px;font-size:13px;white-space:nowrap;color:var(--muted)}
+.ltseg input:checked+span{background:var(--chip);color:var(--text);font-weight:600}
+.ltseg label+label span{border-left:1px solid var(--line)}
+#ltJoinCode,.ltroom input{width:8em;height:32px;box-sizing:border-box;font-size:13px;text-align:center}
+#ltJoinCode:not(:placeholder-shown),.ltroom input:not(:placeholder-shown){font:600 16px ui-monospace,Consolas,monospace;letter-spacing:.2em}  /* digits spaced, placeholder plain */
+#listenDlg .ltrow button,.ltroom button{height:32px}
+.ltrooms{list-style:none;margin:0;padding:0;max-height:220px;overflow:auto}
+.ltrooms .empty{color:var(--muted);font-size:12.5px;padding:6px 2px}
+.ltroom{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px}
+.ltroom .who{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ltroom .meta{font-size:12px;color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ltroom .code{display:flex;gap:6px;width:100%;justify-content:flex-end}
+.ltkind{text-align:center;font-size:13px;color:var(--muted)}
 .ltcode{font-size:40px;font-weight:700;letter-spacing:.12em;text-align:center;color:var(--accent);margin:6px 0}
 .ltmembers{margin:8px 0 0;padding-left:20px;line-height:1.7}
 .ltmembers .r{font-size:12px;color:var(--muted)}

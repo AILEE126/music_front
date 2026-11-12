@@ -150,12 +150,30 @@
 <dialog id="listenDlg"><!-- 같이듣기 (listen_together.js) -->
   <div class="dlg-head">🎧 같이듣기</div>
   <div class="dlg-body">
-    <label class="rlabel">내 이름<input type="text" id="ltName" placeholder="이름 (오류 신고의 보내는 사람과 같음)" autocomplete="off" spellcheck="false" maxlength="40"></label>
+    <label class="rlabel">내 이름 <span class="req">(꼭 넣어야 방을 만들거나 들어갈 수 있어요)</span><input type="text" id="ltName" placeholder="이름 (한 글자도 돼요)" autocomplete="off" spellcheck="false" maxlength="40"></label>
     <div id="ltIdle">
-      <div class="ltrow"><button class="primary" id="ltMake">방 만들기</button><span class="hint">번호가 새로 나옵니다 — 그 번호를 알려 주면 같이 들을 수 있어요</span></div>
-      <div class="ltrow"><input type="text" id="ltJoinCode" inputmode="numeric" placeholder="받은 번호 6자리" autocomplete="off" maxlength="7"><button id="ltJoin">들어가기</button></div>
+      <div class="ltsec">
+        <div class="ltsec-head">방 만들기</div>
+        <div class="ltrow">
+          <div class="ltseg" role="radiogroup">
+            <label><input type="radio" name="ltKind" value="open" checked><span>🔓 공개방</span></label>
+            <label><input type="radio" name="ltKind" value="secret"><span>🔒 비밀방</span></label>
+          </div>
+          <button class="primary" id="ltMake">방 만들기</button>
+        </div>
+        <p class="hint" id="ltKindHint"></p>
+      </div>
+      <div class="ltsec">
+        <div class="ltsec-head">열린 방 <button id="ltRefresh" class="ltsmall" title="방 목록 다시 찾기">↻ 새로고침</button></div>
+        <ul class="ltrooms" id="ltRooms"></ul>
+      </div>
+      <div class="ltsec">
+        <div class="ltsec-head">번호로 들어가기</div>
+        <div class="ltrow"><input type="text" id="ltJoinCode" inputmode="numeric" placeholder="번호 6자리" autocomplete="off" maxlength="7"><button id="ltJoin">들어가기</button></div>
+      </div>
     </div>
     <div id="ltRoom" hidden>
+      <div class="ltkind" id="ltKindNow"></div>
       <div class="ltcode" id="ltCode"></div>
       <p class="hint" id="ltRoomHint"></p>
       <ul class="ltmembers" id="ltMembers"></ul>
