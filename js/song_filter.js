@@ -26,7 +26,8 @@ const KARA_RE = /^(TJ|금영|DAM|UGA|JOYSOUND)$/;
 const STATES = {lyrics: "가사 있음", nolyrics: "가사 없음", ok: "싱크됨", need: "싱크 필요", stale: "싱크 다시", resync: "재싱크 필요", fail: "싱크 실패",
                 "src:namu": "나무위키 가사", "src:vocaro": "VL 가사", "src:own": "직접 넣은 가사", "src:link": "연결 가사"};
 const FKIND = {
-  text: ["검색", (it, v) => `${Object.values(it.nums || {}).join(" ")} ${it.title} ${it.kara_title || ""} ${it.orig} ${it.reading} ${it.artist} ${it.singer} ${it.name}`.normalize("NFKC").toLowerCase().includes(fold(v))],
+  // fold drops spaces (user request: no-space query matches) — fields joined by "" so a match never spans two fields
+  text: ["검색", (it, v) => [...Object.values(it.nums || {}), it.title, it.kara_title, it.orig, it.reading, it.artist, it.singer, it.name].map(fold).join("").includes(fold(v))],
   ini: ["가나다", (it, v) => it._ini === v],
   singer: ["보컬", (it, v) => it._singers.includes(v)],
   solo: ["솔로", (it, v) => it._singers.length === 1 && it._singers[0] === v],

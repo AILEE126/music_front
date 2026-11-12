@@ -68,10 +68,10 @@ function lyrCols(g, head, roles) {
   return `<div class="lcols" style="--n:${g.cols.length}">` + g.cols.map(c => `<div class="lcol">${head ? head(c.part) : ""}${
     c.lines.filter(l => !roles || roles.includes(l.role)).map(l => lyrLine(l.role, l.text, c.vc)).join("")}</div>`).join("") + "</div>";
 }
-/* 검색 비교용: 대소문자·전각/반각(Ｍｉｒｒｏｒ = mirror) 무시 — 모든 찾기 칸이 씀 */
+/* 검색 비교용: 대소문자·전각/반각(Ｍｉｒｒｏｒ = mirror)·띄어쓰기 무시 — 모든 찾기 칸이 씀 (User request: no-space query still matches) */
 /* 화면 표시용: 같은 글자가 10번 넘게 이어지면 '누×53' 처럼 줄임 (프로듀서 '누누누…' 같은 긴 이름). mp3 태그·검색·필터 값은 그대로 */
 const shortName = s => String(s ?? "").replace(/(.)\1{9,}/gu, (m, c) => `${c}×${[...m].length}`);
-const fold = s => String(s ?? "").normalize("NFKC").toLowerCase();
+const fold = s => String(s ?? "").normalize("NFKC").toLowerCase().replace(/\s+/g, "");
 /* 우클릭 메뉴 (곡 연결·플레이어 곡 목록): items [{label, href} 링크 | {label, fn} 누르면 실행 | {label, sub: [...]} 하위 메뉴 | {label} 흐리게].
    마우스 자리에 띄우고 고르거나·밖을 누르거나·Esc·스크롤·창 크기 바꾸면 닫힘 */
 function ctxMenu(e, items) {
