@@ -14,6 +14,10 @@ html,body{height:100%}
 .side-head h1{font-size:18px;margin:0}
 .side-head h1.rainbow{display:inline-block;font-size:22px;font-weight:900;letter-spacing:1px;color:transparent;-webkit-background-clip:text;background-clip:text;
   background-image:linear-gradient(135deg,#ff0000 0%,#ff8000 17%,#ffff00 33%,#00c000 50%,#0080ff 67%,#4000ff 83%,#c000ff 100%)}
+.side-head h1 .t-simple{display:none}
+body.simple .side-head h1 .t-full{display:none}
+body.simple .side-head h1 .t-simple{display:inline}
+body.simple .side-head h1.rainbow{background:none;color:var(--text);-webkit-text-fill-color:currentColor}  /* 간단: plain text color */
 .side-head .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 .filters{display:flex;gap:6px;margin-top:8px}
 .filters select{flex:1}
@@ -305,3 +309,10 @@ body.simple #lyrics .vcm{background:none;-webkit-text-fill-color:currentColor}
 /* background-play notice: the one warning line bigger (user: hard to read) · text field + 📋 copy button in one row */
 .offdlg .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .offdlg .offerr{margin-top:10px;color:var(--err);white-space:pre-wrap;min-height:1em}
+/* 새 버전 알림 (version_check.js) */
+#vcNotice{position:fixed;inset:auto 16px 16px auto;margin:0;max-width:min(420px,calc(100vw - 32px));padding:12px 14px;border:1px solid var(--accent);border-radius:10px;
+  background:var(--card);color:var(--text);box-shadow:0 10px 30px rgb(0 0 0 / .45);display:flex;flex-direction:column;gap:8px;font-size:13px;line-height:1.5}
+#vcNotice:not(:popover-open):not(.vc-fallback){display:none}
+#vcNotice.vc-fallback{z-index:1000}
+#vcNotice .vc-btns{display:flex;gap:8px;justify-content:flex-end}
+#vcNotice button{white-space:nowrap}
