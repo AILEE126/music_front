@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>음원 플레이어</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><g fill='%23000000'><path d='M22 11L56 4V14L22 21Z'/><rect x='22' y='11' width='6' height='38'/><rect x='50' y='4' width='6' height='38'/><ellipse cx='17' cy='49' rx='11' ry='8' transform='rotate(-20 17 49)'/><ellipse cx='45' cy='42' rx='11' ry='8' transform='rotate(-20 45 42)'/></g></svg>">  <!-- 탭 아이콘: 검정 단색 음표 -->
+<script>try{if(JSON.parse(localStorage.getItem("player.theme"))==="light")document.documentElement.dataset.theme="light"}catch(e){}</script>  <!-- theme before first paint (no dark flash) -->
 <link rel="stylesheet" href="../css/shared_screen_style.css">
 <link rel="stylesheet" href="../css/player_screen.css">
 </head>
@@ -12,7 +13,7 @@
 <div class="app">
   <aside class="side">
     <div class="side-head">
-      <div class="top"><h1 class="rainbow"><span class="t-full">사이버첨단노인정</span><span class="t-simple" hidden>음악플레이어</span></h1></div>  <!-- user request: name + diagonal rainbow text (old PPT style); 간단 mode: "음악플레이어" in plain text color -->
+      <div class="top"><h1 class="rainbow"><span class="t-full">사이버첨단노인정</span><span class="t-simple" hidden>음악플레이어</span></h1><button class="ib" id="btnTheme" title="밝은 화면 / 어두운 화면" aria-label="밝은 화면 / 어두운 화면 바꾸기"><svg class="moon" viewBox="0 0 24 24" fill="currentColor"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg><svg class="sun" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4.6"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"/></g></svg></button></div>  <!-- user request: theme toggle at the right end of the title row — moon in dark mode, sun in light mode (single color) -->  <!-- user request: name + diagonal rainbow text (old PPT style); 간단 mode: "음악플레이어" in plain text color -->
       <div class="searchbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input type="search" id="q" placeholder="제목·가수 검색" title="제목·원제·발음·가수로 찾기 · Enter 를 누르면 검색어를 필터 조건으로"></div>
       <div class="filters">

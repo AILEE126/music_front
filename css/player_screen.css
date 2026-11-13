@@ -395,3 +395,37 @@ body.simple #lyrics .vcm{background:none;-webkit-text-fill-color:currentColor}
 #vcNotice.vc-fallback{z-index:1000}
 #vcNotice .vc-btns{display:flex;gap:8px;justify-content:flex-end}
 #vcNotice button{white-space:nowrap}
+
+/* 라이트 모드 (user request: moon/sun button at the right end of the title row; every color incl. 간단 mode must look natural).
+   html[data-theme=light] swaps the color tokens; the few fixed colors made for a dark background get a light-mode value here. */
+:root{--track:rgb(255 255 255 / .25);--knob:#fff;--tint-to:#fff;--tint-k:78%;--icon-strong:#fff;--crown:#facc15}
+html[data-theme=light]{color-scheme:light;--accent-rgb:58 58 62;--accent-text:rgb(250 250 251);--bg:rgb(242 242 244);--card:rgb(251 251 252);--text:rgb(50 50 56);--muted:rgb(108 108 116);
+  --line:rgb(220 220 226);--chip:rgb(236 236 240);--hl:rgb(var(--accent-rgb) / .07);--warn:#b45309;--err:#dc2626;--ok:#15803d;--warn-bg:#fef3c7;
+  --log-bg:rgb(246 246 248);--log-text:#334155;--sb-thumb:rgb(196 196 202);--sb-thumb-hover:rgb(160 160 168);
+  --track:rgb(0 0 0 / .16);--knob:rgb(58 58 62);--tint-to:#000;--tint-k:62%;--icon-strong:rgb(50 50 56);--crown:#ca8a04}
+.bar-range::-webkit-slider-runnable-track{background:linear-gradient(to right,var(--text) var(--p),var(--track) var(--p))}
+.bar-range:hover::-webkit-slider-runnable-track{background:linear-gradient(to right,var(--accent) var(--p),var(--track) var(--p))}
+.bar-range::-webkit-slider-thumb{background:var(--knob)}
+.bar-range::-moz-range-track{background:var(--track)}
+.bar-range::-moz-range-thumb{background:var(--knob)}
+.item .no,.songmeta .b.kara{color:color-mix(in srgb,var(--bc) var(--tint-k),var(--tint-to))}
+.ltico{color:var(--icon-strong)}
+.ltcrown{color:var(--crown)}
+/* vocal colors come from Namu (made for dark pages): darken them on a light page so yellow/cyan stay readable */
+html[data-theme=light] .vc:not(.vcm){color:color-mix(in srgb,var(--vc) 62%,#000)!important}
+html[data-theme=light] .vcm{filter:brightness(.62) saturate(1.2)}
+html[data-theme=light] .songmeta .b.vocal,html[data-theme=light] .songmeta .b.inner.ko,html[data-theme=light] .songmeta .b.inner.ja{color:color-mix(in srgb,var(--vc) 62%,#000)}
+html[data-theme=light] .songmeta .b.inner.ko{--vc:rgb(120 120 132)}
+html[data-theme=light] .g .part i{box-shadow:0 0 0 1px rgba(0,0,0,.25)}
+html[data-theme=light] .side-head h1.rainbow{background-image:linear-gradient(135deg,#e00000 0%,#e06a00 17%,#c9a400 33%,#009a00 50%,#0068d6 67%,#3a00d6 83%,#a000d6 100%)}  /* deeper rainbow: pure yellow vanishes on white */
+html[data-theme=light] .ctxm,html[data-theme=light] .fddpop,html[data-theme=light] .qp{box-shadow:0 8px 24px rgba(0,0,0,.14)}
+/* simple mode overrides must win over the light vocal-color rule above */
+html[data-theme=light] body.simple #lyrics .g.cur .o,html[data-theme=light] body.simple #lyrics .o.vc,html[data-theme=light] body.simple #lyrics .t.vc{color:var(--text)!important}
+html[data-theme=light] body.simple #lyrics .r.vc{color:var(--muted)!important}
+html[data-theme=light] body.simple #lyrics .vcm{filter:none}
+html[data-theme=light] body.simple .side-head h1.rainbow{background:none}
+/* 테마 버튼: 제목 줄 오른쪽 끝, 단색 달(어두운 화면) / 해(밝은 화면) */
+#btnTheme{flex:none;padding:4px}
+#btnTheme svg{width:18px;height:18px}
+#btnTheme .sun,html[data-theme=light] #btnTheme .moon{display:none}
+html[data-theme=light] #btnTheme .sun{display:block}

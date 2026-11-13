@@ -838,6 +838,13 @@ function applySimple() {
 }
 $("btnSimple").onclick = () => { SIMPLE = !SIMPLE; store.set("simple", SIMPLE); applySimple(); showVideo(); renderRows(true); SHELL.notify(); };  // 썸네일이 빠져 줄 높이가 바뀜 → 다시 잼 · 오버레이 글자색도 바로
 applySimple();
+/* 라이트 모드 (제목 줄 오른쪽 끝 달/해 버튼): html[data-theme=light] 로 색 토큰을 바꿈 — 기억함 (첫 그림 전 적용은 player_screen.html <head>) */
+function applyTheme(t) {
+  if (t === "light") document.documentElement.dataset.theme = "light"; else delete document.documentElement.dataset.theme;
+  $("btnTheme").title = t === "light" ? "어두운 화면으로" : "밝은 화면으로";
+}
+$("btnTheme").onclick = () => { const t = store.get("theme", "dark") === "light" ? "dark" : "light"; store.set("theme", t); applyTheme(t); };
+applyTheme(store.get("theme", "dark"));
 function showVideo() {
   const on = VID.on && !!cur && !SIMPLE, playing = !!cur && !!SHELL.now && keyOf(SHELL.now) === keyOf(cur);
   const live = on && playing && audio.bridged && !audio.error;
