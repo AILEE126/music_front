@@ -48,11 +48,13 @@ function vcShow(sha) {
   const again = tried === sha;  // already refreshed for this version and still old → the file server hasn't caught up yet
   const box = document.createElement("div");
   box.id = "vcNotice"; box.setAttribute("popover", "manual");
-  box.innerHTML = `<b>🔄 ${local ? "GitHub 의 화면과 다릅니다" : "새 버전이 나왔어요"}</b>
+  // meme clip in the notice (user request; X "GIF" = mp4, saved in img/ so it doesn't depend on X)
+  box.innerHTML = `<video class="vc-gif" src="../img/hard_refresh.mp4" autoplay loop muted playsinline></video>
+    <b>🔄 ${local ? "GitHub 의 화면과 다릅니다" : "새 버전이 나왔어요"}</b>
     <span>${local ? "이 PC의 music_front 폴더가 예전 것이면 최신으로 받은 뒤(git pull) 새로고침해 주세요. (아직 올리지 않은 수정이 있어도 이렇게 보입니다)"
       : again ? "새로고침했는데도 아직 예전 화면이에요 — 몇 분 뒤 다시 새로고침하거나 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> 를 눌러 주세요."
       : "지금 새로고침하면 바뀐 화면이 나와요. (안 바뀌면 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>)"}</span>
-    <span class="vc-btns"><button class="primary" id="vcReload">지금 새로고침</button><button id="vcLater">나중에</button></span>`;
+    <span class="vc-btns"><button class="primary" id="vcReload">👉 강력 새로고침</button><button id="vcLater">나중에</button></span>`;
   document.body.appendChild(box);
   try { box.showPopover(); } catch (e) { box.classList.add("vc-fallback"); }
   $("vcLater").onclick = () => { try { box.hidePopover(); } catch (e) {} box.remove(); };  // asks again on the next newer version

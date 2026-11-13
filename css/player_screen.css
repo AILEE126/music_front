@@ -395,6 +395,8 @@ body.simple #lyrics .vcm{background:none;-webkit-text-fill-color:currentColor}
 #vcNotice.vc-fallback{z-index:1000}
 #vcNotice .vc-btns{display:flex;gap:8px;justify-content:flex-end}
 #vcNotice button{white-space:nowrap}
+#vcNotice .vc-gif{width:100%;max-height:200px;object-fit:contain;border-radius:6px;background:#000}
+body.simple #vcNotice .vc-gif{display:none}  /* 간단 mode: no meme clip (user request) */
 
 /* 라이트 모드 (user request: moon/sun button at the right end of the title row; every color incl. 간단 mode must look natural).
    html[data-theme=light] swaps the color tokens; the few fixed colors made for a dark background get a light-mode value here. */
