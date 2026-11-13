@@ -152,14 +152,14 @@ function renderVolume(btn, range, audio) {
 }
 
 /* ---- 가사 오버레이 설정 창 (⚙) ----
-   가사 오버레이 = programs\WEB\tools\lyrics_overlay.bat 로 켜는 파워쉘 창 (바탕 투명 · 어느 브라우저든). 이 창에서 바꾸면 곧바로 반영.
-   local_files.js 가 WEB\overlay\lyrics_overlay.json 에 씀 (깃허브에서 연 화면은 이 브라우저에만).
+   가사 오버레이 = tools\lyrics_overlay.bat 로 켜는 파워쉘 창 (바탕 투명 · 어느 브라우저든). 이 창에서 바꾸면 곧바로 반영.
+   local_files.js 가 오버레이의 창구(127.0.0.1:47613)로 보냄 → 오버레이가 overlay\lyrics_overlay.json 에 씀 (꺼져 있으면 이 브라우저에만).
    창이 열려 있는 동안은 editing_at 을 계속 알려 줌 → 오버레이가 붙일 프로그램과 상관없이 보이고 끌어 옮길 수 있음 (닫으면 원래대로) */
 const OVSET_DEFAULTS = {x: -1, y: -1, width: 1100, size: 22, outline: 2, opacity: 100, clickthrough: false, target: "ffxiv_dx11", info: true, editing_at: 0, quit_at: 0, enabled: true};
 async function openOverlaySettings() {
   let c, progs = [];
-  try { if (!await LOCAL.ovConnect()) return; } catch (e) { if (e.name !== "AbortError") uiAlert(e.message); return; }  // 깃허브에서 연 화면: 이 PC 의 WEB 폴더를 한 번 고름
-  try { c = {...OVSET_DEFAULTS, ...(await api("/api/ovset"))}; } catch (e) { return uiAlert(e.message); }
+  LOCAL.ovEnable();  // from now on this browser talks to the overlay (no folder picking — user request)
+  try { c ={...OVSET_DEFAULTS, ...(await api("/api/ovset"))}; } catch (e) { return uiAlert(e.message); }
   try { progs = (await api("/api/ovprograms")).items || []; } catch (e) {}
   const opts = progs.slice();
   if (c.target && !opts.some(p => p.exe === c.target.replace(/\.exe$/i, "")))
@@ -207,7 +207,7 @@ async function openOverlaySettings() {
 /* ---- 가사 오버레이 켜기/끄기 단추 (플레이어 툴바) ----
    오버레이 프로그램은 한 번 켜 두면 뒤에서 계속 돌고(서버를 켜면 서버가 띄움 · 서버 없이는 lyrics_overlay.bat 한 번),
    이 단추는 설정 파일의 enabled(보이기·숨기기)만 바꿈 → 어느 브라우저든, 서버가 없어도 바로 됨.
-   프로그램이 돌고 있는지: 6초마다 프로그램 목록 파일을 새로 씀 → 15초 안이면 돌고 있음.
+   프로그램이 돌고 있는지: 창구(127.0.0.1:47613)가 답하면 돌고 있음.
    프로그램이 꺼져 있을 때 '켜기': 'musicoverlay:' 링크 (못 켜 주는 브라우저면 bat 안내) */
 function bindOverlayPower(btn) {
   let alive = false, enabled = true, starting = 0;
@@ -227,8 +227,10 @@ function bindOverlayPower(btn) {
   };
   btn.onclick = async () => {
     if (starting) return;
-    try { if (!await LOCAL.ovConnect()) return; } catch (e) { if (e.name !== "AbortError") uiAlert(e.message); return; }  // 깃허브에서 연 화면: 이 PC 의 WEB 폴더를 한 번 고름
+    const first = !LOCAL.ovOn;
+    LOCAL.ovEnable();  // from now on this browser talks to the overlay (no folder picking — user request)
     await check();
+    if (first && on()) return show();  // first press while the bat-started overlay already shows: keep it on
     try { await post("/api/ovset", {enabled: !on()}); } catch (e) { return uiAlert(e.message); }
     if (on()) { enabled = false; return show(); }  // 끄기 = 숨기기 (프로그램은 뒤에서 계속 — 다시 켜면 바로)
     enabled = true;

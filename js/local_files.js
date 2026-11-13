@@ -231,77 +231,29 @@ const LOCAL = {
     if (["/api/now", "/api/ovset", "/api/ovprograms"].includes(u.pathname)) return this.overlay(u.pathname, post, body);
     throw new Error("플레이어에서 할 수 없는 일입니다 (싱크 만들기·가사 받기 등은 서버 PC 의 음원 관리에서).");
   },
-  /* ---- 가사 오버레이(WEB\tools\lyrics_overlay.bat)와 주고받는 파일: 이 PC 의 WEB\overlay 의
-     now_playing.json(지금 곡·가사 묶음) · lyrics_overlay.json(설정) · overlay_programs.json(오버레이가 6초마다 씀 — 켜져 있는지)
-     (WEB\overlay, not the data folder: a PC that only got the WEB zip has no data folder but can still run the overlay)
-     프로그램 폴더째 연 화면은 그 안의 WEB\overlay · 그 밖은 따로 한 번 고른 이 PC 의 WEB 폴더 (ovDir — 오버레이 단추·⚙ 를 누를 때 고름) ---- */
-  ovDir: null, ovBase: "",
-  get ovReady() { return !!this.ovPlace(); },
-  ovPlace() {
-    if (this.dir && this.base.endsWith(DATA_REPO_DIR))  // opened the program folder (or above) → its WEB\overlay
-      return {dir: this.dir, base: this.base.slice(0, -DATA_REPO_DIR.length) + "WEB/overlay/"};
-    return this.ovDir ? {dir: this.ovDir, base: this.ovBase} : null;
-  },
-  /* 지난번에 고른 오버레이 폴더를 권한이 남아 있으면 그대로 (물어보지 않음) */
-  async ovReopen() {
-    if (this.ovReady) return;
-    try {
-      const d = await idb("get", "overlay-dir");
-      if (d && await d.queryPermission({mode: "readwrite"}) === "granted") await this.ovUse(d);
-    } catch (e) {}
-  },
-  /* 오버레이 폴더 고르기 (단추를 누를 때만 — 브라우저가 그때만 물어봄): WEB 폴더 · WEB\overlay · 프로그램 폴더 아무거나 */
-  async ovConnect() {
-    if (this.ovReady) return true;
-    const saved = await idb("get", "overlay-dir").catch(() => null);
-    try {
-      if (saved && await saved.requestPermission({mode: "readwrite"}) === "granted") { await this.ovUse(saved); return true; }
-    } catch (e) {}
-    if (!window.showDirectoryPicker) throw new Error("이 브라우저는 폴더 읽고 쓰기를 지원하지 않습니다. 크롬이나 엣지로 여세요.");
-    // Users picked the wrong folder because the text said "WEB 폴더" (no such folder since the player moved to music_front)
-    if (!await uiConfirm("가사 오버레이와 지금 곡을 주고받으려면 이 PC 의 플레이어 폴더를 한 번 골라야 합니다.\n"
-      + "→ lyrics_overlay.bat 이 든 tools 폴더의 바로 위 폴더 (예: music_front, music_front-main)\n"
-      + "(브라우저가 '파일 보기·저장 허용'을 물으면 허용 — 다음부터는 묻지 않음)", "폴더 고르기")) return false;
-    const d = await showDirectoryPicker({id: "overlay", mode: "readwrite"});
-    await this.ovUse(d);
-    try { await idb("put", "overlay-dir", d); } catch (e) {}
-    return true;
-  },
-  async ovUse(d) {
-    // WEB\overlay inside the picked folder: WEB (has tools) → overlay/ · program folder (has WEB) → WEB/overlay/ · overlay itself → ""
-    // (overlay is not in git/zip → created on first write)
-    const has = async n => { try { await d.getDirectoryHandle(n); return true; } catch (e) { return false; } };
-    const b = await has("tools") ? "overlay/" : await has("WEB") ? "WEB/overlay/" : d.name === "overlay" ? "" : null;
-    if (b == null) throw new Error(await has("stream_bridge") || d.name === "tools"
-      ? `'${d.name}' 폴더 안이 아니라 한 칸 위 폴더(tools 가 들어 있는 플레이어 폴더)를 골라 주세요.`
-      : `'${d.name}' 폴더는 플레이어 폴더가 아닙니다. tools 폴더가 들어 있는 폴더(예: music_front)를 골라 주세요.`);
-    this.ovDir = d; this.ovBase = b;
-  },
+  /* ---- 가사 오버레이(tools\lyrics_overlay.bat)와 주고받기: 오버레이가 이 PC 에 여는 창구 http://127.0.0.1:47613 ----
+     User request: the overlay must work by just running the bat — no folder picking in the player.
+     /now (지금 곡·가사 묶음) · /ovset (설정) · /ovprograms (창이 떠 있는 프로그램 목록 — 답이 오면 켜져 있음).
+     Only after the overlay button/⚙ was used once in this browser (ovOn): Chrome asks "local network access" on the first
+     request, so players who never use the overlay never see that prompt. */
+  ovOn: false, ovFailAt: 0,
+  ovEnable() { this.ovOn = true; store.set("ovOn", true); },
+  async ovReopen() { this.ovOn = store.get("ovOn", false); },
   async overlay(path, post, body) {
-    const at = this.ovPlace();
-    if (!at) {  // 깃허브에서 연 화면인데 아직 오버레이 폴더를 안 고름: 알림은 버리고, 설정은 이 브라우저에만
+    const local = () => {  // overlay not running (or never used): drop the song notice, keep settings in this browser
       if (path === "/api/now") return {ok: true};
       if (path === "/api/ovset") { if (post) store.set("ovset", {...store.get("ovset", {}), ...body}); return {...OVSET_DEFAULTS, ...store.get("ovset", {})}; }
-      return {items: [], running: false, updated: 0, need: true};  // need: 폴더를 골라야 함
-    }
-    const io = at.dir === this.dir ? this : {  // separately picked WEB folder (GitHub mode, or data folder opened alone)
-      file: (p, c = false) => this.file(p, at.dir, c),
-      async readText(p) { return (await (await this.file(p)).getFile()).text(); },
-      async readJson(p, dflt) { try { return JSON.parse((await this.readText(p)).replace(/^\uFEFF/, "")); } catch (e) { return dflt; } },
-      async writeText(p, t) { const w = await (await this.file(p, true)).createWritable(); await w.write(t); await w.close(); },
-      async modified(p) { try { return (await (await this.file(p)).getFile()).lastModified; } catch (e) { return 0; } },
+      return {items: [], running: false};
     };
-    const f = n => at.base + n;
-    if (path === "/api/now") { await io.writeText(f("now_playing.json"), JSON.stringify({...body, at: Date.now()})); return {ok: true}; }
-    if (path === "/api/ovset") {
-      const cur = {...OVSET_DEFAULTS, ...(await io.readJson(f("lyrics_overlay.json"), {}))};
-      if (!post) return cur;
-      for (const k of Object.keys(OVSET_DEFAULTS)) if (k in body) cur[k] = body[k];
-      await io.writeText(f("lyrics_overlay.json"), JSON.stringify(cur, null, 1));
-      return cur;
-    }
-    const updated = await io.modified(f("overlay_programs.json"));  // 오버레이가 6초마다 새로 씀 → 15초 안이면 켜져 있음
-    return {items: await io.readJson(f("overlay_programs.json"), []), running: Date.now() - updated < 15000, updated};
+    // a failed song notice waits 10 s (no request every lyric line while the overlay is off)
+    if (!this.ovOn || (path === "/api/now" && Date.now() - this.ovFailAt < 10000)) return local();
+    try {
+      const r = await fetch("http://127.0.0.1:47613/" + path.slice(5),
+        post ? {method: "POST", body: JSON.stringify(path === "/api/now" ? {...body, at: Date.now()} : body)} : {});
+      if (!r.ok) throw new Error(r.status);
+      this.ovFailAt = 0;
+      return await r.json();
+    } catch (e) { this.ovFailAt = Date.now(); return local(); }
   },
   /* 니코니코 원곡 재생수 (서버의 stream_views 와 같은 요청): 중계 페이지의 니코니코 플레이어가 알려 준 값 — 저장하지 않음 */
   async streamViews(name) {

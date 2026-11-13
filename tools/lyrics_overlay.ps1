@@ -1,5 +1,5 @@
 ﻿# 가사 오버레이 — 바탕이 완전히 투명한 가사 창 (이 프로그램의 유일한 오버레이)
-# 플레이어가 지금 곡·가사 묶음을 WEB\overlay\now_playing.json 에 알려 주면 (서버로 열면 바깥 틀이 서버를 통해, 서버 없이 열면 플레이어가 직접)
+# 플레이어가 지금 곡·가사 묶음을 이 창의 창구(http://127.0.0.1:47613)로 알려 주면 overlay\now_playing.json 에 써 두고
 # 이 창이 읽어서 보여 줌. 브라우저 창이 아니라서 어느 브라우저를 써도 바탕 투명·클릭 통과가 됨.
 #
 # 실행: 한 번 켜 두면 뒤에서 계속 돌고(숨어 있을 때는 거의 일하지 않음), 화면의 '오버레이 켜기/끄기' 단추는 보이기·숨기기만 함
@@ -206,6 +206,82 @@ function Show-Now {
     }
 }
 
+# ---- 플레이어와 주고받는 창구: http://127.0.0.1:47613 (이 PC 안에서만) ----
+# User request: the overlay works by just running the bat — the player never asks for a folder
+# (a page opened from GitHub can't write files here). The page sends here; this writes the same files as before,
+# so the rest of the overlay is unchanged. /now · /ovset (GET/POST) · /ovprograms (an answer = overlay is running).
+$OV_PORT = 47613
+$script:http = $null
+try { $script:http = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback, $OV_PORT); $script:http.Start() } catch { $script:http = $null }
+$LATIN1 = [Text.Encoding]::GetEncoding(28591)   # bytes ↔ chars 1:1 (finding the header end in a UTF-8 request)
+function Send-Http($s, [string]$body) {
+    $b = $UTF8.GetBytes($body)
+    $h = "HTTP/1.1 200 OK`r`nContent-Type: application/json; charset=utf-8`r`nContent-Length: $($b.Length)`r`n" +
+        "Access-Control-Allow-Origin: *`r`nAccess-Control-Allow-Methods: GET, POST, OPTIONS`r`nAccess-Control-Allow-Headers: Content-Type`r`n" +
+        "Access-Control-Allow-Private-Network: true`r`nConnection: close`r`n`r`n"   # Chrome asks this for a public page → this PC
+    $hb = [Text.Encoding]::ASCII.GetBytes($h)
+    $s.Write($hb, 0, $hb.Length); if ($b.Length) { $s.Write($b, 0, $b.Length) }
+}
+function Read-Http($s) {  # → @{ method; path; body }
+    $buf = New-Object byte[] 65536; $ms = New-Object IO.MemoryStream; $end = -1; $len = 0
+    while ($true) {
+        $n = $s.Read($buf, 0, $buf.Length); if ($n -le 0) { break }
+        $ms.Write($buf, 0, $n)
+        $txt = $LATIN1.GetString($ms.GetBuffer(), 0, [int]$ms.Length)
+        if ($end -lt 0) {
+            $end = $txt.IndexOf("`r`n`r`n")
+            if ($end -ge 0 -and $txt.Substring(0, $end) -match '(?im)^content-length:\s*(\d+)') { $len = [int]$Matches[1] }
+        }
+        if ($end -ge 0 -and $ms.Length -ge $end + 4 + $len) { break }
+    }
+    if ($end -lt 0) { return $null }
+    $first = ($txt.Substring(0, $txt.IndexOf("`r`n")) -split ' ')
+    @{ method = $first[0]; path = ($first[1] -split '\?')[0]; body = $UTF8.GetString($ms.GetBuffer(), $end + 4, $len) }
+}
+function Get-CfgJson {  # 기본값 + 설정 파일
+    $d = [ordered]@{}
+    foreach ($k in $DEFAULTS.Keys) { $d[$k] = $script:cfg[$k] }
+    try { (Read-Json $script:CfgFile).PSObject.Properties | ForEach-Object { $d[$_.Name] = $_.Value } } catch {}
+    $d
+}
+function Invoke-Http($r) {
+    if ($r.method -eq 'OPTIONS') { return '' }
+    $post = $r.method -eq 'POST'
+    switch ($r.path) {
+        '/now' {
+            if ($post) { [IO.File]::WriteAllText($script:NowFile, $r.body, $UTF8) }
+            return '{"ok":true}'
+        }
+        '/ovset' {
+            $d = Get-CfgJson
+            if ($post) {
+                ($r.body | ConvertFrom-Json).PSObject.Properties | Where-Object { $DEFAULTS.ContainsKey($_.Name) } | ForEach-Object { $d[$_.Name] = $_.Value }
+                [IO.File]::WriteAllText($script:CfgFile, ($d | ConvertTo-Json), $UTF8)
+                $script:cfgWrite = [datetime]::MinValue   # the tick re-reads it right away
+            }
+            return ($d | ConvertTo-Json -Compress)
+        }
+        '/ovprograms' {
+            $items = '[]'; try { $items = [IO.File]::ReadAllText($script:ProgFile, [Text.Encoding]::UTF8).TrimStart([char]0xFEFF) } catch {}
+            if (-not $items.Trim()) { $items = '[]' }
+            return '{"running":true,"items":' + $items + '}'
+        }
+    }
+    '{"error":"unknown"}'
+}
+function Step-Http {  # called every tick: answer whatever came in (each request is tiny and local)
+    if (-not $script:http) { return }
+    while ($script:http.Pending()) {
+        $c = $script:http.AcceptTcpClient()
+        try {
+            $c.ReceiveTimeout = 2000; $c.SendTimeout = 2000
+            $s = $c.GetStream()
+            $r = Read-Http $s
+            if ($r) { Send-Http $s (Invoke-Http $r) }
+        } catch {} finally { $c.Close() }
+    }
+}
+
 # ---- 0.15초마다: 설정·플레이어 소식이 바뀌었는지, 지금 보일 때인지 ----
 $script:lastWrite = [datetime]::MinValue
 $script:now = $null
@@ -215,6 +291,7 @@ $timer = New-Object System.Windows.Threading.DispatcherTimer
 $timer.Interval = [TimeSpan]::FromMilliseconds(150)
 $timer.Add_Tick({
     $script:tick++
+    Step-Http
     $redraw = $false
     if (Read-Cfg) {
         if ([double]$script:cfg.quit_at -gt $script:startedAt) { $script:app.Shutdown(); return }  # 설정 창의 '끄기'
@@ -282,4 +359,5 @@ $w.Show()
 $timer.Start()
 [void]$script:app.Run()
 $tray.Visible = $false; $tray.Dispose()
+if ($script:http) { $script:http.Stop() }
 if ($created) { $script:mutex.ReleaseMutex() }

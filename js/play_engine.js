@@ -419,8 +419,8 @@ function makePlayer(el) {
   audio.addEventListener("sourcechange", placeNow);
   audio.addEventListener("emptied", placeNow);
 
-  /* ---- 가사 오버레이(WEB\tools\lyrics_overlay.bat — 파워쉘 창, 바탕 투명)에 지금 곡·가사 묶음 알리기 ----
-     WEB\data\export\now_playing.json 으로 씀 (LOCAL — 고른 폴더에. 깃허브에서 연 화면은 쓰지 않음).
+  /* ---- 가사 오버레이(tools\lyrics_overlay.bat — 파워쉘 창, 바탕 투명)에 지금 곡·가사 묶음 알리기 ----
+     LOCAL 이 오버레이의 창구(127.0.0.1:47613)로 보냄 → 오버레이가 overlay\now_playing.json 에 씀.
      묶음이 바뀔 때·재생/멈춤 때 + 5초마다(화면이 켜져 있다는 표시 — 끄면 오버레이가 숨김).
      발음·번역 줄은 플레이어의 '발음'·'번역' 체크 그대로 (같은 브라우저 저장값) */
   let nowLast = "", lyrIdx = -2;

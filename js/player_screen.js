@@ -1028,7 +1028,7 @@ function hideLoad() { if ($("loadBox")) $("loadBox").hidden = true; }
 LOCAL.progress = showLoad;
 async function offlineOpened() {
   showLoad("곡 목록 읽는 중…", 0.1);
-  LOCAL.ovReopen();  // 깃허브에서 열었으면: 지난번에 고른 오버레이 폴더(이 PC 의 WEB)를 권한이 남아 있으면 그대로
+  LOCAL.ovReopen();  // 이 브라우저에서 오버레이를 쓴 적이 있으면 바로 오버레이와 주고받음
   $("notice").innerHTML = `<div class="offnote">${LOCAL.gh ? "☁" : "📁"} <b>${esc(LOCAL.name)}</b> · 서버 없이 재생 중`
     + (LOCAL.gh && !LOCAL.gh.write ? " · 읽기만 (저장 안 됨)" : "") + ` (음원 관리·자동 싱크는 서버 필요)
     <button id="offPick">다른 토큰으로 열기</button></div>`;
