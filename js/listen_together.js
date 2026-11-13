@@ -72,13 +72,44 @@ function ltNeedName() {
   return true;
 }
 
-function ltLoadPeerJs() {
-  if (window.Peer) return Promise.resolve();
-  return new Promise((res, rej) => {
+async function ltLoadPeerJs() {
+  if (!window.Peer) await new Promise((res, rej) => {
     const s = document.createElement("script");
     s.src = LT_PEERJS; s.onload = res; s.onerror = () => { s.remove(); rej(new Error("같이듣기 연결 도구를 받지 못했습니다 (인터넷 확인)")); };
     document.head.appendChild(s);
   });
+  await ltTurn();
+}
+/* Relay (TURN) server. User report: some people saw "열린 방이 없습니다" while a room was open — PeerJS's built-in TURN
+   hosts (*.turn.peerjs.com) no longer exist, so networks that can't connect directly (mobile data, some company/school
+   wifi) could reach no one. Metered free TURN (user's account); the API key is not in this public repo (user request):
+   it sits in the private data repo, Server/data/listen_turn.json {"app": "<name>.metered.live 의 name", "apiKey": "…"},
+   read like the song list (token / folder). No file or no answer → direct connections only, as before.
+   Every Peer gets this one config object, and PeerJS reads it per connection, so filling it later still counts. */
+const LT_STUN = {urls: "stun:stun.l.google.com:19302"};
+const LT_CFG = {iceServers: [LT_STUN]};
+const ltPeerOpts = () => ({config: LT_CFG});
+let ltTurnP = null, ltTurnAt = 0, ltTurnTried = 0;
+function ltTurn() {
+  if (ltTurnAt && Date.now() - ltTurnAt < 6 * 3600e3) return Promise.resolve();  // credentials refreshed every 6 h
+  if (ltTurnP) return ltTurnP;
+  if (typeof LOCAL === "undefined" || !LOCAL.ready || Date.now() - ltTurnTried < 60000) return Promise.resolve();
+  ltTurnTried = Date.now();
+  return ltTurnP = (async () => {
+    try {
+      const k = await LOCAL.readJson(`${LOCAL.data}listen_turn.json`, null);
+      const app = String((k && k.app) || "").trim().replace(/\.metered\.live$/i, "").toLowerCase();
+      if (!/^[a-z0-9-]+$/.test(app) || !k.apiKey) return;
+      const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 6000);
+      const r = await fetch(`https://${app}.metered.live/api/v1/turn/credentials?apiKey=${encodeURIComponent(k.apiKey)}`, {signal: ctl.signal, cache: "no-store"});
+      clearTimeout(t);
+      const list = r.ok ? await r.json() : null;
+      if (!Array.isArray(list) || !list.length) throw new Error("TURN " + r.status);
+      LT_CFG.iceServers = [LT_STUN, ...list];
+      ltTurnAt = Date.now();
+    } catch (e) { console.warn("같이듣기 중계 서버 정보를 받지 못함 (직접 연결만):", e.message || e); }
+    finally { ltTurnP = null; }
+  })();
 }
 const ltNewCode = () => String(crypto.getRandomValues(new Uint32Array(1))[0] % 900000 + 100000);
 const ltLink = code => location.href.split("#")[0] + "#lt=" + code;
@@ -163,7 +194,7 @@ async function ltHost(open, pw, title) {
 }
 /* 방장 peer (번호 = PeerJS id). left: 번호가 겹치면 새 번호로 다시 할 횟수 (-1: 이미 연 방을 같은 번호로 다시 엶) */
 function ltHostPeer(code, left) {
-  const peer = new Peer(LT_PREFIX + code);
+  const peer = new Peer(LT_PREFIX + code, ltPeerOpts());
   LT.peer = peer;
   peer.on("open", () => {
     if (LT.peer !== peer) return;
@@ -206,7 +237,7 @@ function ltHostPeer(code, left) {
 /* room list slot: take the first free lobby-<n> id; anyone who connects gets this room's card */
 function ltLobby(i) {
   if (LT.role !== "host" || i >= LT_SLOTS) return;
-  const p = new Peer(ltSlotId(i));
+  const p = new Peer(ltSlotId(i), ltPeerOpts());
   LT.lobby = p;
   p.on("error", e => {
     if (LT.lobby !== p) return;
@@ -310,7 +341,7 @@ async function ltJoin(code, pw = "") {
 /* 손님 peer: 방장에게 잇기. 첫 소식이 오면 들어간 것 (비밀번호가 틀리면 방장이 "denied").
    이미 들어와 있던 방(LT.role guest)이면 끊겨도 나가지 않고 ltKeep 이 다시 이음 */
 function ltGuestPeer(code) {
-  const peer = LT.peer = new Peer();
+  const peer = LT.peer = new Peer(ltPeerOpts());
   const fail = msg => {
     if (LT.peer !== peer) return;
     if (LT.role === "guest") return ltGuestLost();
@@ -510,30 +541,44 @@ function ltKeep() {
 }
 
 /* ---------- 방 목록: 화면을 열 때 한 번 + 새로고침 버튼을 누를 때만 (user request: 저절로 다시 찾지 않음, 마지막 갱신 시각 표시) ---------- */
-const LTS = {peer: null, rooms: null, busy: false, at: 0, done: "", again: false, wait: null};
+/* miss: rooms that exist (their slot id is taken) but sent no card in time — couldn't connect · err: no list at all */
+const LTS = {peer: null, rooms: null, busy: false, at: 0, done: "", again: false, wait: null, miss: 0, err: "", unavail: null};
+const LT_SCAN_MAX = 12000;  // user report: a room missing from the list — the old fixed 4 s was too short on slow networks
 function ltScan(again) {
   if (LTS.busy) { if (again) LTS.again = true; return LTS.wait; }  // a scan already running: one more right after (state changed meanwhile)
   LTS.busy = true; LTS.at = Date.now(); ltRenderRooms();
   return LTS.wait = new Promise(async res => {
-    try { await ltLoadPeerJs(); } catch (e) { LTS.busy = false; LTS.rooms = LTS.rooms || []; ltRenderRooms(); return res(); }
-    const found = new Map();  // empty slots give no signal at all → wait the full 4 s
-    const finish = () => {
+    try { await ltLoadPeerJs(); } catch (e) { LTS.busy = false; LTS.rooms = LTS.rooms || []; LTS.err = e.message; ltRenderRooms(); return res(); }
+    const found = new Map(), open = new Set();  // open: slots not answered yet (no card, not reported empty)
+    let fin = false;
+    const finish = (err = "") => {
+      if (fin) return; fin = true; LTS.unavail = null;
       if (!LTS.busy) return res();
-      LTS.busy = false; LTS.rooms = [...found.values()]; LTS.done = ltNow(); ltRender();
+      LTS.busy = false; LTS.rooms = [...found.values()]; LTS.miss = open.size; LTS.err = err; LTS.done = ltNow();
+      // no slot answered at all, not even "empty": the link to the PeerJS server is dead → a fresh peer next time
+      if (open.size === LT_SLOTS) { ltScanPeerDrop(); LTS.miss = 0; LTS.err = "같이듣기 연결 서버에서 답이 없습니다 — 잠시 뒤 새로고침해 주세요"; }
+      ltRender();
       if (LTS.again) { LTS.again = false; return ltScan().then(res); }
       res();
     };
+    const settle = i => { open.delete(i); if (!open.size) finish(); };  // everything answered → done at once
     const ask = p => {
+      LTS.unavail = id => { const i = [...Array(LT_SLOTS).keys()].find(i => ltSlotId(i) === id); if (i != null) settle(i); };  // empty slot
       for (let i = 0; i < LT_SLOTS; i++) {
+        open.add(i);
         const c = p.connect(ltSlotId(i), {reliable: true});
-        c.on("data", m => { if (m && m.t === "room") found.set(i, m); try { c.close(); } catch (e) {} });
+        c.on("data", m => {
+          try { c.close(); } catch (e) {}
+          if (!m || m.t !== "room") return;
+          if (fin) { if (open.delete(i)) { LTS.miss = open.size; ltWatchGot(m); } return; }  // late card: still goes in the list
+          found.set(i, m); settle(i);
+        });
       }
-      setTimeout(finish, 4000);
+      setTimeout(finish, LT_SCAN_MAX);
     };
     if (LTS.peer && LTS.peer.open && !LTS.peer.destroyed) return ask(LTS.peer);
     ltScanPeerDrop();
-    ltWatchPeer(0, p => p ? ask(p) : finish());
-    setTimeout(finish, 9000);
+    ltWatchPeer(0, p => p ? ask(p) : finish("같이듣기 연결 서버에 닿지 못했습니다 (인터넷 확인 · 잠시 뒤 새로고침)"));
   });
 }
 /* user request: the room list follows every change on any screen — drop a room I just closed at once, then look again */
@@ -548,12 +593,16 @@ function ltNow() {
 }
 /* the room-list peer also takes a free watch-<n> id so hosts can tell this screen about rooms at once (none free → random id) */
 function ltWatchPeer(i, done) {
-  const p = LTS.peer = i < LT_WATCH ? new Peer(ltWatchId(i)) : new Peer();
+  const p = LTS.peer = i < LT_WATCH ? new Peer(ltWatchId(i), ltPeerOpts()) : new Peer(ltPeerOpts());
   let ok = false;
   p.on("open", () => { if (LTS.peer !== p) return; ok = true; done(p); });
   p.on("error", e => {
     if (LTS.peer !== p) return;
-    if (e.type === "peer-unavailable") return;  // an empty lobby / watch slot
+    if (e.type === "peer-unavailable") {  // an empty lobby / watch slot ("Could not connect to peer <id>")
+      const id = (/peer (\S+)\s*$/.exec(e.message || "") || [])[1];
+      if (id && LTS.unavail) LTS.unavail(id);
+      return;
+    }
     if (!ok && e.type === "unavailable-id") { p.destroy(); return ltWatchPeer(i + 1, done); }  // taken by another screen
     if (!ok) { ltScanPeerDrop(); done(null); }
   });
@@ -572,8 +621,11 @@ function ltRenderRooms() {
   $("ltRefresh").disabled = LTS.busy;
   $("ltScanAt").textContent = LTS.busy ? "찾는 중…" : LTS.done ? `마지막 갱신 ${LTS.done}` : "";
   // 'ltempty', not 'empty': the page's global .empty (main song list) is centred with a 60px top margin
-  if (!rooms || !rooms.length) { ul.innerHTML = !rooms || LTS.busy ? "" : `<li class="ltempty">열린 방이 없습니다</li>`; return; }  // while looking: the header says 찾는 중…
-  ul.innerHTML = rooms.map((r, i) => {
+  // user report: a failed look said "열린 방이 없습니다" — say what went wrong instead
+  const note = LTS.busy ? "" : LTS.err ? `<li class="ltempty">${esc(LTS.err)}</li>`
+    : LTS.miss ? `<li class="ltempty">방 ${LTS.miss}개에 연결하지 못했습니다 (네트워크 — 새로고침해 보세요)</li>` : "";
+  if (!rooms || !rooms.length) { ul.innerHTML = !rooms || LTS.busy ? "" : note || `<li class="ltempty">열린 방이 없습니다</li>`; return; }  // while looking: the header says 찾는 중…
+  ul.innerHTML = note + rooms.map((r, i) => {
     const here = LT.role && r.code === LT.code;
     return `<li class="ltroom${here ? " here" : ""}">
       <span class="who">${ltLockSvg(r.open)} ${esc(ltRoomName(r))}</span>
