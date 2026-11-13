@@ -241,7 +241,7 @@ function bindOverlayPower(btn) {
       await check();
       if (on() || !starting) return;
       starting = 0; show();
-      uiAlert("가사 오버레이 프로그램이 꺼져 있습니다.\nprograms\\WEB\\tools\\lyrics_overlay.bat 을 한 번 더블클릭해 주세요."
+      uiAlert("가사 오버레이 프로그램이 꺼져 있습니다.\n플레이어 폴더의 tools\\lyrics_overlay.bat 을 한 번 더블클릭해 주세요."
         + "\n(한 번 켜 두면 컴퓨터를 끌 때까지 뒤에서 돌고, 그동안은 이 단추로 바로 켜고 끕니다)");
     }, 8000);
   };

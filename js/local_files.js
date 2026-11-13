@@ -258,7 +258,10 @@ const LOCAL = {
       if (saved && await saved.requestPermission({mode: "readwrite"}) === "granted") { await this.ovUse(saved); return true; }
     } catch (e) {}
     if (!window.showDirectoryPicker) throw new Error("이 브라우저는 폴더 읽고 쓰기를 지원하지 않습니다. 크롬이나 엣지로 여세요.");
-    if (!await uiConfirm("가사 오버레이와 지금 곡을 주고받으려면 이 PC 의 WEB 폴더(플레이어 폴더)를 한 번 골라야 합니다.\n(이 PC 의 파일을 따로 허락받음 — 다음부터는 묻지 않음)", "폴더 고르기")) return false;
+    // Users picked the wrong folder because the text said "WEB 폴더" (no such folder since the player moved to music_front)
+    if (!await uiConfirm("가사 오버레이와 지금 곡을 주고받으려면 이 PC 의 플레이어 폴더를 한 번 골라야 합니다.\n"
+      + "→ lyrics_overlay.bat 이 든 tools 폴더의 바로 위 폴더 (예: music_front, music_front-main)\n"
+      + "(브라우저가 '파일 보기·저장 허용'을 물으면 허용 — 다음부터는 묻지 않음)", "폴더 고르기")) return false;
     const d = await showDirectoryPicker({id: "overlay", mode: "readwrite"});
     await this.ovUse(d);
     try { await idb("put", "overlay-dir", d); } catch (e) {}
@@ -269,7 +272,9 @@ const LOCAL = {
     // (overlay is not in git/zip → created on first write)
     const has = async n => { try { await d.getDirectoryHandle(n); return true; } catch (e) { return false; } };
     const b = await has("tools") ? "overlay/" : await has("WEB") ? "WEB/overlay/" : d.name === "overlay" ? "" : null;
-    if (b == null) throw new Error(`'${d.name}' 폴더는 WEB 폴더가 아닙니다. 플레이어 WEB 폴더(tools 가 들어 있는 곳)를 고르세요.`);
+    if (b == null) throw new Error(await has("stream_bridge") || d.name === "tools"
+      ? `'${d.name}' 폴더 안이 아니라 한 칸 위 폴더(tools 가 들어 있는 플레이어 폴더)를 골라 주세요.`
+      : `'${d.name}' 폴더는 플레이어 폴더가 아닙니다. tools 폴더가 들어 있는 폴더(예: music_front)를 골라 주세요.`);
     this.ovDir = d; this.ovBase = b;
   },
   async overlay(path, post, body) {
