@@ -186,14 +186,14 @@ class LocalMedia extends EventTarget {
     diag("warm", ref.kind + ":" + ref.id);
   }
   /* 온라인 곡: 출처 차례대로 — 안 되는 출처(삭제·퍼가기 금지)는 다음으로 */
-  async playStream(refs, autoplay) {
+  async playStream(refs, autoplay, start = 0) {  // start: seconds (resume after a reload)
     // User report: songs stop while the player isn't watched. Chrome/Edge defer media in a frame created while the tab is hidden
     // (minimized, behind other windows, other tab) until it is shown → every Niconico song needs a new frame and waits.
     // Source order stays Niconico first (user decision) — never swapped to YouTube for being hidden.
     const pre = this.pre && refs[0] && this.pre.br.ref.url === refs[0].url && !this.pre.failed ? this.pre : null;
     if (pre) this.pre = null; else this.dropPreload();  // 미리 띄워 둔 곡이 아니면 버림
     this.stopStream();
-    this.refs = refs; this.ri = -1; this.brErr = null; this.errs = []; this.brPaused = true; this.autoplay = autoplay;
+    this.refs = refs; this.ri = -1; this.brErr = null; this.errs = []; this.brPaused = true; this.autoplay = autoplay; this.start = start;
     this.el.pause(); this.el.removeAttribute("src"); this.el.load();
     this.fire("emptied");
     if (!this.gains) this.gains = await LOCAL.readJson(`${LOCAL.data}stream_loudness.json`, {}).catch(() => ({}));
@@ -233,10 +233,10 @@ class LocalMedia extends EventTarget {
       diag("preloaded", ref.kind + ":" + ref.id);
     } else if (kept && kept.canLoad(ref.kind)) {
       br = kept; br.on = on; br.frame.classList.remove("pre");
-      br.load(ref, 0, this.autoplay); this.br = br; this.applyVolume(); br.comments(nicoComments());
+      br.load(ref, this.start, this.autoplay); this.br = br; this.applyVolume(); br.comments(nicoComments());
       diag("reuse", ref.kind + ":" + ref.id, document.hidden ? "hidden" : "shown");
     } else {
-      br = new BridgePlayer(this.host, ref, {volume: this.el.volume * this.gain, mute: this.el.muted, on});
+      br = new BridgePlayer(this.host, ref, {start: this.start, volume: this.el.volume * this.gain, mute: this.el.muted, on});
       if (kept) kept.destroy();  // (old bridge page: replaced each time as before)
       this.kept[ref.kind] = br;
       diag("new frame", ref.kind + ":" + ref.id, document.hidden ? "hidden" : "shown");
@@ -244,7 +244,7 @@ class LocalMedia extends EventTarget {
     this.br = br;
     if (got) {
       got.on = on; got.frame.classList.remove("pre");
-      got.seek(0); this.applyVolume();
+      got.seek(this.start); this.applyVolume();
       if (this.autoplay) got.play();
       if (got.ready) this.fire("loadedmetadata");
     }
@@ -315,14 +315,16 @@ function makePlayer(el) {
         return;
       }
       this.queueOnLoad(it, how);  // 지난 곡·다음 곡 순서 (play_queue.js)
+      const start = resumeSeek && resumeSeek.it === it ? resumeSeek.t : 0; resumeSeek = null;  // resume after a reload (P.resumeAt)
       this.now = it; this.autoplay = autoplay; store.set("last", keyOf(it));
       store.set("lastItem", Object.fromEntries(Object.entries(it).filter(([k]) => !k.startsWith("_"))));  // 새로고침해도 (음원 관리 화면이어도) 띄움
       if (it.site === "local") {
         audio.setSrc(OFFDIR.audioUrl(it));
+        if (start) audio.currentTime = start;
         if (autoplay) audio.play().catch(() => {});
       } else {
         diag("song", how || "-", it.title, streamRefs(it).map(r => r.kind + ":" + r.id).join(","), autoplay ? "" : "(no autoplay)");
-        audio.playStream(streamRefs(it), autoplay);
+        audio.playStream(streamRefs(it), autoplay, start);
         // started while the tab is hidden and not minimized (minimized window: ~160x28) → watch for a stall (see hiddenStall)
         stallWatch = autoplay && document.hidden ? {it, at: Date.now(), min: outerHeight < 80} : null;
       }
@@ -500,6 +502,30 @@ function makePlayer(el) {
     if (w && !w.min && P.now === w.it && audio.paused && Date.now() - w.at > 5000)
       P.stallSubs.forEach(f => { try { f(w.it); } catch (e) {} });
   });
+
+  /* ---- 새로고침돼도 이어 듣기 ----
+     User report (2026-11-13): Whale reloaded the player tab by itself while a song played (nothing touched) → the page came
+     back with that song paused at 0:00. While playing, this tab remembers song + position (sessionStorage: kept when the same
+     tab reloads or is restored, not shared with a new tab); on start-up the screen resumes it (P.takeResume). Paused = forget. */
+  const RESUME_KEY = "player.resume", RESUME_MAX = 30 * 60 * 1000;
+  let resumeSeek = null;  // {it, t}: the next P.load of that song starts there
+  function saveResume() {
+    try {
+      if (P.now && !audio.paused && !P.follow && !P.editing)
+        sessionStorage.setItem(RESUME_KEY, JSON.stringify({k: keyOf(P.now), t: audio.currentTime || 0, at: Date.now()}));
+      else sessionStorage.removeItem(RESUME_KEY);
+    } catch (e) {}
+  }
+  setInterval(saveResume, 3000);  // hidden tab: timers may run once a minute — position is then up to that old
+  audio.addEventListener("pause", saveResume);
+  addEventListener("pagehide", saveResume);
+  /* start-up: song key + position if this tab was playing just before it reloaded (null otherwise) — read once */
+  P.takeResume = () => {
+    let r = null;
+    try { r = JSON.parse(sessionStorage.getItem(RESUME_KEY) || "null"); sessionStorage.removeItem(RESUME_KEY); } catch (e) {}
+    return r && r.k && Date.now() - r.at < RESUME_MAX ? r : null;
+  };
+  P.resumeAt = (it, t) => { resumeSeek = t > 3 ? {it, t: Math.max(0, t - 1)} : null; diag("resume", it.title, `t=${Math.round(t)}`); };
 
   async function noteFail(it, reason) {
     const d = new Date(), ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

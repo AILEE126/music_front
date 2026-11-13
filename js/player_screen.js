@@ -1029,9 +1029,11 @@ async function offlineOpened() {
   await loadLibrary();
   if ((LIB.items || []).some(x => x.site !== "stream"))  // 예전 곡 목록(한국·일본 mp3 곡이 따로)을 연 경우 — 그 곡들은 재생 안 됨
     $("notice").insertAdjacentHTML("beforeend", '<div class="offnote warn">예전 형식의 곡 목록입니다. 노래방 mp3 곡은 재생되지 않습니다 — 서버를 켠 PC 에서 바뀐 곡 목록을 깃허브에 올린 뒤 다시 여세요.</div>');
-  const it = LIB.items && LIB.items.find(x => keyOf(x) === store.get("last", ""));
+  // tab reloaded while a song played (e.g. the browser reloaded it by itself) → go on playing it from there; else show the last song paused
+  const res = SHELL.takeResume(), find = k => LIB.items && LIB.items.find(x => keyOf(x) === k);
+  const rit = res && find(res.k), it = rit && canPlay(rit) ? rit : find(store.get("last", ""));
   showLoad("곡 목록 그리는 중…", 1);
-  if (it && canPlay(it) && !SHELL.now) play(it, false, "");
+  if (it && canPlay(it) && !SHELL.now) { if (it === rit) SHELL.resumeAt(it, res.t); play(it, it === rit, ""); }
   setTimeout(hideLoad, 150);
 }
 async function offlineIntro() {
