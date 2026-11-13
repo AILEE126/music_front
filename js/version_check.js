@@ -27,22 +27,29 @@ async function vcCheck(force) {
     if (!r.ok) return;  // offline / rate limit → try next time
     const sha = (await r.text()).trim();
     if (!sha || sha === VC.sha) return;
-    const files = vcFiles();
-    const diff = await Promise.all(files.map(async f => {
+    const files = vcFiles(), local = vcLocal();
+    // Only ask for a refresh when the site already serves the new files: GitHub Pages / githack can lag a few minutes or
+    // fail a deploy (Pages 502), and then a refresh brings back the same old file → the notice came back forever.
+    // A local page (this PC's folder) still says "git pull" whenever it differs from GitHub.
+    const res = await Promise.all(files.map(async f => {
+      const get = (u, cache) => fetch(u, {cache}).then(x => x.ok ? x.text() : null).then(t => t == null ? null : vcNorm(t));
       const [mine, latest] = await Promise.all([
-        fetch(f.url, {cache: "force-cache"}).then(x => x.ok ? x.text() : null),  // what this page is running
-        fetch(`https://raw.githubusercontent.com/${VC_REPO}/${sha}/${f.path}`).then(x => x.ok ? x.text() : null),
+        get(f.url, "force-cache"),  // what this page is running
+        get(`https://raw.githubusercontent.com/${VC_REPO}/${sha}/${f.path}`, "default"),
       ]);
-      return mine != null && latest != null && vcNorm(mine) !== vcNorm(latest);
+      if (mine == null || latest == null || mine === latest) return "same";
+      if (local) return "new";
+      return await get(f.url, "no-store") === latest ? "new" : "behind";  // what a refresh would get now
     }));
-    VC.sha = sha;
-    if (diff.some(Boolean)) { VC.stale = true; vcShow(sha); }
+    if (res.includes("new")) { VC.sha = sha; VC.stale = true; vcShow(sha); }
+    else if (!res.includes("behind")) VC.sha = sha;  // site not caught up yet → compare again at the next check
   } catch (e) { /* offline: nothing to say */ } finally { VC.busy = false; }
 }
 
 /* notice: popover so it shows above open dialogs too */
+const vcLocal = () => /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
 function vcShow(sha) {
-  const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  const local = vcLocal();
   let tried = "";
   try { tried = sessionStorage.getItem("vcTried") || ""; } catch (e) {}
   const again = tried === sha;  // already refreshed for this version and still old → the file server hasn't caught up yet
