@@ -31,7 +31,7 @@ const LT_WATCH = 16;  // open players that get told at once when a room appears 
 const ltWatchId = i => LT_PREFIX + "watch-" + i;
 const LT = {uid: Math.random().toString(36).slice(2), role: "", code: "", me: "", open: true, pw: "", title: "", lock: false, linkCode: "", lobby: null, lobbyAt: 0, peer: null, conns: new Map(), host: null,
   members: [], status: "", lastHeard: 0, lostAt: 0, retryAt: 0, ask: "", rtt: 0, align: 0, qsig: "", lead: 0, seekAt: 0, reqs: [],
-  prep: null, gprep: "", gkey: "", gsent: false, ggo: ""};  // ask: code of a secret room waiting for its password · prep/g*: start together (ltPrepStart)
+  prep: null, gprep: null};  // ask: code of a secret room waiting for its password · prep (host) / gprep (guest): start together
 const LT_SILENT = 70000;   // 방장 소식이 이만큼 없으면 끊긴 것으로 봄 (뒤에 깔린 탭은 브라우저가 타이머를 1분에 한 번까지 늦춤)
 const LT_GIVE_UP = 180000; // 손님: 이만큼 다시 잇지 못하면 나감
 let ltApplying = 0;  // 방장 상태를 따라 하는 중 (이때 바뀐 건 다시 보내지 않음)
@@ -101,12 +101,12 @@ function ltState() {
           prep: LT.prep ? LT.prep.id : ""};
 }
 /* Start a new song together. User report: guests' song start stuttered (they started late, then catch-up seeks re-buffered).
-   Now: everyone loads the new song paused at 0 and says "ready"; the host starts when all are ready and tells guests "go".
-   Waits at most 2s (user decision) — anyone later catches up by seeking as before. */
+   Host and guests load the new song without playing (primed: paused at 0, see LocalMedia.primed) and say ready;
+   the host starts when all are ready and tells guests "go". Waits at most 2s (user decision) — anyone later catches up
+   by seeking as before.  host: prep {id, wait: guests not ready yet, timer} · guest: gprep {id, sent} */
 const LT_PREP_MAX = 2000;
 let ltPrepSeq = 0;
 function ltPrepStart() {
-  ltPrepEnd();
   LT.prep = {id: ++ltPrepSeq + Math.random().toString(36).slice(2, 6), wait: new Set(LT.conns.keys()), timer: setTimeout(ltGo, LT_PREP_MAX)};
 }
 function ltPrepEnd() { if (LT.prep) clearTimeout(LT.prep.timer); LT.prep = null; }
@@ -118,7 +118,6 @@ function ltGo() {
   if (!LT.prep) return;
   const id = LT.prep.id;
   ltPrepEnd();
-  if (audio.currentTime > 0.05) audio.currentTime = 0;  // a fresh frame plays a moment before it pauses
   audio.play().catch(() => {});
   LT.conns.forEach((_, c) => ltSend(c, {t: "go", id}));
   ltBroadcast();
@@ -373,18 +372,26 @@ function ltApplyQueue(m) {
 }
 /* guest: the song really started sounding → ask for the exact position (after joining / a new song) */
 function ltWant() { if (LT.role === "guest" && LT.host && LT.align) ltSend(LT.host, {t: "want"}); }
-/* guest: the song the host is lining up is loaded here → back to 0 (still paused) and tell the host */
-function ltGuestReady() {
-  if (LT.role !== "guest" || !LT.host || !LT.gprep || LT.gsent || !SHELL.now || keyOf(SHELL.now) !== LT.gkey || audio.readyState <= 0) return;
-  if (audio.currentTime > 0.05) ltQuiet(() => { audio.currentTime = 0; });
-  LT.gsent = true;
-  ltSend(LT.host, {t: "ready", id: LT.gprep});
+/* guest: host is lining everyone up for a new song → have it here paused at 0, say ready when it is */
+function ltGuestPrep(s, it) {
+  if (LT.gprep && LT.gprep.id === s.prep) return;  // already on it
+  LT.gprep = {id: s.prep, sent: false};
+  LT.align = 4;  // if "go" comes before we're ready: catch up as before
+  if (!SHELL.now || keyOf(SHELL.now) !== keyOf(it)) ltQuiet(() => SHELL.load(it, false, "pick"));  // primed → loadedmetadata → ready
+  else ltQuiet(() => { audio.pause(); audio.currentTime = 0; });  // same song again
+  ltGuestReady();
 }
-/* guest: host says go → start now. Lined up in time → no catch-up seeks; too late (over 2s) → catch up as before */
+function ltGuestReady() {
+  const g = LT.gprep;
+  if (LT.role !== "guest" || !LT.host || !g || g.sent || audio.readyState <= 0) return;
+  g.sent = true;
+  ltSend(LT.host, {t: "ready", id: g.id});
+}
 function ltGuestGo(id) {
-  if (!id || id !== LT.gprep) return;
-  LT.ggo = id; LT.gprep = "";
-  if (LT.gsent) LT.align = 0;
+  const g = LT.gprep;
+  if (!g || g.id !== id) return;
+  LT.gprep = null;
+  if (g.sent) LT.align = 0;  // lined up at 0 in time → no catch-up seeks
   ltQuiet(() => { audio.play().catch(() => {}); });
 }
 function ltApply(s, got) {
@@ -392,12 +399,8 @@ function ltApply(s, got) {
   const it = ltFindItem(s.key, s.item);
   if (!it || !canPlay(it)) { LT.status = `방장이 트는 곡을 여기서 틀 수 없습니다: ${(s.item && s.item.title) || s.key}`; return ltRender(); }
   if (LT.status) { LT.status = ""; ltRender(); }
-  if (s.prep && s.prep !== LT.ggo) {  // host is lining everyone up for a new song: load it paused at 0, then say ready
-    if (LT.gprep !== s.prep) { LT.gprep = s.prep; LT.gkey = keyOf(it); LT.gsent = false; }
-    if (!SHELL.now || keyOf(SHELL.now) !== keyOf(it)) { LT.align = 4; return ltQuiet(() => SHELL.load(it, false, "pick")); }  // ready on loadedmetadata
-    if (ltIntent()) ltQuiet(() => audio.pause());
-    return ltGuestReady();
-  }
+  if (s.prep) return ltGuestPrep(s, it);
+  LT.gprep = null;  // lining up is over ("go" lost, or the host moved on) — the play/pause below takes over
   if (!SHELL.now || keyOf(SHELL.now) !== keyOf(it)) { LT.align = 4; return ltQuiet(() => SHELL.load(it, s.playing, "pick")); }  // 위치는 곡이 울리기 시작하면 (ltWant)
   if (s.playing && !ltIntent()) ltQuiet(() => { audio.play().catch(() => {}); });
   else if (!s.playing && ltIntent()) ltQuiet(() => audio.pause());
@@ -429,7 +432,7 @@ function ltLeave(quiet) {
   if (LT.role === "host") { LT.conns.forEach((_, c) => ltSend(c, {t: "bye"})); clearTimeout(ltAnnT); ltAnnounce({t: "gone", code: LT.code}); }
   ltLobbyStop();
   const peer = LT.peer;
-  ltPrepEnd(); LT.gprep = ""; LT.ggo = "";
+  ltPrepEnd(); LT.gprep = null;
   LT.peer = null; LT.role = ""; LT.code = ""; LT.host = null; LT.members = []; LT.reqs = []; LT.reqPage = 0; LT.lead = 0; LT.conns = new Map(); LT.lostAt = 0; LT.retryAt = 0;
   SHELL.follow = false;
   if (peer) setTimeout(() => { try { peer.destroy(); } catch (e) {} }, 300);  // "bye" 가 먼저 나가게
@@ -474,9 +477,10 @@ function ltKeep() {
   const load = SHELL.load, next = SHELL.next, prev = SHELL.prev, toggle = SHELL.toggle;
   SHELL.load = function (it, autoplay = true, how = "") {
     if (locked()) return Promise.resolve();
+    ltPrepEnd();
     const prep = LT.role === "host" && autoplay && [...LT.conns.keys()].some(c => c.open);  // guests here → start together
-    if (prep) ltPrepStart(); else ltPrepEnd();
-    const r = load.call(this, it, autoplay && !prep, how);
+    if (prep) ltPrepStart();
+    const r = load.call(this, it, autoplay && !prep, how);  // prep: loaded paused at 0 — ltGo starts it
     if (prep) this.autoplay = true;  // still meant to play (a song that fails still moves on)
     ltBroadcast();
     return r;

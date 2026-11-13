@@ -194,6 +194,10 @@ class LocalMedia extends EventTarget {
     if (pre) this.pre = null; else this.dropPreload();  // 미리 띄워 둔 곡이 아니면 버림
     this.stopStream();
     this.refs = refs; this.ri = -1; this.brErr = null; this.errs = []; this.brPaused = true; this.autoplay = autoplay; this.start = start;
+    // Loaded without playing = primed: it starts muted, and once it really plays it pauses back at the start → ready.
+    // A frame that never played may stay silent in a hidden tab (see preload), and a play() sent before the bridge is ready
+    // is lost — user report: listen together's start-together left both players stuck at 0.
+    this.priming = !autoplay;
     this.el.pause(); this.el.removeAttribute("src"); this.el.load();
     this.fire("emptied");
     if (!this.gains) this.gains = await LOCAL.readJson(`${LOCAL.data}stream_loudness.json`, {}).catch(() => ({}));
@@ -208,10 +212,11 @@ class LocalMedia extends EventTarget {
     this.ri = i; this.gain = gainFactor((this.gains || {})[ref.url]);
     const on = m => {
       if (this.br !== br) return;
-      if (m.ev === "ready") { if (!this.autoplay) br.pause(); this.fire("loadedmetadata"); }
-      else if (m.ev === "time") this.fire("timeupdate");
+      if (m.ev === "ready") { if (!this.priming) { if (!this.autoplay) br.pause(); this.fire("loadedmetadata"); } }
+      else if (m.ev === "time") { if (!this.priming) this.fire("timeupdate"); }
       else if (m.ev === "state") {
-        if (m.s === "playing" && this.brPaused) { this.brPaused = false; this.fire("play"); this.fire("playing"); }
+        if (this.priming) { if (m.s === "playing") this.primed(br); }  // other states while priming aren't the song's own
+        else if (m.s === "playing" && this.brPaused) { this.brPaused = false; this.fire("play"); this.fire("playing"); }
         else if (m.s === "paused" && !this.brPaused) { this.brPaused = true; this.fire("pause"); }
         else if (m.s === "ended") { this.brPaused = true; this.fire("pause"); this.fire("ended"); }
       }
@@ -233,16 +238,18 @@ class LocalMedia extends EventTarget {
       diag("preloaded", ref.kind + ":" + ref.id);
     } else if (kept && kept.canLoad(ref.kind)) {
       br = kept; br.on = on; br.frame.classList.remove("pre");
-      br.load(ref, this.start, this.autoplay); this.br = br; this.applyVolume(); br.comments(nicoComments());
+      this.br = br; this.applyVolume();  // muted first when priming
+      br.load(ref, this.start); br.comments(nicoComments());  // always plays (priming pauses it once it really started)
       diag("reuse", ref.kind + ":" + ref.id, document.hidden ? "hidden" : "shown");
     } else {
-      br = new BridgePlayer(this.host, ref, {start: this.start, volume: this.el.volume * this.gain, mute: this.el.muted, on});
+      br = new BridgePlayer(this.host, ref, {start: this.start, volume: this.el.volume * this.gain, mute: this.el.muted || this.priming, on});
       if (kept) kept.destroy();  // (old bridge page: replaced each time as before)
       this.kept[ref.kind] = br;
       diag("new frame", ref.kind + ":" + ref.id, document.hidden ? "hidden" : "shown");
     }
     this.br = br;
     if (got) {
+      this.priming = false;  // a preloaded frame has played already
       got.on = on; got.frame.classList.remove("pre");
       got.seek(this.start); this.applyVolume();
       if (this.autoplay) got.play();
@@ -257,7 +264,14 @@ class LocalMedia extends EventTarget {
     if (e.some(c => c === 101 || c === 150)) return bridgeReason(150);
     return bridgeReason(e[0] ?? "no-video");
   }
-  stopStream() { this.release(this.br); this.br = null; this.refs = null; }
+  /* primed song really started (muted): back to the start, paused, sound back on → ready. play() came meanwhile → just go on */
+  primed(br) {
+    this.priming = false; this.applyVolume();
+    if (!this.autoplay) { br.seek(this.start); br.pause(); }  // this order: Niconico resumes on a seek sent right after pause
+    this.fire("loadedmetadata");
+    if (this.autoplay) { this.brPaused = false; this.fire("play"); this.fire("playing"); }
+  }
+  stopStream() { this.release(this.br); this.br = null; this.refs = null; this.priming = false; }
   /* done with a bridge player: a kept one is paused and parked behind (reused for the next song of its kind), others removed */
   release(br) {
     if (!br) return;
@@ -268,20 +282,20 @@ class LocalMedia extends EventTarget {
   get kind() { return this.refs && this.br ? this.br.ref.kind : ""; }
   get comments() { return nicoComments(); }
   set comments(on) { store.set("nicoComments", !!on); if (this.br) this.br.comments(!!on); if (this.pre) this.pre.br.comments(!!on); }
-  applyVolume() { if (this.br) { this.br.volume(this.el.volume * this.gain); this.br.mute(this.el.muted); } }
+  applyVolume() { if (this.br) { this.br.volume(this.el.volume * this.gain); this.br.mute(this.el.muted || this.priming); } }
   get currentTime() { return this.refs ? (this.br ? this.br.time() : 0) : this.el.currentTime; }
   set currentTime(t) { if (!this.refs) { this.el.currentTime = t; return; } if (this.br) { this.br.seek(t); setTimeout(() => this.fire("seeked"), 0); } }
   get duration() { return this.refs ? (this.br && this.br.d) || NaN : this.el.duration; }
   get paused() { return this.refs ? this.brPaused : this.el.paused; }
   play() { if (!this.refs) return this.el.play(); this.autoplay = true; if (this.br) this.br.play(); return Promise.resolve(); }
-  pause() { if (!this.refs) return this.el.pause(); this.autoplay = false; if (this.br) this.br.pause(); if (!this.brPaused) { this.brPaused = true; this.fire("pause"); } }
+  pause() { if (!this.refs) return this.el.pause(); this.autoplay = false; if (this.br && !this.priming) this.br.pause(); if (!this.brPaused) { this.brPaused = true; this.fire("pause"); } }  // priming pauses by itself
   get volume() { return this.el.volume; }
   set volume(v) { this.el.volume = v; }
   get muted() { return this.el.muted; }
   set muted(v) { this.el.muted = v; }
   get error() { return this.refs ? this.brErr : this.el.error; }
   get src() { return this.refs ? (this.refs[this.ri] || {}).url || "" : this.el.src; }
-  get readyState() { return this.refs ? (this.br && this.br.ready ? 4 : 0) : this.el.readyState; }
+  get readyState() { return this.refs ? (this.br && this.br.ready && !this.priming ? 4 : 0) : this.el.readyState; }
   get playbackRate() { return this.refs ? 1 : this.el.playbackRate; }
   set playbackRate(v) { this.el.playbackRate = v; }
 }
