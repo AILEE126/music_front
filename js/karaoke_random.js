@@ -3,6 +3,8 @@
    추첨 draws again each press. 곡 정보 off → only the number, big in the middle.
    중복 방지 on → a number drawn in the last 2 hours (same machine) is not drawn again.
    A number appears only when 추첨 is pressed — not on open, not on picking a machine (user request).
+   구형 기기 (default off, user request 2026-11-15): on → songs only some machines of that brand have (나무위키 ⓗ · ⓢ —
+   e.g. TJ 60시리즈부터 선곡 가능) are not drawn. Filters are not touched by it.
    노래방 모드 (default off): on → songs of the 필터 프리셋 '노래방' go into the playlist, and the playlist shows the
    picked machine's number where the sync % sat. */
 const KARA_MACHINES = ["TJ", "금영", "DAM", "UGA", "JOYSOUND"];
@@ -12,8 +14,9 @@ const KARA = {
   info: store.get("kara.info", false),  // default off (user request): only the number
   nodup: store.get("kara.nodup", true),  // default on (user request)
   mode: store.get("kara.mode", false),
+  old: store.get("kara.old", false),
   cur: null,
-  pool(m) { return (VDB.curated || []).filter(it => it.nums && /\d/.test(it.nums[m] || "")); },
+  pool(m) { return (VDB.curated || []).filter(it => it.nums && /\d/.test(it.nums[m] || "") && !(this.old && it.only && it.only[m])); },
   /* drawn history [{m, n, t}] — kept in this browser, entries older than 2 hours dropped */
   history() { const now = Date.now(); return store.get("kara.history", []).filter(h => now - h.t < KARA_NODUP_MS); },
   draw() {
@@ -40,6 +43,7 @@ const KARA = {
     $("karaMode").querySelector("b").textContent = this.mode ? "ON" : "OFF";
     $("karaInfo").classList.toggle("on", this.info);
     $("karaNodup").classList.toggle("on", this.nodup);
+    $("karaOld").classList.toggle("on", this.old);
     $("karaDraw").disabled = !m;
     $("karaReset").disabled = !this.history().length;
     const left = m && this.nodup ? (() => { const used = new Set(this.history().filter(h => h.m === m).map(h => h.n)); return this.pool(m).filter(it => !used.has(it.nums[m])).length; })() : null;
@@ -51,8 +55,11 @@ const KARA = {
     if (it) $("karaSong").innerHTML = `<div class="kt">${esc(it.title)}</div>${it.orig ? `<div class="ko">${esc(it.orig)}</div>` : ""}`
       + `<div class="kp">${[it.composer && `작곡 ${esc(it.composer)}`, it.singer && `노래 ${esc(it.singer)}`].filter(Boolean).join(" · ")}</div>`;
   },
-  open() {
+  machines() {
     $("karaMachines").innerHTML = KARA_MACHINES.map(m => `<button data-m="${esc(m)}" title="${esc(m)} 번호가 있는 곡 ${this.pool(m).length}곡">${esc(m)}<span class="kc">${this.pool(m).length}</span></button>`).join("");
+  },
+  open() {
+    this.machines();
     this.cur = null;
     $("karaDlg").showModal();
     this.render();
@@ -92,6 +99,7 @@ $("karaMachines").onclick = e => { const b = e.target.closest("button[data-m]");
 $("karaMode").onclick = () => KARA.setMode(!KARA.mode);
 $("karaDraw").onclick = () => KARA.draw();
 $("karaInfo").onclick = () => { KARA.info = !KARA.info; store.set("kara.info", KARA.info); KARA.render(); };
+$("karaOld").onclick = () => { KARA.old = !KARA.old; store.set("kara.old", KARA.old); KARA.machines(); KARA.render(KARA.old ? "구형 기기 — 특정 기기에서만 나오는 곡(ⓗ 등)은 빼고 뽑습니다" : ""); };
 $("karaNodup").onclick = () => { KARA.nodup = !KARA.nodup; store.set("kara.nodup", KARA.nodup); KARA.render(); };
 /* 중복 초기화 (user request): ask once, then forget every number drawn in the last 2 hours (all machines) */
 $("karaReset").onclick = async () => {
