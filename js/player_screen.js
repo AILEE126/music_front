@@ -249,12 +249,15 @@ function renderSearch(info) {
   $("sMakePl").disabled = !S.items.some(canPlay);
   const inPl = new Set(SHELL.queue.map(keyOf)), show = S.items.slice(0, 300), inF = new Set(fSongIds());
   $("sList").innerHTML = show.map((it, i) => {
-    const nums = Object.entries(it.nums || {}).map(([b, n]) => `<span class="b kara" style="--bc:${BRAND_COLOR[b] || "#888"}" title="${esc(b)}">${esc(b)} ${esc(n)}</span>`).join("");
-    const own = it.api ? "" : `<span class="b src" title="우리 데이터가 있는 곡">${it.sync === "ok" ? "싱크" : it.lyrics ? "가사" : "노래방"}</span>`;
+    const nums = Object.entries(it.nums || {}).map(([b, n]) => `<span class="b kara" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b] || "#888"}" title="${esc(b)}">${esc(b)} ${esc(n)}</span>`).join("");
+    // 우리 곡 표시 · 곡 종류 · 보컬 인원수 — 하위 태그 색이 있으면 그 색 (user request 2026-11-15: 인원수도 태그로 보이게)
+    const own = it.api ? "" : it.sync === "ok" ? tagChipHtml("flag", "싱크 있음", "싱크", "src", "우리 데이터가 있는 곡")
+      : it.lyrics ? tagChipHtml("flag", "우리 가사 있음", "가사", "src", "우리 데이터가 있는 곡") : `<span class="b src" title="우리 데이터가 있는 곡">노래방</span>`;
+    const tk = it.type ? VDB_TYPE_KO[it.type] || it.type : "", vc = vcountOf(it);
     return `<div class="sitem${canPlay(it) ? "" : " gone"}" data-i="${i}">${coverHtml(it, "thumb")}
       <div class="meta"><div class="t">${esc(it.title)}${it.orig && it.orig !== it.title ? ` <span class="o">${esc(it.orig)}</span>` : ""}</div>
         <div class="a">${esc(shortName(it.artist || ""))}</div>
-        <div class="tags">${own}${it.type ? `<span class="b">${esc(VDB_TYPE_KO[it.type] || it.type)}</span>` : ""}${it.date ? `<span class="d">${esc(it.date)}</span>` : ""}${nums}</div></div>
+        <div class="tags">${own}${tk ? tagChipHtml("type", tk, tk, "", "곡 종류") : ""}${vc ? tagChipHtml("vcount", vc, vcountLabel(vc), "", "보컬 인원수") : ""}${it.date ? `<span class="d">${esc(it.date)}</span>` : ""}${nums}</div></div>
       <div class="sacts">${canPlay(it) ? `<button data-a="play" title="지금 재생">▶</button><button data-a="next" title="다음에 재생 — 재생 대기열(직접 넣은 곡)에 넣음: 무작위 재생이어도 지금 곡 다음에">⤵</button>`
         + `<button data-a="add" title="재생목록 끝에"${inPl.has(keyOf(it)) ? " disabled" : ""}>${inPl.has(keyOf(it)) ? "✓" : "＋"}</button>` : '<span class="hint">영상 없음</span>'}`
         + `<button data-a="filt" class="sfilt${inF.has(songId(it)) ? " on" : ""}" title="${inF.has(songId(it)) ? "필터에 넣은 곡 — 누르면 뺌" : "현재 필터에 추가 — 지금 결과는 그대로 두고 이 곡도 결과에 더함 (곡만 모은 필터 그룹)"}">${FILT_SVG}</button></div></div>`;
@@ -617,7 +620,8 @@ $("sQ").addEventListener("keydown", e => {
 FKIND.type = ["곡 종류", (it, v) => (VDB_TYPE_KO[it.type] || it.type) === v];
 /* filter categories: the scope's songs (with counts) + 곡 종류 */
 function sfCats(its) {
-  const cats = filterCats(its, true), types = countBy(its.map(it => it.type ? [VDB_TYPE_KO[it.type] || it.type] : []));
+  // 가사·싱크 상태 is replaced by 곡 상태 here (user request 2026-11-15 — 싱크 · 가사 유무 · 번역명 as tags)
+  const cats = filterCats(its, true).filter(c => c.id !== "state"), types = countBy(its.map(it => it.type ? [VDB_TYPE_KO[it.type] || it.type] : []));
   if (types.length) cats.push({id: "type", label: "곡 종류", k: "type", rows: types, lab: x => x});
   const p = id => (fltCat(id) || {p: 1e9}).p;  // 음원 관리 › 필터의 순서 (없으면 가나다순)
   return cats.sort((a, b) => p(a.id) - p(b.id) || a.label.localeCompare(b.label, "ko"));
@@ -625,6 +629,11 @@ function sfCats(its) {
 /* 음원 관리 › 필터 (user request 2026-11-14 — export/db/filter.json): a category's row {id, label, icon, p} · its symbol */
 const fltCat = id => VDB.filter && (VDB.filter.cats || []).find(c => c.id === id);
 const catIconOf = x => { const f = fltCat(x.id); return f && f.icon ? f.icon + "︎" : catIcon(x.label); };
+/* 하위 태그 색 (user request 2026-11-15 — 음원 관리 › 필터 › 하위 태그 색, filter.json tags {cat_id: {value: color}}) — none: built-in look */
+const tagColor = (cat, v) => VDB.filter && VDB.filter.tags && (VDB.filter.tags[cat] || {})[v] || "";
+/* a chip in the tag's color (the karaoke-number look) · no color → plain chip (cls: its built-in class) */
+const tagChipHtml = (cat, v, text, cls = "", title = "") => { const c = tagColor(cat, v);
+  return `<span class="b${cls ? " " + cls : ""}${c ? " tc" : ""}"${c ? ` style="--tc:${esc(c)}"` : ""}${title ? ` title="${esc(title)}"` : ""}>${esc(text)}</span>`; };
 /* 태그 → 분류 (song_filter.js tagGroupOf): master tag rows keep VocaDB's category — remade when master is read again */
 let tagCats = {of: null, map: new Map()};
 /* 곡 조건의 값(VocaDB 번호) → 제목 (song_filter.js songTitleOf) */
@@ -790,6 +799,7 @@ async function showSong(it) {
   const wb = $("btnWiki");
   wb.hidden = !it.namu;
   if (it.namu) wb.href = it.namu; else wb.removeAttribute("href");
+  $("btnInfo").hidden = !it.vocadb;
   showVideo();
   document.title = `${it.title} · 음원 플레이어`;
   renderRows(true);  // 지금 곡 표시만 (목록을 다시 거르지 않음)
@@ -814,11 +824,11 @@ function renderMeta(it) {
   // 우리 DB 태그는 많이 붙은 순 앞 8개만 (분류는 마우스를 올리면). 음성 합성 엔진은 맨 앞 보컬(보컬 색)로 보이므로 뺌
   const lists = tags.filter(t => t === "한국" || t === "일본");
   const inner = [...lists, ...tags.filter(t => !KARA_RE.test(t) && !lists.includes(t) && tagGroupOf(t) !== "음성 합성 엔진").slice(0, 8)];
-  const tagChip = t => lists.includes(t) ? `<span class="b inner${t === "한국" ? " ko" : " ja"}" title="노래방 목록 (한국·일본)">${esc(t)}</span>`
-    : `<span class="b" title="${esc(tagGroupOf(t) || "태그")}">${esc(t)}</span>`;
+  const tagChip = t => lists.includes(t) ? tagChipHtml("kara", t, t, `inner${t === "한국" ? " ko" : " ja"}`, "노래방 목록 (한국·일본)")
+    : tagChipHtml("tag:" + tagGroupOf(t), t, t, "", tagGroupOf(t) || "태그");
   const chips = [
     ...(it.vocals || []).map(([n, c]) => `<span class="b vocal" style="--vc:${esc(c)}" title="보컬">${esc(n)}</span>`),
-    ...kara.map(([t, b]) => `<span class="b kara" style="--bc:${BRAND_COLOR[b]}" title="노래방 수록">${esc(t)}</span>`),
+    ...kara.map(([t, b]) => `<span class="b kara" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b]}" title="노래방 수록">${esc(t)}</span>`),
     ...inner.map(tagChip),
     ...(it.categories || []).map(c => `<span class="b" title="나무위키 분류">${esc(c)}</span>`)];
   box.hidden = !chips.length && !notes.length;
@@ -1183,9 +1193,14 @@ let reportIt = null;  // 신고할 곡 (처음엔 지금 재생 중인 곡)
 // "신곡 추가 요청": no song is picked — the song search box becomes the requested song name.
 const REPORT_REQ = "신곡 추가 요청";
 const reportReq = () => $("reportKind").value === REPORT_REQ;
+// 기능제안 · 텍스트 대치 제안 (user request 2026-11-15): suggestions — a song is optional
+const REPORT_REPL = "텍스트 대치 제안";
+const reportIdea = () => ["기능제안", REPORT_REPL].includes($("reportKind").value);
+const reportRepl = () => $("reportKind").value === REPORT_REPL;
 function reportCanSend() {
   $("reportSend").disabled = !!(LOCAL.gh && !LOCAL.gh.write)  // 읽기만 되는 깃허브 토큰이면 보낼 수 없음
-    || !$("reportWho").value.trim() || (reportReq() ? !$("reportQ").value.trim() : !reportIt);
+    || !$("reportWho").value.trim() || (reportReq() ? !$("reportQ").value.trim() : !reportIt && !reportIdea())
+    || (reportRepl() && !$("reportFrom").value.trim());  // 텍스트 대치: 바꿀 글자는 꼭
 }
 function setReportSong(it) {
   reportIt = it;
@@ -1196,7 +1211,9 @@ function setReportSong(it) {
 }
 function reportKindChanged() {
   const req = reportReq();
-  $("reportSongLabel").innerHTML = req ? "요청할 곡" : '어느 곡인가요 <span class="hint">(지금 재생 중인 곡 — 다른 곡이면 아래에서 찾아 고르기)</span>';
+  $("reportRepl").hidden = !reportRepl();
+  $("reportSongLabel").innerHTML = req ? "요청할 곡" : reportIdea() ? '관련된 곡 <span class="hint">(없어도 됨 — 곡과 상관없는 제안은 그대로 보내기)</span>'
+    : '어느 곡인가요 <span class="hint">(지금 재생 중인 곡 — 다른 곡이면 아래에서 찾아 고르기)</span>';
   $("reportSong").hidden = req;
   $("reportQ").type = req ? "text" : "search";
   $("reportQ").placeholder = req ? "요청할 곡명 (제목·가수 — 영상 주소도 좋아요)" : "다른 곡 찾기 (제목·원제·가수)";
@@ -1205,6 +1222,46 @@ function reportKindChanged() {
   if (req) $("reportQ").focus();
 }
 $("reportKind").addEventListener("change", reportKindChanged);
+$("reportFrom").addEventListener("input", reportCanSend);
+/* 그림 붙이기 (user request 2026-11-15): 최대 5장 — Ctrl+V · 창에 끌어 놓기 · 파일 고르기. 보내기 전에 줄여서 (긴 변 1600px JPEG)
+   신고 파일 안에 data URL 로 (깃허브엔 신고 하나 = 커밋 하나 그대로) → 음원 관리 › 오류 신고에서 봄 */
+const REPORT_IMG_MAX = 5;
+let reportImgs = [];
+async function shrinkImage(file) {
+  const bmp = await createImageBitmap(file);
+  for (const [side, q] of [[1600, 0.85], [1200, 0.75], [900, 0.65]]) {
+    const k = Math.min(1, side / Math.max(bmp.width, bmp.height)), c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(bmp, 0, 0, c.width, c.height);
+    const u = c.toDataURL("image/jpeg", q);
+    if (u.length < 700000 || side === 900) { if (bmp.close) bmp.close(); return u; }
+  }
+}
+async function addReportImages(files) {
+  const imgs = [...files].filter(f => f && /^image\//.test(f.type));
+  if (!imgs.length) return;
+  const room = REPORT_IMG_MAX - reportImgs.length;
+  if (room <= 0) return uiAlert(`그림은 ${REPORT_IMG_MAX}장까지 붙일 수 있습니다.`);
+  for (const f of imgs.slice(0, room)) {
+    try { reportImgs.push(await shrinkImage(f)); } catch (e) { uiAlert(`그림을 읽지 못했습니다 (${f.name || "붙여 넣은 그림"})`); }
+  }
+  renderReportImages();
+  if (imgs.length > room) uiAlert(`그림은 ${REPORT_IMG_MAX}장까지라 ${imgs.length - room}장은 빠졌습니다.`);
+}
+function renderReportImages() {
+  $("reportImgList").innerHTML = reportImgs.map((u, i) => `<span class="ri"><img src="${u}" alt="그림 ${i + 1}"><button type="button" data-i="${i}" title="빼기">✕</button></span>`).join("");
+  $("reportImgPick").disabled = reportImgs.length >= REPORT_IMG_MAX;
+}
+$("reportImgList").addEventListener("click", e => { const b = e.target.closest("button[data-i]"); if (b) { reportImgs.splice(+b.dataset.i, 1); renderReportImages(); } });
+$("reportImgPick").onclick = () => $("reportImgFile").click();
+$("reportImgFile").onchange = async () => { await addReportImages($("reportImgFile").files); $("reportImgFile").value = ""; };
+$("reportDlg").addEventListener("paste", e => {  // text pastes as usual — only images are taken
+  const fs = [...(e.clipboardData && e.clipboardData.items || [])].filter(x => x.kind === "file").map(x => x.getAsFile());
+  if (fs.some(f => f && /^image\//.test(f.type))) { e.preventDefault(); addReportImages(fs); }
+});
+$("reportDlg").addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); $("reportDlg").classList.add("drop"); } });
+$("reportDlg").addEventListener("dragleave", e => { if (!$("reportDlg").contains(e.relatedTarget)) $("reportDlg").classList.remove("drop"); });
+$("reportDlg").addEventListener("drop", e => { $("reportDlg").classList.remove("drop"); if (e.dataTransfer.files.length) { e.preventDefault(); addReportImages(e.dataTransfer.files); } });
 $("reportWho").addEventListener("input", () => { store.set("reportWho", $("reportWho").value.trim()); reportCanSend(); });
 let reportDiag = "";  // diagnostic log attached to a stall report (play_engine.js diag)
 function openReport(pre = {}) {
@@ -1214,6 +1271,8 @@ function openReport(pre = {}) {
   reportKindChanged();
   if (pre.it) setReportSong(pre.it);
   $("reportText").value = pre.text || "";
+  $("reportFrom").value = $("reportTo").value = "";
+  reportImgs = []; renderReportImages();
   reportDiag = pre.diag || "";
   // 보내는 곳: 깃허브에서 열었으면 그 저장소 (서버 PC 의 음원 관리가 받아 봄) · 폴더로 열었으면 그 폴더 (서버 PC 의 폴더일 때만 전달됨)
   $("reportHint").textContent = "보낸 날짜·시각과 함께 저장됩니다 — " + (LOCAL.gh
@@ -1225,6 +1284,30 @@ function openReport(pre = {}) {
   ($("reportWho").value ? $("reportText") : $("reportWho")).focus();
 }
 $("btnReport").onclick = () => openReport();
+/* 곡 전체 정보 (user request 2026-11-15): 이 곡을 불러오는 데 쓴 표의 줄을 그대로 — 칸 | 값 (곡 표 = export songs · 노래방 표 = karaoke.json) */
+function songInfoSections(it) {
+  const id = String(it.vocadb || ""), r = VDB.rowById && VDB.rowById.get(id), k = VDB.kara && VDB.kara.get(id);
+  const val = v => v == null || v === "" ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+  return [["곡 표 (export/db/songs — data 테이블)", r], ["노래방 표 (export/db/karaoke.json — karaoke 테이블)", k]]
+    .filter(([, row]) => row).map(([name, row]) => [name, Object.entries(row).map(([c, v]) => [c, val(v)])]);
+}
+function openSongInfo() {
+  const it = cur; if (!it) return;
+  const secs = songInfoSections(it);
+  $("infoTitle").textContent = `곡 정보 — ${it.title}`;
+  $("infoBody").innerHTML = secs.map(([name, rows]) => `<h4>${esc(name)}</h4><table class="infotbl">`
+    + rows.map(([c, v]) => `<tr><th>${esc(c)}</th><td${v ? "" : ' class="empty"'}>${v ? esc(v) : "(빈 값)"}</td></tr>`).join("") + "</table>").join("")
+    || '<p class="hint">이 곡은 우리 DB 표에 줄이 없습니다 (VocaDB 에서 바로 찾은 곡).</p>';
+  $("infoDlg").showModal();
+}
+$("btnInfo").onclick = openSongInfo;
+$("infoClose").onclick = () => $("infoDlg").close();
+$("infoCopy").onclick = () => {
+  const it = cur; if (!it) return;
+  const text = songInfoSections(it).map(([name, rows]) => `[${name}]\n` + rows.map(([c, v]) => `${c}\t${v}`).join("\n")).join("\n\n");
+  navigator.clipboard.writeText(text).then(() => { $("infoCopy").textContent = "복사됨"; setTimeout(() => { $("infoCopy").textContent = "복사"; }, 1200); }, e => uiAlert(e.message));
+};
+$("sReport").onclick = () => openReport();  // 곡 검색 창 위에 열림 (dialog top layer)
 /* User request: no browser-settings popup (on entry or on stall). A song that stalled while the player wasn't watched
    (play_engine.js stallSubs) opens the error report instead, with the diagnostic log attached — once per load. */
 const REPORT_STALL = "안 보는 동안 곡이 멈춤";
@@ -1255,7 +1338,7 @@ const reportFind = {timer: 0};
 $("reportCancel").onclick = () => $("reportDlg").close();
 $("reportSend").onclick = async () => {
   const it = reportReq() ? null : reportIt, req = reportReq() ? $("reportQ").value.trim() : "";
-  if (!it && !req) return;
+  if (!it && !req && !reportIdea()) return;
   // user request: reporting a deleted song is allowed, but ask first
   if (it && it.deleted && !await uiConfirm("해당 곡은 삭제됐습니다. 신고하시겠습니까?", "예")) return;
   const playing = it && SHELL.now && keyOf(SHELL.now) === keyOf(it);
@@ -1264,7 +1347,8 @@ $("reportSend").onclick = async () => {
     await post("/api/report", {kind: $("reportKind").value, text: $("reportText").value, who: $("reportWho").value.trim(), request: req,
       song: it ? {site: it.site, name: it.name, title: it.title, artist: it.artist || "", ...(it.vocadb ? {vocadb: String(it.vocadb)} : {})} : null,  // VocaDB id: the song's key from now on
       pos: playing ? Math.round(audio.currentTime * 10) / 10 : null, source: playing ? audio.src : "",
-      diag: $("reportKind").value === REPORT_STALL ? reportDiag : ""});
+      diag: $("reportKind").value === REPORT_STALL ? reportDiag : "", images: reportImgs,
+      ...(reportRepl() ? {replace: {from: $("reportFrom").value.trim(), to: $("reportTo").value.trim()}} : {})});
   } catch (e) { reportCanSend(); uiAlert(e.message); return; }
   $("reportDlg").close();
   uiAlert("신고를 보냈습니다. 고맙습니다!");
@@ -1382,7 +1466,7 @@ bindOverlayPower($("btnOverlayPower"));  // 오버레이 켜기/끄기 (켜짐 �
 
 /* ================= 키보드 ================= */
 document.addEventListener("keydown", e => {
-  if (e.target.closest("input[type=text],input[type=search],textarea,select") || $("lyrView").open || $("coverDlg").open || $("reportDlg").open || $("searchDlg").open || document.querySelector("dialog.uidlg[open]")) return;
+  if (e.target.closest("input[type=text],input[type=search],textarea,select") || $("lyrView").open || $("coverDlg").open || $("reportDlg").open || $("searchDlg").open || $("karaDlg").open || document.querySelector("dialog.uidlg[open]")) return;
   if (editing && (e.code === "Space" || e.key === "ArrowDown")) { e.preventDefault(); if (audio.paused) audio.play(); else stamp(); return; }
   if (editing && e.key === "ArrowUp") { e.preventDefault(); cursor = Math.max(0, cursor - 1); renderStamps(); return; }
   if (e.code === "Space") { e.preventDefault(); $("btnPlay").click(); }

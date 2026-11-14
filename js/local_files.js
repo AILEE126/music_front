@@ -330,6 +330,9 @@ const LOCAL = {
     if (d.diag) r.diag = String(d.diag).slice(-12000);  // 안 보는 동안 멈춤 신고: 재생기 진단 기록 (play_engine.js diag)
     if (d.request) r.request = String(d.request).trim().slice(0, 300);  // 신곡 추가 요청: requested song name
     if (d.sync) r.sync = {vocadb: String(d.sync.vocadb), pending: String(d.sync.pending)};  // 싱크 수정 신고: VocaDB 곡 · 기다리는 파일 (Server\data 기준)
+    if (d.replace && d.replace.from) r.replace = {from: String(d.replace.from).slice(0, 300), to: String(d.replace.to || "").slice(0, 300)};  // 텍스트 대치 제안
+    const imgs = (d.images || []).filter(u => typeof u === "string" && /^data:image\/(jpeg|png|webp|gif);base64,/.test(u) && u.length < 3e6).slice(0, 5);
+    if (imgs.length) r.images = imgs;  // 붙인 그림 (user request 2026-11-15) — data URLs, shown in Manage › 오류 신고
     await this.writeText(`${this.data}reports/${id}.json`, JSON.stringify(r, null, 1));
     return {ok: true, id};
   },

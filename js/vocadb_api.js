@@ -118,6 +118,7 @@ const VDB = {
       rating: +r.rating_score || 0, sources: [r.video_url, ...String(r.alt_urls || "").split(" ")].filter(u => /nicovideo\.jp|nico\.ms|youtube\.com|youtu\.be/.test(u || "")),
       tags: [...String(r.tags || "").split("|").filter(Boolean), ...ki.extraTags], nums: ki.nums, ord: ki.ord, karaoke: ki.karaoke, namu: ki.namu,
       lyrics: ours.lyrics || "", ...(ours.sync === "ok" ? {sync: "ok", method: ours.method || "", score: ours.score ?? null} : {})};
+    it.flags = songFlags(it, r.lyrics === "Y", !!(r.title_ko && r.title_ko !== r.title_ja));  // 곡 상태 (song_filter.js FLAGS)
     vdbDerive(it); prepItem(it);
     return it;
   },

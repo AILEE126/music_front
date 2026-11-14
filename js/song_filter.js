@@ -25,6 +25,14 @@ function prepItem(it) {
   it._composers = people(it.composer);
   it._year = /^\d{4}/.test(it.date || "") ? it.date.slice(0, 4) : "";
 }
+/* 곡 상태 (user request 2026-11-15: 싱크 · 가사 유무 · 번역명도 태그처럼 필터에) — 코드가 정하는 태그. 순서 = 목록 순서.
+   규칙은 음원 관리 › 필터 › 하위 태그에 보임 (vocadb/filter_settings.py FLAGS 와 같음) */
+const FLAGS = ["싱크 있음", "싱크 없음", "우리 가사 있음", "VocaDB 가사 있음", "가사 없음", "한글 제목 있음", "한글 제목 없음"];
+/* vdbLyrics: VocaDB 에 원문 가사 (data.lyrics = Y) · koTitle: 한글 제목이 있고 원제와 다름 */
+function songFlags(it, vdbLyrics, koTitle) {
+  return [it.sync === "ok" ? "싱크 있음" : "싱크 없음", ...(it.lyrics ? ["우리 가사 있음"] : []), ...(vdbLyrics ? ["VocaDB 가사 있음"] : []),
+          ...(!it.lyrics && !vdbLyrics ? ["가사 없음"] : []), koTitle ? "한글 제목 있음" : "한글 제목 없음"];
+}
 const KARA_RE = /^(TJ|금영|DAM|UGA|JOYSOUND)$/;
 const STATES = {lyrics: "가사 있음", nolyrics: "가사 없음", ok: "싱크됨", need: "싱크 필요", stale: "싱크 다시", resync: "재싱크 필요", fail: "싱크 실패",
                 "src:namu": "나무위키 가사", "src:vocaro": "VL 가사", "src:own": "직접 넣은 가사", "src:link": "연결 가사"};
@@ -35,6 +43,7 @@ const FKIND = {
   singer: ["보컬", (it, v) => it._singers.includes(v)],
   solo: ["솔로", (it, v) => it._singers.length === 1 && it._singers[0] === v],
   vcount: ["인원수", (it, v) => vcountOf(it) === v],
+  flag: ["곡 상태", (it, v) => (it.flags || []).includes(v)],
   song: ["곡", (it, v) => String(it.vocadb || it.name) === v],  // 그 곡 자체 (user request 2026-11-14: 검색 결과의 '필터에 추가') — v: VocaDB 번호
   composer: ["프로듀서", (it, v) => it._composers.includes(v)],
   kara: ["노래방", (it, v) => (it.tags || []).includes(v)],
@@ -53,7 +62,7 @@ const firstV = c => Array.isArray(c.v) ? c.v[0] || "" : c.v;
 const chipKind = c => c.k === "tag" && tagGroupOf(firstV(c)) || FKIND[c.k][0];
 /* 곡 조건의 값(VocaDB 번호) → 제목 — 플레이어가 우리 DB 로 정함 (player_screen.js) */
 var songTitleOf = v => v;
-const oneLabel = (k, v) => k === "vcount" ? vcountLabel(v) : k === "song" ? songTitleOf(v) : k === "tag" ? v : k === "year" ? v + "년" : k === "state" ? STATES[v] || v
+const oneLabel = (k, v) => k === "vcount" ? vcountLabel(v) : k === "song" ? songTitleOf(v) : k === "flag" ? v : k === "tag" ? v : k === "year" ? v + "년" : k === "state" ? STATES[v] || v
   : k === "kara" && (v === "한국" || v === "일본") ? v + " 전체" : shortName(v);
 const vcountLabel = v => v.endsWith("+") ? `${parseInt(v)}인 이상` : v + "인";
 const chipLabel = c => c.k === "song" && Array.isArray(c.v) && c.v.length > 2 ? `${c.v.slice(0, 2).map(v => oneLabel(c.k, v)).join(", ")} 외 ${c.v.length - 2}곡`
@@ -95,13 +104,15 @@ function filterCats(its, online) {
   add("cat", "나무위키 분류", "cat", countBy(its.map(it => it.categories || [])));
   add("year", "투고년도", "year", countBy(its.map(it => it._year ? [it._year] : [])).sort((a, b) => b[0].localeCompare(a[0])), k => k + "년");
   add("state", "가사·싱크 상태", "state", stateRows(its, online), k => STATES[k]);
+  const fl = new Map(countBy(its.map(it => it.flags || [])));
+  add("flag", "곡 상태", "flag", FLAGS.filter(f => fl.has(f)).map(f => [f, fl.get(f)]));
   return cats.sort((a, b) => a.label.localeCompare(b.label, "ko"));  // 대분류는 가나다순
 }
 /* 카테고리 기호 (user request 2026-11-14): 카테고리 이름(label) → 기호 한 곳에서 관리. 그릴 때만 붙임 (이름·저장값은 그대로).
    컬러 이모지는 눈에 안 들어와서 (user request) 글자색 한 가지로 그려지는 단순한 기호 — U+FE0E: 이모지 그림으로 바꾸지 말고 글자로.
    태그 분류(장르·테마 …)는 VocaDB 분류의 한글 이름 (player_screen.js TAG_CAT_KO) — 새 분류가 생기면 여기 한 줄 더, 없으면 # */
 const CAT_ICON = {
-  "가나다": "ㄱ", "보컬": "♪", "보컬 인원수": "Ⅲ", "프로듀서": "✎", "노래방": "♫", "나무위키 분류": "▤", "투고년도": "◷", "가사·싱크 상태": "✓", "곡 종류": "◉",
+  "가나다": "ㄱ", "보컬": "♪", "보컬 인원수": "Ⅲ", "프로듀서": "✎", "노래방": "♫", "나무위키 분류": "▤", "투고년도": "◷", "가사·싱크 상태": "✓", "곡 상태": "◇", "곡 종류": "◉",
   "장르": "◆", "테마": "◈", "분위기": "☁", "악기": "♩", "곡 구성": "▦", "보컬 관련": "✧", "원작": "❖", "시리즈": "⟳", "애니메이션": "▶",
   "게임": "✦", "MMD 모델": "☺", "출처": "↗", "배포": "⇩", "편집 메모": "✐", "음성 합성 엔진": "⚙", "가사": "❝", "2차 창작": "⧉",
   "디자인": "✿", "이벤트": "⚑", "매체": "▣", "역할": "☰", "언어": "◎",
