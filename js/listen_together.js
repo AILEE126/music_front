@@ -176,6 +176,29 @@ function ltSendQueue(to) {
   if (to) return ltSend(to, m);
   LT.conns.forEach((_, c) => ltSend(c, m));
 }
+/* host: the side panel's playlist → guests see it as it is (user request 2026-11-14 — read-only there).
+   Our DB songs go as their VocaDB id only (like the saved playlist), mp3 songs as name/title only (the guest can't play them) */
+function ltPlMsg() {
+  return {t: "pl", list: view.map(it => it.vocadb && VDB.rowById.has(String(it.vocadb)) ? +it.vocadb
+    : it.site === "local" ? {site: "local", name: it.name, title: it.title, artist: it.artist || ""} : ltStrip(it))};
+}
+let ltPlSig = "", ltPlT = 0;
+function ltPlChanged() {  // called by renderList (player_screen.js) — sent only when the list really changed
+  if (LT.role !== "host") return;
+  clearTimeout(ltPlT);
+  ltPlT = setTimeout(() => {
+    const sig = view.map(keyOf).join("\n");
+    if (sig === ltPlSig) return;
+    ltPlSig = sig;
+    const m = ltPlMsg();
+    LT.conns.forEach((_, c) => ltSend(c, m));
+  }, 300);
+}
+/* guest: show the host's playlist instead of mine (mine comes back on leaving) */
+function ltShowPl(list) {
+  guestPl = (list || []).map(x => typeof x === "number" ? VDB.itemById(x) : x && x.site === "local" ? x : liveItem(x)).filter(Boolean);
+  renderList();
+}
 function ltMembers() {
   LT.members = [LT.me, ...[...LT.conns.values()].map(v => v.name)];
   const m = {t: "members", list: LT.members, title: LT.title, open: LT.open};
@@ -217,7 +240,7 @@ function ltHostPeer(code, left) {
         ltSend(c, {t: "denied", why: "name"});
         return setTimeout(() => { try { c.close(); } catch (e) {} }, 800);
       }
-      LT.conns.set(c, {name, uid, seen: Date.now()}); ltMembers(); ltSend(c, {t: "state", s: ltState()}); ltSendQueue(c); ltSend(c, ltReqsMsg());
+      LT.conns.set(c, {name, uid, seen: Date.now()}); ltMembers(); ltSend(c, {t: "state", s: ltState()}); ltSendQueue(c); ltSend(c, ltReqsMsg()); ltSend(c, ltPlMsg());
     });
     c.on("data", m => ltHostGot(c, m));
     c.on("close", () => { if (LT.conns.delete(c)) ltMembers(); });
@@ -394,6 +417,7 @@ function ltGuestGot(m) {
   if (m.t === "go") return ltGuestGo(m.id);
   if (m.t === "pong") { const r = performance.now() - m.at; if (r >= 0 && r < 5000) LT.rtt = LT.rtt ? LT.rtt * 0.7 + r * 0.3 : r; return; }
   if (m.t === "queue") return ltApplyQueue(m);
+  if (m.t === "pl") return ltShowPl(m.list);
   if (m.t === "reqs") { LT.reqs = m.list || []; ltRenderReqs(); }
 }
 /* host's queue → mine (songs I can't play here are left out) */
@@ -467,6 +491,8 @@ function ltLeave(quiet) {
   ltPrepEnd(); LT.gprep = null;
   LT.peer = null; LT.role = ""; LT.code = ""; LT.host = null; LT.members = []; LT.reqs = []; LT.reqPage = 0; LT.lead = 0; LT.conns = new Map(); LT.lostAt = 0; LT.retryAt = 0;
   SHELL.follow = false;
+  ltPlSig = "";
+  if (guestPl) { guestPl = null; renderList(); }  // back to my own playlist
   if (peer) setTimeout(() => { try { peer.destroy(); } catch (e) {} }, 300);  // "bye" 가 먼저 나가게
   if (!quiet) LT.status = "";
   ltRender();

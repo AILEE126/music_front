@@ -88,17 +88,21 @@ function renderOffBar() {
   $("offDirPick").onclick = () => connectOffDir(true);
 }
 var BRAND_COLOR = {TJ: "rgb(0,175,236)", 금영: "rgb(130,112,219)", DAM: "rgb(230,30,40)", JOYSOUND: "rgb(225,225,232)", UGA: "rgb(225,225,232)"};
+/* 같이듣기 손님: 방장의 재생목록 (user request 2026-11-14: 그대로 보이되 조작은 못 함 — listen_together.js 가 채움) · null: 내 재생목록 */
+var guestPl = null;
 function renderList() {
-  view = ONLINE ? SHELL.queue.slice() : OFFDIR.items.slice();
-  $("libInfo").innerHTML = ONLINE ? `재생목록 <b>${view.length}</b>곡` : `mp3 <b>${view.length}</b>곡`;
-  $("btnPlClear").hidden = !ONLINE;
+  view = guestPl ? guestPl.slice() : ONLINE ? SHELL.queue.slice() : OFFDIR.items.slice();
+  $("libInfo").innerHTML = guestPl ? `방장 재생목록 <b>${view.length}</b>곡` : ONLINE ? `재생목록 <b>${view.length}</b>곡` : `mp3 <b>${view.length}</b>곡`;
+  $("btnPlClear").hidden = !ONLINE || !!guestPl;
   renderRows(true);
+  if (!guestPl && typeof ltPlChanged === "function") ltPlChanged();  // 방장: 손님들에게도
 }
 /* 목록은 보이는 줄(과 위아래 몇 줄)만 그림. 줄 높이가 모두 같아 그린 줄을 재서 위아래 빈 칸으로 전체 높이를 맞춤 */
 var ROW_H = 0, vlFrom = -1, vlTo = -1, VL_STEP = 20;
 function renderRows(force) {
   const L = $("list");
-  if (!ONLINE && !OFFDIR.dir) {  // offline, no mp3 folder yet → one button only (user request)
+  if (guestPl && !view.length) { L.innerHTML = `<div class="empty">방장의 재생목록이 비어 있습니다.</div>`; vlFrom = vlTo = -1; return; }
+  if (!guestPl && !ONLINE && !OFFDIR.dir) {  // offline, no mp3 folder yet → one button only (user request)
     L.innerHTML = `<div class="empty"><button class="primary" id="offConnect">폴더를 연결해 주세요</button></div>`;
     $("offConnect").onclick = () => connectOffDir(false);
     vlFrom = vlTo = -1; return;
@@ -138,7 +142,7 @@ function badgesHtml(it) {
   return bs.join("");
 }
 function itemHtml(it, i) {
-  const pl = ONLINE;
+  const pl = ONLINE && !guestPl;
   return `<div class="item${cur && keyOf(cur) === keyOf(it) ? " cur" : ""}${it.deleted ? " gone" : ""}" data-i="${i}"${pl ? ' draggable="true"' : ""}${it.deleted ? ' aria-disabled="true"' : ""}>
     ${coverHtml(it, "thumb")}<div class="meta"><div class="t">${esc(it.title)}</div><div class="a">${esc(shortName(it.artist || it.name))}</div></div>
     <div class="badges">${badgesHtml(it)}</div>${pctHtml(it)}${pl ? '<button class="plx" title="재생목록에서 빼기">✕</button>' : ""}</div>`;
@@ -166,7 +170,7 @@ $("btnFindCur").onclick = () => {
   if (el) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
 };
 $("list").addEventListener("click", e => {
-  const el = e.target.closest(".item"); if (!el) return;
+  const el = e.target.closest(".item"); if (!el || guestPl) return;  // 손님: 방장 재생목록은 보기만
   const i = +el.dataset.i;
   if (e.target.closest(".plx")) return PL.remove(i);
   if (el.classList.contains("gone")) return;  // deleted song: can't be picked
@@ -174,7 +178,7 @@ $("list").addEventListener("click", e => {
 });
 /* drag a playlist row to reorder (user request 2026-11-14: the playlist moved to the side panel) */
 let dragFrom = -1;
-$("list").addEventListener("dragstart", e => { const el = e.target.closest(".item"); if (!el || !ONLINE) return; dragFrom = +el.dataset.i; e.dataTransfer.effectAllowed = "move"; });
+$("list").addEventListener("dragstart", e => { const el = e.target.closest(".item"); if (!el || !ONLINE || guestPl) return; dragFrom = +el.dataset.i; e.dataTransfer.effectAllowed = "move"; });
 $("list").addEventListener("dragover", e => { if (dragFrom >= 0) { e.preventDefault(); const el = e.target.closest(".item"); document.querySelectorAll("#list .item.dropto").forEach(x => x !== el && x.classList.remove("dropto")); if (el) el.classList.add("dropto"); } });
 $("list").addEventListener("drop", e => {
   const el = e.target.closest(".item"); e.preventDefault();
@@ -197,7 +201,7 @@ function songContext(e, it, extra = []) {
 $("list").addEventListener("contextmenu", e => {
   const el = e.target.closest(".item"); if (!el) return;
   const i = +el.dataset.i, it = view[i];
-  songContext(e, it, ONLINE ? [{label: "다음에 재생", fn: () => SHELL.enqueue(it)}, {label: "재생목록에서 빼기", fn: () => PL.remove(i)}] : []);
+  songContext(e, it, ONLINE && !guestPl ? [{label: "다음에 재생", fn: () => SHELL.enqueue(it)}, {label: "재생목록에서 빼기", fn: () => PL.remove(i)}] : []);
 });
 $("btnPlClear").onclick = async () => { if (SHELL.queue.length && await uiConfirm("재생목록을 비울까요?")) PL.set([]); };
 
@@ -231,16 +235,19 @@ async function findSongs(q, known = [], max = 40) {
 }
 /* the scope's songs: 전체 곡 = our whole DB · 노래방 곡만 · 가사·싱크 있는 곡 = our songs */
 const scopeItems = () => { const sc = $("sScope").value; return sc === "kara" ? VDB.curated.filter(it => it.karaoke) : sc === "ours" ? VDB.curated.filter(it => !!(it.lyrics || it.sync)) : VDB.all(); };
-function runSearch() {
+/* keep: stay where the list is (user request 2026-11-14: a song action — e.g. '현재 필터에 추가' — never jumps to the top) */
+function runSearch(keep) {
   const scope = $("sScope").value, q = $("sQ").value.trim(), v = fold(q);
-  S.q = q; $("sList").scrollTop = 0;
+  S.q = q;
+  if (!keep) $("sList").scrollTop = 0;
   S.items = ourSort(scopeItems().filter(it => passChips(it) && (!v || FKIND.text[1](it, v))));
   renderSearch(`${{kara: "노래방 곡", ours: "가사·싱크 있는 곡"}[scope] || "전체 곡"} ${S.items.length.toLocaleString()}곡${q ? ` — "${q}"` : ""}${FG.some(g => g.c.length) ? " · 필터 적용" : ""}`);
 }
 function renderSearch(info) {
+  const st = $("sList").scrollTop;  // runSearch already put it at 0 when it should go to the top
   $("sInfo").textContent = info;
-  $("sAddAll").disabled = !S.items.some(canPlay);
-  const inPl = new Set(SHELL.queue.map(keyOf)), show = S.items.slice(0, 300);
+  $("sMakePl").disabled = !S.items.some(canPlay);
+  const inPl = new Set(SHELL.queue.map(keyOf)), show = S.items.slice(0, 300), inF = new Set(fSongIds());
   $("sList").innerHTML = show.map((it, i) => {
     const nums = Object.entries(it.nums || {}).map(([b, n]) => `<span class="b kara" style="--bc:${BRAND_COLOR[b] || "#888"}" title="${esc(b)}">${esc(b)} ${esc(n)}</span>`).join("");
     const own = it.api ? "" : `<span class="b src" title="우리 데이터가 있는 곡">${it.sync === "ok" ? "싱크" : it.lyrics ? "가사" : "노래방"}</span>`;
@@ -248,10 +255,12 @@ function renderSearch(info) {
       <div class="meta"><div class="t">${esc(it.title)}${it.orig && it.orig !== it.title ? ` <span class="o">${esc(it.orig)}</span>` : ""}</div>
         <div class="a">${esc(shortName(it.artist || ""))}</div>
         <div class="tags">${own}${it.type ? `<span class="b">${esc(VDB_TYPE_KO[it.type] || it.type)}</span>` : ""}${it.date ? `<span class="d">${esc(it.date)}</span>` : ""}${nums}</div></div>
-      <div class="sacts">${canPlay(it) ? `<button data-a="play" title="지금 재생">▶</button><button data-a="next" title="다음에 재생 (재생목록에서 지금 곡 다음)">⤵</button>`
-        + `<button data-a="add" title="재생목록 끝에"${inPl.has(keyOf(it)) ? " disabled" : ""}>${inPl.has(keyOf(it)) ? "✓" : "＋"}</button>` : '<span class="hint">영상 없음</span>'}</div></div>`;
-  }).join("") + (S.items.length > show.length ? `<div class="hint">… ${(S.items.length - show.length).toLocaleString()}곡 더 ('결과 모두 재생목록에' 는 이 곡들까지 다 넣음)</div>` : "")
+      <div class="sacts">${canPlay(it) ? `<button data-a="play" title="지금 재생">▶</button><button data-a="next" title="다음에 재생 — 재생 대기열(직접 넣은 곡)에 넣음: 무작위 재생이어도 지금 곡 다음에">⤵</button>`
+        + `<button data-a="add" title="재생목록 끝에"${inPl.has(keyOf(it)) ? " disabled" : ""}>${inPl.has(keyOf(it)) ? "✓" : "＋"}</button>` : '<span class="hint">영상 없음</span>'}`
+        + `<button data-a="filt" class="sfilt${inF.has(songId(it)) ? " on" : ""}" title="${inF.has(songId(it)) ? "필터에 넣은 곡 — 누르면 뺌" : "현재 필터에 추가 — 지금 결과는 그대로 두고 이 곡도 결과에 더함 (곡만 모은 필터 그룹)"}">${FILT_SVG}</button></div></div>`;
+  }).join("") + (S.items.length > show.length ? `<div class="hint">… ${(S.items.length - show.length).toLocaleString()}곡 더 ('상위 … 곡 재생목록 만들기' 는 이 곡들까지 셈)</div>` : "")
     || `<div class="empty">맞는 곡이 없습니다.</div>`;
+  $("sList").scrollTop = st;
 }
 
 /* ================= 필터 (판정·카테고리는 song_filter.js — 음원 관리와 같이 씀) — 곡 검색 창 안 (user request 2026-11-14) ================= */
@@ -261,21 +270,78 @@ const sfItems = scopeItems;
    포함 그룹끼리는 하나라도 맞으면 보임(합집합), 제외 그룹의 조건에 모두 맞는 곡은 빠짐. fCur: 새 조건이 들어갈 그룹.
    버튼으로 그룹을 만들지 않았으면(m 없음) 조건을 고를 때마다 그 조건 하나만으로 거름 (앞 조건은 바뀜).
    예전 태그(f.chips: 태그마다 포함·제외)는 태그 하나짜리 그룹으로 옮김 · m 이 생기기 전에 저장한 조건 여럿짜리 그룹은 직접 만든 것으로 봄 */
+/* 곡 종류는 그룹마다 꼭 하나 (user request 2026-11-14) — 없으면 오리지널로 넣음 · 지울 수 없고, 카테고리 '곡 종류'에서 고르면 값만 바뀜 */
+const F_TYPE_DEF = "오리지널";
+const withType = g => g.c.some(c => c.k === "type") ? g : {...g, c: [{k: "type", v: F_TYPE_DEF}, ...g.c]};
+/* 곡 종류만 든 그룹은 첫 그룹이 아니면 아직 빈 그룹 — 다른 조건을 고를 때까지 거르지 않음 ('＋ 그룹'만 눌러도 결과가 늘지 않게) */
+const fReal = (g, i) => i === 0 || g.c.some(c => c.k !== "type");
 let FG = (store.get("f.groups", null) || store.get("f.chips", []).map(c => ({x: !!c.x, c: [{k: c.k, v: c.v}]})))
-  .map(g => "m" in g ? g : {...g, m: g.c.length > 1});
+  .map(g => "m" in g ? g : {...g, m: g.c.length > 1}).map(withType);
 let fCur = Math.min(store.get("f.cur", 0), FG.length - 1);
-const passChips = it => passGroups(it, FG);
-function saveChips() { store.set("f.groups", FG); store.set("f.cur", fCur); renderFilterOptions(); runSearch(); }
+const passChips = it => passGroups(it, FG.filter(fReal));
+function saveChips(keepScroll) { sfDefaultGroup(); store.set("f.groups", FG); store.set("f.cur", fCur); renderFilterOptions(); runSearch(keepScroll); }
 function addChip(k, v) {  // v: 값 하나 또는 [값, …] (그중 하나라도)
   if (!v || (Array.isArray(v) && !v.length)) return;
   if (Array.isArray(v) && v.length === 1) v = v[0];
   if (!FG[fCur] || !FG[fCur].m) {  // 직접 만든 그룹이 선택돼 있지 않음 → 이 조건 하나만 (버튼 없이 고른 앞 조건은 지움)
     FG = FG.filter(g => g.m);
-    FG.push({x: false, m: false, c: [{k, v}]}); fCur = FG.length - 1;
+    FG.push(withType({x: false, m: false, c: [{k, v}]})); fCur = FG.length - 1;
     return saveChips();
   }
-  const g = FG[fCur];
+  const g = FG[fCur], t = g.c.find(c => c.k === "type");
+  if (k === "type" && t) { t.v = v; return saveChips(); }  // 곡 종류는 하나뿐 — 값만 바꿈
   if (!g.c.some(c => c.k === k && JSON.stringify(c.v) === JSON.stringify(v))) g.c.push({k, v});
+  saveChips();
+}
+/* 곡 조건 (user request 2026-11-14: 검색 결과의 '현재 필터에 추가'): 지금 결과에 이 곡'도' 더함 — 곡만 모은 포함 그룹 하나
+   (곡 종류 + 곡 조건, 그룹끼리는 또는)에 VocaDB 번호를 모음. 선택된 그룹에 넣으면 결과가 그 곡으로 좁혀져 목록이 줄어들기 때문
+   (user report: 누르니 목록이 맨 위로). 그 곡의 종류가 그룹의 곡 종류에 없으면 더함. 이미 든 곡은 다시 누르면 뺌 (다 빠지면 그룹도) */
+function songGroup() { return FG.find(g => !g.x && g.c.some(c => c.k === "song") && g.c.every(c => c.k === "song" || c.k === "type")); }
+function songId(it) { return String(it.vocadb || it.name); }
+var FILT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M3 5h12l-5 6v5l-3 2v-7z"/><path d="M18 12v8M14 16h8"/></svg>';
+function fSongIds() { const g = songGroup(), c = g && g.c.find(c => c.k === "song"); return c ? [].concat(c.v) : []; }
+function toggleSongCond(it) {
+  sfDefaultGroup();
+  const id = songId(it), ty = VDB_TYPE_KO[it.type] || it.type;
+  let g = songGroup();
+  if (!g) { g = {x: false, m: true, c: [{k: "type", v: ty || F_TYPE_DEF}]}; FG.push(g); }
+  FG.forEach(x => { x.m = true; });  // 버튼 없이 고른 조건도 그룹으로 남김 (다음 조건을 골라도 지워지지 않게)
+  let c = g.c.find(c => c.k === "song");
+  if (c && [].concat(c.v).includes(id)) {
+    c.v = [].concat(c.v).filter(x => x !== id);
+    if (!c.v.length) { FG.splice(FG.indexOf(g), 1); fCur = Math.min(fCur, FG.length - 1); }
+  } else {
+    if (!c) g.c.push(c = {k: "song", v: []});
+    c.v = [...[].concat(c.v), id];
+    const t = g.c.find(c => c.k === "type");
+    if (t && ty && ![].concat(t.v).includes(ty)) t.v = [...[].concat(t.v), ty];
+  }
+  saveChips(true);  // a song action: the result list stays where it is
+}
+/* 그룹 안 조건 고치기 (user request 2026-11-14): 조건을 누르면 그 카테고리의 값 목록이 지금 값이 체크된 채로 열리고, '바꾸기'로 그 조건만 바뀜.
+   fEdit {g, c}: 고치는 중인 조건 (목록이 닫히면 끝) */
+var fEdit = null;
+function editCond() { return fEdit && FG[fEdit.g] && FG[fEdit.g].c[fEdit.c] || null; }
+function condCat(c) { return c.k === "solo" ? "singer" : c.k === "tag" ? "tag:" + tagGroupOf(firstV(c)) : c.k; }
+function editChip(gi, ci) {
+  const c = FG[gi] && FG[gi].c[ci]; if (!c) return;
+  fCur = gi; fEdit = {g: gi, c: ci};
+  if ($("fPanel").hidden) { $("fPanel").hidden = false; store.set("sfOpen", true); }
+  $("fSolo").checked = c.k === "solo";
+  store.set("f.kind", condCat(c)); store.set("f.cur", fCur);
+  renderFilterOptions();
+  openDD("fVal", [].concat(c.v));
+}
+function applyEdit(e, vs) {
+  const g = e && FG[e.g], c = g && g.c[e.c];
+  if (c) {
+    vs = vs.filter(Boolean);
+    if (!vs.length) { if (c.k !== "type") g.c.splice(e.c, 1); }  // 다 풀면 조건을 뺌 (곡 종류는 꼭 하나라 그대로)
+    else {
+      c.v = vs.length === 1 && c.k !== "song" ? vs[0] : vs;
+      if (c.k === "singer" || c.k === "solo") c.k = $("fSolo").checked ? "solo" : "singer";
+    }
+  }
   saveChips();
 }
 
@@ -285,10 +351,15 @@ function renderFilterOptions() {
     $(id).innerHTML = opt("", head) + rows.map(([k, n]) => opt(k, n === "" ? label(k) : `${label(k)} (${n})`)).join("");
     $(id).hidden = !show;
   };
-  const cats = sfCats(its);
+  const cats = sfCats(its), ec = editCond();
+  if (ec && ec.k === "song") cats.unshift({id: "song", label: "곡", k: "song", rows: [].concat(ec.v).map(v => [v, ""]), lab: songTitleOf});  // 넣은 곡만 (빼기용)
   FCATS = cats;
   const want = store.get("f.kind", "singer"), c = cats.find(x => x.id === want) || cats[0];
-  $("fKind").innerHTML = cats.map(x => opt(x.id, x.rows.length ? `${x.label} (${x.rows.length})` : x.label)).join("");
+  if (ec && c && c.id === condCat(ec)) {  // 고치는 조건의 값이 이 범위 곡에 없어도 목록에 (안 그러면 '바꾸기'에서 빠짐)
+    const have = new Set(c.rows.map(r => r[0]));
+    c.rows = [...c.rows, ...[].concat(ec.v).filter(v => !have.has(v)).map(v => [v, 0])];
+  }
+  $("fKind").innerHTML = cats.map(x => opt(x.id, `${catIconOf(x)} ${x.rows.length ? `${x.label} (${x.rows.length})` : x.label}`)).join("");
   $("fKind").value = c ? c.id : "";
   $("fKind").hidden = !cats.length;
   fill("fVal", c ? c.label : "값", c ? c.rows : [], c ? c.lab : undefined, !!c);
@@ -297,11 +368,15 @@ function renderFilterOptions() {
   syncDD();
   // 그룹 = 한 줄 상자 (왼쪽 동그라미 ＋ 포함 / − 제외). 포함 상자 사이에만 작은 '또는' 줄, 제외 상자는 맨 아래
   const box = i => {
-    const g = FG[i], cs = g.c.filter(c => FKIND[c.k]);
+    const g = FG[i], cs = g.c.filter(c => FKIND[c.k]), ed = fEdit && fEdit.g === i ? fEdit.c : -1;
     return `<div class="fgroup${g.x ? " exc" : ""}${i === fCur ? " cur" : ""}" data-g="${i}" title="${i === fCur ? "새 조건이 이 그룹에 들어감" : "누르면 이 그룹 선택"}">`
       + `<button class="gh" title="${g.x ? "제외 그룹 — 누르면 포함으로" : "포함 그룹 — 누르면 제외로"}">${g.x ? "−" : "＋"}</button>`
-      + (cs.length ? cs.map(c => `<span class="fchip" data-c="${g.c.indexOf(c)}"><span class="k">${esc(chipKind(c))}</span><span class="v">${esc(chipLabel(c))}</span><button title="빼기">×</button></span>`).join("")
-        : '<span class="empty">조건을 고르세요</span>')
+      + cs.map(c => { const j = g.c.indexOf(c), on = j === ed ? " edit" : "";
+        // 곡 종류: 그룹마다 꼭 하나 — 지우기 없이 고르는 칸 모양 (▾) · 다른 조건: 누르면 고치기, × 빼기
+        return c.k === "type"
+          ? `<span class="fchip req${on}" data-c="${j}" title="곡 종류 — 그룹마다 꼭 하나 · 누르면 바꾸기"><span class="k">${esc(chipKind(c))}</span><span class="v">${esc(chipLabel(c))}</span>${DD_CHEV}</span>`
+          : `<span class="fchip${on}" data-c="${j}" title="누르면 이 조건 고치기"><span class="k">${esc(chipKind(c))}</span><span class="v">${esc(chipLabel(c))}</span><button title="빼기">×</button></span>`; }).join("")
+      + (fReal(g, i) ? "" : '<span class="empty">조건을 고르세요</span>')
       + `<button class="gx" title="그룹 지우기">✕</button></div>`;
   };
   const idx = FG.map((g, i) => i), inc = idx.filter(i => !FG[i].x), exc = idx.filter(i => FG[i].x);
@@ -312,24 +387,24 @@ function renderFilterOptions() {
   $("btnFilter").querySelector(".cnt").textContent = n || "";
 }
 function setFilterOpen(open) {
-  if (!open) {  // 접을 때: 조건이 하나도 없는 그룹은 지움 (곡 거르기에는 원래 영향 없음)
+  if (!open) {  // 접을 때: 아직 빈 그룹(곡 종류만 든 그룹 — 첫 그룹 말고)은 지움 (곡 거르기에는 원래 영향 없음)
     closeDD();
     const keep = FG[fCur];
-    FG = FG.filter(g => g.c.length);
-    fCur = Math.max(0, keep && keep.c.length ? FG.indexOf(keep) : FG.length - 1);
+    FG = FG.filter(fReal);
+    fCur = Math.max(0, FG.includes(keep) ? FG.indexOf(keep) : FG.length - 1);
     store.set("f.groups", FG); store.set("f.cur", fCur);
   }
   else sfDefaultGroup();
   $("fPanel").hidden = !open; store.set("sfOpen", open); renderFilterOptions();
 }
 /* open panel with no group yet → one empty include group, ready for the first condition (user request 2026-11-14) */
-function sfDefaultGroup() { if (!FG.length) { FG = [{x: false, m: true, c: []}]; fCur = 0; } }
+function sfDefaultGroup() { if (!FG.length) { FG = [{x: false, m: true, c: [{k: "type", v: F_TYPE_DEF}]}]; fCur = 0; } }  // 첫 그룹: 곡 종류 오리지널
 /* 필터 목록 칸 펼치기: 맨 위 검색창 + 항목 (optgroup 은 작은 제목). 글자를 치면 그 글자가 든 항목만, Enter 는 위에서 첫 항목,
    ↑↓ 로 고르기, Esc·바깥 누르기로 닫힘. 항목을 누르면 원래 select 의 change 로 조건을 더함 */
 var DD_IDS = ["fKind", "fVal"];
 var DD_SHOW = new Set(["fKind"]);  // 이 칸은 단추에 고른 항목을 보임 (다른 칸은 고르면 조건이 되고 단추는 제목 그대로)
 var FCATS;  // (값을 넣지 않음: 이 줄보다 먼저 목록을 그렸으면 그 값 유지) 지금 목록의 필터 카테고리 [{id, label, k: 조건 종류, rows: [[값, 곡 수]], lab: 값 표시}]
-const DD_CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+var DD_CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
 var ddOpen = null, ddHl = 0, ddSel = new Set();  // ddSel: 소분류에서 체크한 값 · var: 목록을 처음 그릴 때(이 줄보다 먼저 실행될 수 있음)도 쓸 수 있게
 for (const id of DD_IDS) {
   const sel = $(id), w = document.createElement("div");
@@ -347,17 +422,18 @@ function syncDD() {
   }
   if (ddOpen) renderDD();
 }
-function openDD(id) {
-  closeDD();
+function openDD(id, preset) {  // preset: values checked at the start (고치는 조건의 지금 값)
+  closeDD(true);
   ddOpen = id;
   const w = document.querySelector(`.fdd[data-for="${id}"]`), r = w.getBoundingClientRect();
   const p = document.createElement("div");
   p.id = "fddPop"; p.className = "fddpop";
   const multi = id === "fVal";  // 소분류: 체크박스로 여러 개 고른 뒤 '추가' → 그중 하나라도 (OR) 조건 하나
-  ddSel = new Set();
+  ddSel = new Set(multi && preset || []);
   p.innerHTML = `<div class="fdd-top"><input type="search" placeholder="${esc($(id).options[0].text)} 검색" spellcheck="false" autocomplete="off">`
     + (multi ? `<button type="button" class="fdd-add" disabled title="체크한 값들을 조건 하나로 (그중 하나라도 맞으면)">추가</button>` : "") + `</div><div class="fdd-list"></div>`;
-  if (multi) p.querySelector(".fdd-add").onclick = () => { const vs = [...ddSel]; closeDD(); addValues(vs); };
+  if (multi) p.querySelector(".fdd-add").onclick = () => { const vs = [...ddSel], e = fEdit; closeDD(true); fEdit = null; e ? applyEdit(e, vs) : addValues(vs); };
+  ddAddBtn(p.querySelector(".fdd-add"));
   $("searchDlg").appendChild(p);  // inside the dialog (top layer) so it shows above it
   placePop(p, w, 240);
   w.classList.add("open");
@@ -370,22 +446,24 @@ function openDD(id) {
       ddHl = Math.max(0, Math.min(os.length - 1, ddHl + (e.key === "ArrowDown" ? 1 : -1)));
       os.forEach((o, i) => o.classList.toggle("hl", i === ddHl));
       if (os[ddHl]) os[ddHl].scrollIntoView({block: "nearest"});
-    } else if (e.key === "Enter") { e.preventDefault(); if (os[ddHl]) pickDD(os[ddHl].dataset.v); }
-    else if (e.key === "Escape") { e.preventDefault(); closeDD(); }
+    } else if (e.key === "Enter") { e.preventDefault(); if (os[ddHl]) fEdit && ddOpen === "fVal" ? os[ddHl].click() : pickDD(os[ddHl].dataset.v); }  // 고치는 중: 체크만
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeDD(); }  // don't close the search popup too
   };
   p.querySelector(".fdd-list").onclick = e => {
     if (e.target.closest(".fdd-all")) {  // 전체 선택: every value matching the search box (user request — top of the list)
       e.stopPropagation();  // the list is redrawn → the clicked node is detached and would look like an outside click
       const vs = ddVisible(), all = vs.length && vs.every(v => ddSel.has(v));
       vs.forEach(v => all ? ddSel.delete(v) : ddSel.add(v));
-      const b = p.querySelector(".fdd-add"); b.disabled = !ddSel.size; b.textContent = ddSel.size ? `추가 ${ddSel.size}` : "추가";
+      ddAddBtn(p.querySelector(".fdd-add"));
       renderDD();
       return;
     }
     const o = e.target.closest(".fdd-opt"); if (!o) return;
-    if (e.target.closest(".fdd-ck")) {  // 체크박스: 고르기만 (추가는 '추가' 단추)
-      e.target.checked ? ddSel.add(o.dataset.v) : ddSel.delete(o.dataset.v);
-      const b = p.querySelector(".fdd-add"); b.disabled = !ddSel.size; b.textContent = ddSel.size ? `추가 ${ddSel.size}` : "추가";
+    if (e.target.closest(".fdd-ck") || (fEdit && ddOpen === "fVal")) {  // 체크박스: 고르기만 (추가는 '추가' 단추) · 고치는 중이면 줄을 눌러도 체크만
+      const ck = o.querySelector(".fdd-ck");
+      if (e.target !== ck) ck.checked = !ck.checked;
+      ck.checked ? ddSel.add(o.dataset.v) : ddSel.delete(o.dataset.v);
+      ddAddBtn(p.querySelector(".fdd-add"));
       return;
     }
     pickDD(o.dataset.v);
@@ -429,16 +507,25 @@ function ddVisible() {
   const p = $("fddPop"), q = p ? fold(p.querySelector("input").value.trim()) : "";
   return [...$("fVal").querySelectorAll("option")].filter(o => o.value && (!q || fold(o.text.replace(/ \(\d+\)$/, "")).includes(q))).map(o => o.value);
 }
+/* '추가' 단추: 고치는 중이면 '바꾸기' (다 풀면 '조건 빼기' — 곡 종류는 하나는 남겨야 함) */
+function ddAddBtn(b) {
+  if (!b) return;
+  const ec = editCond();
+  b.disabled = ec ? !ddSel.size && ec.k === "type" : !ddSel.size;
+  b.textContent = ec ? (ddSel.size ? `바꾸기 ${ddSel.size}` : "조건 빼기") : ddSel.size ? `추가 ${ddSel.size}` : "추가";
+  b.title = ec ? "체크한 값으로 이 조건을 바꿈" : "체크한 값들을 조건 하나로 (그중 하나라도 맞으면)";
+}
 function pickDD(v) {
   const sel = $(ddOpen);
   closeDD();
   sel.value = v;
   sel.dispatchEvent(new Event("change"));
 }
-function closeDD() {
+function closeDD(keepEdit) {  // closing without '바꾸기' ends the edit (keepEdit: still on it)
   if ($("fddPop")) $("fddPop").remove();
   document.querySelectorAll(".fdd.open").forEach(w => w.classList.remove("open"));
   ddOpen = null;
+  if (fEdit && !keepEdit) { fEdit = null; renderFilterOptions(); }
 }
 document.addEventListener("click", e => { if (ddOpen && !e.target.closest("#fddPop, .fdd")) closeDD(); });
 /* 스크롤: 칸이 들어 있는 곳(왼쪽 목록 칸·화면)이 움직일 때만 닫음 — 가사 칸이 저절로 넘어가거나 검색 글자 칸 안에서 움직이는 건 그대로 */
@@ -455,11 +542,11 @@ $("fNew").addEventListener("click", e => {
   const b = e.target.closest("[data-new]"); if (!b) return;
   const x = b.dataset.new === "exc";
   FG.forEach(g => { g.m = true; });  // 버튼 없이 고른 조건도 그룹으로 남김 (다음 조건을 골라도 지워지지 않게)
-  if (FG[fCur] && !FG[fCur].c.length) FG[fCur].x = x;  // 비어 있는 선택 그룹은 새로 만들지 않고 종류만 바꿈
-  else { FG.push({x, m: true, c: []}); fCur = FG.length - 1; }
+  if (FG[fCur] && !fReal(FG[fCur], fCur)) FG[fCur].x = x;  // 비어 있는 선택 그룹은 새로 만들지 않고 종류만 바꿈
+  else { FG.push({x, m: true, c: [{k: "type", v: F_TYPE_DEF}]}); fCur = FG.length - 1; }
   saveChips();
 });
-$("fKind").onchange = () => { store.set("f.kind", $("fKind").value); renderFilterOptions(); };
+$("fKind").onchange = () => { fEdit = null; store.set("f.kind", $("fKind").value); renderFilterOptions(); };
 $("fVal").onchange = () => addValues([$("fVal").value]);
 /* 소분류 값(하나 또는 여러 개 — 여러 개면 그중 하나라도)을 조건으로 더함 */
 function addValues(vs) {
@@ -471,6 +558,7 @@ $("fChips").addEventListener("click", e => {
   const gi = +gEl.dataset.g, chip = e.target.closest(".fchip");
   if (e.target.closest(".gx")) { FG.splice(gi, 1); if (fCur >= gi) fCur = Math.max(0, fCur - 1); }
   else if (chip && e.target.closest("button")) FG[gi].c.splice(+chip.dataset.c, 1);
+  else if (chip) { e.stopPropagation(); return editChip(gi, +chip.dataset.c); }  // the page's outside-click would close the list it opens
   else if (e.target.closest(".gh")) FG[gi].x = !FG[gi].x;
   else fCur = gi;
   saveChips();
@@ -531,10 +619,16 @@ FKIND.type = ["곡 종류", (it, v) => (VDB_TYPE_KO[it.type] || it.type) === v];
 function sfCats(its) {
   const cats = filterCats(its, true), types = countBy(its.map(it => it.type ? [VDB_TYPE_KO[it.type] || it.type] : []));
   if (types.length) cats.push({id: "type", label: "곡 종류", k: "type", rows: types, lab: x => x});
-  return cats.sort((a, b) => a.label.localeCompare(b.label, "ko"));
+  const p = id => (fltCat(id) || {p: 1e9}).p;  // 음원 관리 › 필터의 순서 (없으면 가나다순)
+  return cats.sort((a, b) => p(a.id) - p(b.id) || a.label.localeCompare(b.label, "ko"));
 }
+/* 음원 관리 › 필터 (user request 2026-11-14 — export/db/filter.json): a category's row {id, label, icon, p} · its symbol */
+const fltCat = id => VDB.filter && (VDB.filter.cats || []).find(c => c.id === id);
+const catIconOf = x => { const f = fltCat(x.id); return f && f.icon ? f.icon + "︎" : catIcon(x.label); };
 /* 태그 → 분류 (song_filter.js tagGroupOf): master tag rows keep VocaDB's category — remade when master is read again */
 let tagCats = {of: null, map: new Map()};
+/* 곡 조건의 값(VocaDB 번호) → 제목 (song_filter.js songTitleOf) */
+songTitleOf = v => { const it = VDB.itemById(v); return it ? it.title : `곡 ${v}`; };
 tagGroupOf = v => {
   if (tagCats.of !== VDB.master) tagCats = {of: VDB.master, map: new Map((VDB.master.tag || []).map(t => [t.name, TAG_CAT_KO[t.cat] || t.cat || ""]))};
   return tagCats.map.get(v) || "";
@@ -569,13 +663,88 @@ function ourSort(list) {
 $("sList").addEventListener("click", e => {
   const b = e.target.closest("button[data-a]"), row = e.target.closest(".sitem"); if (!b || !row) return;
   const it = LOCAL.remember(S.items[+row.dataset.i]);
+  if (b.dataset.a === "filt") return toggleSongCond(it);
   if (b.dataset.a === "play") { PL.add([it], true); play(it, true, "pick"); }
-  else if (b.dataset.a === "next") PL.add([it], true);
+  // user request 2026-11-14: 다음에 재생 = the play queue's 직접 넣은 곡 (before the shuffled rest), not a playlist position
+  else if (b.dataset.a === "next") { PL.add([it]); SHELL.enqueue(it); }
   else PL.add([it]);
   renderSearch($("sInfo").textContent);
 });
 $("sList").addEventListener("contextmenu", e => { const row = e.target.closest(".sitem"); if (row) songContext(e, S.items[+row.dataset.i]); });
-$("sAddAll").onclick = () => { const n = PL.add(S.items); renderSearch($("sInfo").textContent); uiAlert(n ? `재생목록에 ${n}곡을 넣었습니다.` : "새로 넣을 곡이 없습니다 (이미 들어 있음)."); };
+/* 상위 N 곡 재생목록 만들기 (user request 2026-11-14 — '결과 모두 재생목록에' 대신): 찾은 곡을 위에서부터 N곡 (틀 수 있는 곡만) → 새 재생목록 */
+$("sTopN").value = store.get("sTopN", 1000);
+const topN = () => { const n = Math.max(1, parseInt($("sTopN").value, 10) || 1000); $("sTopN").value = n; store.set("sTopN", n); return n; };
+$("sTopN").onchange = topN;
+$("sTopN").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("sMakePl").click(); } });
+$("sMakePl").onclick = async () => {
+  const n = topN(), list = S.items.filter(canPlay).slice(0, n);
+  if (!list.length) return;
+  if (SHELL.queue.length && !await uiConfirm(`지금 재생목록 ${SHELL.queue.length.toLocaleString()}곡을 비우고 찾은 곡 상위 ${list.length.toLocaleString()}곡으로 새로 만들까요?`)) return;
+  const seen = new Set();
+  PL.set(list.filter(it => !seen.has(keyOf(it)) && seen.add(keyOf(it))).map(it => LOCAL.remember(it)));
+  renderSearch($("sInfo").textContent);
+  uiAlert(`재생목록을 ${SHELL.queue.length.toLocaleString()}곡으로 만들었습니다.`);
+};
+
+/* 필터 프리셋 추천 · 저장된 필터 (user request 2026-11-14) — 고르면 지금 필터가 그 필터로 바뀜 */
+const F_PRESETS_DEF = [
+  {name: "한국/일본 노래방 수록곡", groups: [{x: false, m: true, c: [{k: "kara", v: ONOFF_LISTS.slice()}]}]},  // 노래방 카테고리 전체 선택
+];
+/* 프리셋은 음원 관리 › 필터에서 정함 (filter.json) — 없으면 위 기본값 */
+const fPresets = () => VDB.filter && (VDB.filter.presets || []).length ? VDB.filter.presets : F_PRESETS_DEF;
+const fSummary = gs => gs.filter(g => g.c.length).map(g => (g.x ? "− " : "") + g.c.map(chipLabel).join(" · ")).join(" / ");
+function applyFilter(groups) {
+  FG = JSON.parse(JSON.stringify(groups)).map(g => withType({...g, m: true}));
+  fCur = 0;
+  saveChips();
+}
+function closeFSet() { if ($("fSetPop")) $("fSetPop").remove(); document.querySelectorAll("#btnPreset.open, #btnSaved.open").forEach(b => b.classList.remove("open")); }
+function openFSet(btn) {
+  const was = $("fSetPop") && $("fSetPop").dataset.for === btn.id;
+  closeFSet(); closeDD();
+  if (was) return;  // the same button again: just close
+  const p = document.createElement("div");
+  p.id = "fSetPop"; p.className = "fddpop"; p.dataset.for = btn.id;
+  p.innerHTML = '<div class="fdd-list"></div>';
+  $("searchDlg").appendChild(p);  // inside the dialog (top layer) so it shows above it
+  btn.classList.add("open");
+  renderFSet();
+  placePop(p, btn, 280);
+}
+function renderFSet() {
+  const p = $("fSetPop"); if (!p) return;
+  const preset = p.dataset.for === "btnPreset", saved = store.get("f.saved", []);
+  const row = (f, i) => `<div class="fdd-opt fset" data-i="${i}" title="${esc(fSummary(f.groups))}"><span class="nm">${esc(f.name)}</span>`
+    + `<span class="sum">${esc(fSummary(f.groups))}</span>${preset ? "" : '<button class="fx" title="지우기">✕</button>'}</div>`;
+  p.querySelector(".fdd-list").innerHTML = preset ? `<div class="fdd-grp">추천 필터</div>` + fPresets().map(row).join("")
+    : `<div class="fdd-top"><button class="primary fsave"${FG.some(g => g.c.length) ? "" : " disabled"} title="지금 고른 필터를 이름을 붙여 저장">＋ 지금 필터 저장</button></div>`
+      + (saved.length ? saved.map(row).join("") : `<div class="fdd-none">저장된 필터가 없습니다</div>`);
+}
+$("btnPreset").onclick = e => { e.stopPropagation(); openFSet($("btnPreset")); };
+$("btnSaved").onclick = e => { e.stopPropagation(); openFSet($("btnSaved")); };
+$("searchDlg").addEventListener("click", async e => {
+  const p = $("fSetPop"); if (!p) return;
+  if (!e.target.closest("#fSetPop")) return closeFSet();
+  e.stopPropagation();
+  const preset = p.dataset.for === "btnPreset", saved = store.get("f.saved", []);
+  if (e.target.closest(".fsave")) {
+    closeFSet();
+    const name = await uiPrompt("저장할 필터 이름", fSummary(FG).slice(0, 40), "필터 이름");
+    if (!name) return;
+    const groups = FG.filter(g => g.c.length).map(({x, c}) => ({x, c}));
+    store.set("f.saved", [...saved.filter(f => f.name !== name), {name, groups}]);  // 같은 이름이면 덮어씀
+    return;
+  }
+  const o = e.target.closest(".fset"); if (!o) return;
+  const i = +o.dataset.i;
+  if (e.target.closest(".fx")) { saved.splice(i, 1); store.set("f.saved", saved); return renderFSet(); }
+  const f = (preset ? fPresets() : saved)[i]; if (!f) return;
+  closeFSet();
+  applyFilter(f.groups);
+});
+$("searchDlg").addEventListener("keydown", e => { if (e.key === "Escape" && $("fSetPop")) { e.preventDefault(); closeFSet(); } });
+$("searchDlg").addEventListener("close", closeFSet);
+window.addEventListener("resize", closeFSet);
 
 /* ================= 재생 ================= */
 /* 가사·싱크를 저장했으면 재생기 가사(오버레이 알림)도 다시 읽게 함 */

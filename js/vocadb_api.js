@@ -74,7 +74,8 @@ const VDB = {
   },
   async load() {
     const rd = f => LOCAL.readJson(`${LOCAL.out}/db/${f}`, null);
-    const [mst, kara, songs] = await Promise.all([rd("master.json"), rd("karaoke.json"), this.loadSongs()]);
+    const [mst, kara, songs, flt] = await Promise.all([rd("master.json"), rd("karaoke.json"), this.loadSongs(), rd("filter.json")]);
+    this.filter = flt;  // 음원 관리 › 필터 (user request 2026-11-14): category order · symbols · 필터 프리셋 추천 — missing → built-in defaults
     const miss = [!mst && "master.json", !kara && "karaoke.json", !songs && "songs/index.json"].filter(Boolean);
     if (miss.length) throw new Error(`${LOCAL.out}/db 에 ${miss.join(", ")} 이 없습니다. 서버에서 내보내기·올리기를 하세요.`);
     const rows = t => t.rows.map(r => Object.fromEntries(t.cols.map((c, i) => [c, r[i]])));

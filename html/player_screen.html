@@ -102,12 +102,14 @@
       <input type="search" id="sQ" placeholder="제목·원제·가수·프로듀서 (Enter)" autocomplete="off" spellcheck="false">
       <select id="sScope" title="어디서 찾을지">
         <option value="all">전체 곡</option><option value="kara">노래방 곡만</option><option value="ours">가사·싱크 있는 곡</option></select>
-      <select id="sSort" title="정렬"><option value="RatingScore">인기순</option></select>
       <button class="primary" id="sGo">검색</button>
     </div>
     <!-- 필터 (user request 2026-11-14: the old list filter, as it was, moved into the search popup) -->
     <div class="srow filters">
       <button id="btnFilter" title="필터 조건 고르기 펼치기 / 접기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>필터<span class="cnt"></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+      <span class="grow"></span><!-- user request 2026-11-14: 저장된 필터 · 프리셋 추천 at the far right -->
+      <button id="btnSaved" title="저장해 둔 필터 고르기 · 지금 필터 저장하기">저장된 필터</button>
+      <button id="btnPreset" title="추천하는 필터를 골라 바로 적용 (지금 필터는 바뀜)">★ 필터 프리셋 추천</button><!-- user request 2026-11-14: emphasized -->
     </div>
     <div class="fchips" id="fChips"></div>
     <div class="fpanel" id="fPanel" hidden>
@@ -126,7 +128,10 @@
       </div>
     </div>
     <div class="sinfo"><span id="sInfo">찾을 곡을 넣고 Enter</span><span class="grow"></span>
-      <button id="sAddAll" title="찾은 곡을 모두 (목록에 안 보이는 곡까지) 재생목록 끝에" disabled>결과 모두 재생목록에</button></div>
+      <span class="topn" title="찾은 곡의 위에서부터 (목록에 안 보이는 곡까지) 이 수만큼으로 재생목록을 새로 만듦 — 지금 재생목록은 바뀜"><!-- user request 2026-11-14: replaces '결과 모두 재생목록에' -->
+        상위 <input type="number" id="sTopN" min="1" step="1" value="1000"> 곡
+        <button id="sMakePl" disabled>재생목록 만들기</button></span>
+      <select id="sSort" title="정렬"><option value="RatingScore">인기순</option></select></div><!-- user request 2026-11-14: sort at the far right, after 재생목록 만들기 -->
     <div class="slist" id="sList"></div>
   </div>
 </dialog>

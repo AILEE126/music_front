@@ -16,6 +16,9 @@ function initialOf(title) {
 }
 /* "하츠네 미쿠 , KAITO" / "Neru & z'5" → 사람별로 */
 const people = s => (s || "").split(/\s*(?:,|，|、|&|＆|\/)\s*/).map(x => x.trim()).filter(Boolean);
+/* 보컬 인원수 (user request 2026-11-14): 보컬 칸의 사람 수 그대로 — 태그가 아님. 5명부터는 '5+' 하나 (보컬이 없는 곡은 값 없음) */
+const VCOUNT_MAX = 5;
+const vcountOf = it => { const n = (it._singers || []).length; return !n ? "" : n >= VCOUNT_MAX ? VCOUNT_MAX + "+" : String(n); };
 function prepItem(it) {
   it._ini = initialOf(it.title);
   it._singers = people(it.singer);
@@ -31,6 +34,8 @@ const FKIND = {
   ini: ["가나다", (it, v) => it._ini === v],
   singer: ["보컬", (it, v) => it._singers.includes(v)],
   solo: ["솔로", (it, v) => it._singers.length === 1 && it._singers[0] === v],
+  vcount: ["인원수", (it, v) => vcountOf(it) === v],
+  song: ["곡", (it, v) => String(it.vocadb || it.name) === v],  // 그 곡 자체 (user request 2026-11-14: 검색 결과의 '필터에 추가') — v: VocaDB 번호
   composer: ["프로듀서", (it, v) => it._composers.includes(v)],
   kara: ["노래방", (it, v) => (it.tags || []).includes(v)],
   tag: ["태그", (it, v) => (it.tags || []).includes(v)],
@@ -46,9 +51,13 @@ var tagGroupOf = v => "";
 /* 조건 칩 앞 작은 글자: 종류 (태그는 그 분류) */
 const firstV = c => Array.isArray(c.v) ? c.v[0] || "" : c.v;
 const chipKind = c => c.k === "tag" && tagGroupOf(firstV(c)) || FKIND[c.k][0];
-const oneLabel = (k, v) => k === "tag" ? v : k === "year" ? v + "년" : k === "state" ? STATES[v] || v
+/* 곡 조건의 값(VocaDB 번호) → 제목 — 플레이어가 우리 DB 로 정함 (player_screen.js) */
+var songTitleOf = v => v;
+const oneLabel = (k, v) => k === "vcount" ? vcountLabel(v) : k === "song" ? songTitleOf(v) : k === "tag" ? v : k === "year" ? v + "년" : k === "state" ? STATES[v] || v
   : k === "kara" && (v === "한국" || v === "일본") ? v + " 전체" : shortName(v);
-const chipLabel = c => Array.isArray(c.v) ? c.v.map(v => oneLabel(c.k, v)).join(" 또는 ") : oneLabel(c.k, c.v);
+const vcountLabel = v => v.endsWith("+") ? `${parseInt(v)}인 이상` : v + "인";
+const chipLabel = c => c.k === "song" && Array.isArray(c.v) && c.v.length > 2 ? `${c.v.slice(0, 2).map(v => oneLabel(c.k, v)).join(", ")} 외 ${c.v.length - 2}곡`
+  : Array.isArray(c.v) ? c.v.map(v => oneLabel(c.k, v)).join(" 또는 ") : oneLabel(c.k, c.v);
 /* 조건 하나에 맞는지 (값이 여러 개면 그중 하나라도) */
 const matchCond = (it, c) => !FKIND[c.k] || (Array.isArray(c.v) ? c.v.some(v => FKIND[c.k][1](it, v)) : FKIND[c.k][1](it, c.v));
 /* 그룹 안에 이 값이 들어 있는지 (값 하나짜리 조건이든 여러 개짜리 조건이든) */
@@ -75,6 +84,7 @@ function filterCats(its, online) {
   const ini = countBy(its.map(it => [it._ini])), order = new Map(INITIALS.map((x, i) => [x, i]));  // 제목 첫 글자 (ㄱ~ㅎ · A~Z · 0-9 · 기호 순)
   add("ini", "가나다", "ini", ini.sort((a, b) => order.get(a[0]) - order.get(b[0])));
   add("singer", "보컬", "singer", countBy(its.map(it => it._singers)), shortName);
+  add("vcount", "보컬 인원수", "vcount", countBy(its.map(it => vcountOf(it) ? [vcountOf(it)] : [])).sort((a, b) => parseInt(a[0]) - parseInt(b[0])), vcountLabel);
   add("composer", "프로듀서", "composer", countBy(its.map(it => it._composers)), shortName);
   const kara = new Map(countBy(its.map(it => (it.tags || []).filter(t => ONOFF_LISTS.includes(t)))));  // 한국·일본 목록 + 브랜드
   add("kara", "노래방", "kara", ONOFF_LISTS.filter(t => kara.has(t)).map(t => [t, kara.get(t)]), t => t === "한국" || t === "일본" ? `${t} 전체` : t);
@@ -87,6 +97,16 @@ function filterCats(its, online) {
   add("state", "가사·싱크 상태", "state", stateRows(its, online), k => STATES[k]);
   return cats.sort((a, b) => a.label.localeCompare(b.label, "ko"));  // 대분류는 가나다순
 }
+/* 카테고리 기호 (user request 2026-11-14): 카테고리 이름(label) → 기호 한 곳에서 관리. 그릴 때만 붙임 (이름·저장값은 그대로).
+   컬러 이모지는 눈에 안 들어와서 (user request) 글자색 한 가지로 그려지는 단순한 기호 — U+FE0E: 이모지 그림으로 바꾸지 말고 글자로.
+   태그 분류(장르·테마 …)는 VocaDB 분류의 한글 이름 (player_screen.js TAG_CAT_KO) — 새 분류가 생기면 여기 한 줄 더, 없으면 # */
+const CAT_ICON = {
+  "가나다": "ㄱ", "보컬": "♪", "보컬 인원수": "Ⅲ", "프로듀서": "✎", "노래방": "♫", "나무위키 분류": "▤", "투고년도": "◷", "가사·싱크 상태": "✓", "곡 종류": "◉",
+  "장르": "◆", "테마": "◈", "분위기": "☁", "악기": "♩", "곡 구성": "▦", "보컬 관련": "✧", "원작": "❖", "시리즈": "⟳", "애니메이션": "▶",
+  "게임": "✦", "MMD 모델": "☺", "출처": "↗", "배포": "⇩", "편집 메모": "✐", "음성 합성 엔진": "⚙", "가사": "❝", "2차 창작": "⧉",
+  "디자인": "✿", "이벤트": "⚑", "매체": "▣", "역할": "☰", "언어": "◎",
+};
+const catIcon = label => (CAT_ICON[label] || "#") + "︎";
 /* 가사·싱크 상태 [[값, 곡 수]] — 온라인 스트리밍은 가사를 그때 읽으므로 가사 상태는 빼고 싱크 상태만 */
 const stateRows = (its, online) => Object.keys(STATES).filter(k => !online || !/^(lyrics|nolyrics|src:)/.test(k))
   .map(k => [k, its.filter(it => FKIND.state[1](it, k)).length]).filter(([, n]) => n);

@@ -468,3 +468,29 @@ html[data-theme=light] body.simple .side-head h1.rainbow{background:none}
 #btnTheme svg{width:18px;height:18px}
 #btnTheme .sun,html[data-theme=light] #btnTheme .moon{display:none}
 html[data-theme=light] #btnTheme .sun{display:block}
+/* 필터 프리셋 추천 (강조) · 저장된 필터 — 필터 버튼 오른쪽 (user request 2026-11-14) */
+#btnPreset{font-weight:700;color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+#btnPreset:hover,#btnPreset.open{background:var(--accent);color:var(--accent-text)}
+#btnSaved.open{border-color:var(--accent)}
+.fdd-opt.fset{display:flex;flex-direction:column;align-items:stretch;gap:1px;position:relative;padding-right:28px}
+.fset .nm{font-weight:600}
+.fset .sum{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fset .fx{position:absolute;top:50%;right:4px;transform:translateY(-50%);border:0;background:none;padding:2px 5px;color:var(--muted)}
+.fset .fx:hover{color:var(--err)}
+.fdd-top .fsave{flex:1;font-size:12.5px;padding:5px 8px}
+/* 상위 N 곡 재생목록 만들기 (결과 모두 재생목록에 대신) */
+#searchDlg .topn{display:inline-flex;align-items:center;gap:5px;color:var(--text)}
+#sTopN{width:72px;padding:4px 6px;font-size:12.5px;text-align:right;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+#searchDlg .grow{flex:1}  /* 정렬 셀렉트박스 · 저장된 필터 · 프리셋 추천을 줄 오른쪽 끝으로 */
+#searchDlg .sinfo{flex-wrap:wrap}
+#sSort{margin-left:auto}
+/* 그룹 안 조건: 누르면 고치기 (user request 2026-11-14) — 고치는 조건은 강조 · 곡 종류는 지우기 없는 고르는 칸 모양 (▾) */
+.fchip{cursor:pointer}
+.fchip:hover{box-shadow:inset 0 0 0 1px var(--accent)}
+.fchip.edit{background:var(--accent-soft);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.fchip.req{padding-right:6px;background:var(--card)}
+.fchip.req svg{width:11px;height:11px;margin-left:4px;opacity:.7;flex:none}
+/* 검색 결과: 현재 필터에 추가 (곡 조건) */
+.sitem .sacts .sfilt{display:inline-flex;align-items:center;justify-content:center;color:var(--muted)}
+.sitem .sacts .sfilt svg{width:16px;height:16px}
+.sitem .sacts .sfilt.on{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}

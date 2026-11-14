@@ -74,9 +74,16 @@ class BridgePlayer {
       if (e.source !== f.contentWindow || !e.data || !e.data.bridge) return;
       const m = e.data;
       this.ver = +m.ver || 1;  // bridge page version (2+: can "load" another YouTube song — older deployed page cannot)
+      if (this.loopAt && performance.now() - this.loopAt < 1000 && (m.ev === "time" || m.ev === "state")) return;  // the loop's own paused/playing/time
       if (m.ev === "time") {
         const t = +m.t || 0, now = performance.now(), moved = Math.abs(t - this.t) > 0.01;
         if (+m.d) this.d = +m.d;
+        // User report: 폿핏포 (Niconico sm5508956) repeated forever — that embed jumps from its last second back to 0 by itself
+        // and never sends "ended". A jump from the end to the start we didn't ask for (seek sets this.t first) = ended.
+        if (this.state === "playing" && this.d && this.t >= this.d - 3 && t < 3) {
+          this.t = t; this.at = now; this.loopAt = now; this.pause();
+          return guess("ended");
+        }
         if (moved) { still = 0; if (t > this.t && this.state !== "playing" && this.ready) { this.t = t; this.at = now; guess("playing"); } }
         else if (!still) still = now;
         else if (this.state === "playing" && now - still > 1500) guess(this.d && t >= this.d - 1.5 ? "ended" : "paused");
