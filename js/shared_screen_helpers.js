@@ -166,7 +166,10 @@ async function openOverlaySettings() {
     opts.unshift({exe: c.target.replace(/\.exe$/i, ""), title: "지금 꺼져 있음"});
   const d = document.createElement("dialog");
   d.className = "uidlg ovset";
-  d.innerHTML = `<div class="dlg-body"><b>가사 오버레이 설정</b>
+  const lead = typeof SHELL !== "undefined" && SHELL.setLead;  // 플레이어 화면에서만
+  d.innerHTML = `<div class="dlg-body">${lead ? `<b>가사</b>
+    <label title="싱크는 그대로 두고, 재생할 때 가사(위 막대·플레이어·오버레이)만 이만큼 먼저 넘어감 (0.10 ~ 1.00초, 0.01초 단위 · 기본 0.50초)">먼저 보이기 <b data-lead></b><input type="range" min="0.1" max="1" step="0.01" data-lead-r></label>
+    <hr>` : ""}<b>가사 오버레이 설정</b>
     <p class="muted">바탕이 투명한 가사 창 (어느 브라우저든). 이 창을 열어 둔 동안은 오버레이가 늘 보이고 끌어서 옮길 수 있어요.</p>
     <label>이 프로그램이 앞에 있을 때만 보이기 <select data-k="target">
       <option value="">(늘 보임)</option>${opts.map(p => `<option value="${esc(p.exe)}">${esc(p.exe)}${p.title ? ` — ${esc(p.title)}` : ""}</option>`).join("")}</select>
@@ -184,6 +187,11 @@ async function openOverlaySettings() {
   for (const i of ins) { if (i.type === "checkbox") i.checked = !!c[i.dataset.k]; else i.value = String(c[i.dataset.k]).replace(/\.exe$/i, ""); }
   const showVals = () => d.querySelectorAll("[data-v]").forEach(b => b.textContent = d.querySelector(`[data-k=${b.dataset.v}]`).value + (b.dataset.v === "opacity" ? "%" : ""));
   showVals();
+  if (lead) {  // 가사 먼저 보이기: 오버레이 설정 파일이 아니라 재생기 값 (브라우저 저장값 · play_engine.js setLead)
+    const r = d.querySelector("[data-lead-r]"), showLead = () => d.querySelector("[data-lead]").textContent = SHELL.lead.toFixed(2) + "초";
+    r.value = SHELL.lead; showLead();
+    r.addEventListener("input", () => { SHELL.setLead(r.value); showLead(); });
+  }
   let t = 0;
   const values = () => Object.fromEntries(ins.map(i => [i.dataset.k, i.type === "checkbox" ? i.checked : i.type === "range" ? +i.value : i.value]));
   const save = (extra = {}, now = false) => {  // 바꿀 때마다 (끌어 움직이는 동안은 0.25초에 한 번)

@@ -53,6 +53,7 @@ body.simple .side-head h1.rainbow{background:none;color:var(--text);-webkit-text
 .item{padding:8px 14px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:10px;align-items:center}  /* 줄 높이가 모두 같아야 함 (곡 목록은 보이는 줄만 그림 — player_screen.js renderRows) */
 .item:hover{background:var(--chip)}
 .item.cur{background:var(--accent-soft)}
+.item.gone{opacity:.45;cursor:not-allowed}.item.gone:hover{background:none}  /* 삭제된 곡: 보이지만 고를 수 없음 */
 .item.flash{animation:flash 1.2s ease-out}
 @keyframes flash{0%{box-shadow:inset 0 0 0 2px var(--accent)}100%{box-shadow:inset 0 0 0 2px transparent}}
 .item .meta{flex:1;min-width:0}
@@ -346,7 +347,41 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
 .g .r{font-size:14px;color:var(--muted)}
 .g .r.vc{opacity:.8}
 .g .t{font-size:15px}
+.g .x{display:none;font-size:13px;color:var(--muted);font-style:italic}  /* VocaDB other-language translation — shown for the language picked in #xLang (#xlStyle) */
 .hide-r .g .r,.hide-t .g .t,.hide-p .g .part{display:none}
+#xLang{height:28px;font-size:12px;max-width:130px}
+/* 재생목록 (user request 2026-11-14): ✕ to take a song out, drag to reorder */
+.item .plx{flex:none;border:0;background:none;color:var(--muted);padding:2px 4px;opacity:0;cursor:pointer}
+.item:hover .plx{opacity:1}
+.item .plx:hover{color:var(--text)}
+.item.dropto{box-shadow:inset 0 2px 0 var(--accent)}
+#list .empty button{margin-top:10px}
+#btnSearch{display:inline-flex;align-items:center;gap:6px;flex:1;justify-content:center}
+#btnSearch svg{width:15px;height:15px}
+/* 곡 검색 창 */
+#searchDlg{width:min(980px,96vw);height:min(86vh,900px);padding:0}
+#searchDlg[open]{display:flex;flex-direction:column}
+#searchDlg .dlg-head{display:flex;align-items:center;gap:8px}
+#searchDlg .dlg-body{display:flex;flex-direction:column;gap:8px;flex:1;min-height:0;text-align:left}
+#searchDlg .srow{display:flex;gap:6px;flex-wrap:wrap}
+#sQ{flex:1;min-width:200px;height:34px;box-sizing:border-box;font-size:15px}
+#searchDlg .fpanel,#searchDlg .fchips{margin:0}
+#searchDlg .sinfo{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+#searchDlg .slist{flex:1;min-height:0;overflow-y:auto;border:1px solid var(--line);border-radius:8px}
+.sitem{display:flex;gap:10px;align-items:center;padding:7px 12px;border-bottom:1px solid var(--line)}
+.sitem:hover{background:var(--chip)}
+.sitem.gone{opacity:.5}
+.sitem .thumb{width:64px;height:36px}
+.sitem .meta{flex:1;min-width:0}
+.sitem .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sitem .t .o{font-weight:400;font-size:12px;color:var(--muted);margin-left:4px}
+.sitem .a{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sitem .tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px;font-size:11px;align-items:center}
+.sitem .tags .d{color:var(--muted)}
+.sitem .b.kara{--bc:var(--muted);color:var(--bc);border:1px solid var(--bc);background:none}
+.sitem .sacts{display:flex;gap:4px;flex:none}
+.sitem .sacts button{min-width:32px}
+#searchDlg .slist .empty,#searchDlg .slist .hint{padding:16px;text-align:center;color:var(--muted)}
 /* 간단 표시: 가사는 보컬 색·지금 묶음 강조색 없이 일반 글자색 (파트 표시의 색 점은 그대로) */
 body.simple #lyrics .g.cur .o,body.simple #lyrics .o.vc,body.simple #lyrics .t.vc{color:var(--text)!important}
 body.simple #lyrics .r.vc{color:var(--muted)!important;opacity:1}
@@ -363,6 +398,8 @@ body.simple #lyrics .vcm{background:none;-webkit-text-fill-color:currentColor}
 .g.cursor{outline:2px dashed var(--warn);outline-offset:-2px}
 .g.guess .o::after{content:"추정";font-size:10px;font-weight:400;color:var(--warn);border:1px solid var(--warn);border-radius:4px;padding:0 4px;margin-left:8px;vertical-align:middle}
 .hide-guess .g.guess .o::after{display:none}
+/* program-made line (자동 가사, user request 2026-11-14): same badge as 추정, its own color */
+.g .auto::after{content:"자동";font-size:10px;font-weight:400;color:#3b82f6;border:1px solid #3b82f6;border-radius:4px;padding:0 4px;margin-left:8px;vertical-align:middle;opacity:.9}
 .stamp button{padding:0 6px;font-size:12px}
 .stamp .tv{font-variant-numeric:tabular-nums;color:var(--muted);min-width:46px;text-align:center}
 /* 대화상자 */

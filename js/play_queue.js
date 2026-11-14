@@ -1,5 +1,5 @@
 /* 재생 대기열 — 플레이어 재생기(play_engine.js makePlayer)가 씀
-   queue = 재생 목록(플레이어의 '필터대로 재생' 목록) · upcoming = 앞으로 틀 순서 (무작위면 미리 섞어 둠 — 한 바퀴 동안 겹치지 않음)
+   queue = 재생목록 (플레이어 왼쪽 칸 — 곡 검색에서 넣음) · upcoming = 앞으로 틀 순서 (무작위면 미리 섞어 둠 — 한 바퀴 동안 겹치지 않음)
    pinned = 우클릭 '대기열에 추가'로 넣은 곡 (upcoming 보다 먼저) · history = 지난 곡 10곡 (⏮ 는 무작위여도 바로 전에 틀었던 곡으로, 더 앞은 지금 곡 처음으로)
    재생기(S)가 갖춰야 할 것: audio · now · load(it, autoplay, how) — load 는 곡을 바꾸기 전에 this.queueOnLoad(it, how) 를 부름
    고를 수 있는 것: S.canQueue(it) (재생 목록에 넣을 곡만) · S.onModes() (무작위·반복이 바뀌면) */

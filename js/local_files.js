@@ -1,10 +1,11 @@
-/* 플레이어(서버 없이 html 을 바로 엶)가 곡 목록·가사·싱크·영상 연결·오버레이 파일·오류 신고를 읽고 쓰는 곳 (LOCAL).
+/* 플레이어(서버 없이 html 을 바로 엶)가 우리 곡(노래방·가사·싱크)·한글 이름·가사·싱크·영상 연결·오버레이 파일·오류 신고를 읽고 쓰는 곳 (LOCAL).
+   곡 검색은 VocaDB API (vocadb_api.js) — 전체 곡 목록은 받지 않음 (user request 2026-11-14).
    읽는 곳 둘 중 하나:
    · 깃허브에서 열기: 비공개 저장소를 토큰으로 (GitHub API — 폴더를 고르지 않아 회사 보안 프로그램에 안 걸림). 저장은 그 저장소에 커밋
    · 폴더 고르기 (서버 PC 만): 처음 한 번 고른 Server\data 폴더(곡 정보 파일만 — csv·json·txt)에서 계속 읽고 씀 — 브라우저 폴더 권한
      (Server·프로그램 폴더·Music 폴더를 골라도 그 안의 Server\data 를 찾아 씀)
      Data lives in Server\data, not WEB (user request: only WEB is zipped and handed out — others read GitHub).
-     읽기: Server\data\export (서버가 써 둔 곡 목록·가사). 썸네일은 원곡 영상의 썸네일 주소(thumb)를 바로
+     읽기: Server\data\export (서버가 써 둔 우리 곡·한글 이름·가사). 썸네일은 원곡 영상의 썸네일 주소(thumb)를 바로
    (오프라인 mp3 는 플레이어에서 고른 mp3 폴더 — offline_folder.js)
      쓰기: 싱크 밀기(±초)·직접 맞추기 → Server\data\sync_pending\<싱크 파일> + '싱크 수정' 오류 신고 (본 싱크 파일은 그대로 —
      음원 관리에서 반영해야 바뀜. 그때까지 이 플레이어는 고친 싱크로 틂)
@@ -13,12 +14,29 @@ const CRLF = "\r\n", LF = "\n";
 const GH_API = "https://api.github.com";
 const DATA_REPO_DIR = "Server/data/";  // data folder in the repo / program folder (moved out of WEB so WEB = player code only)
 const DATA_BRANCH = "data";  // branch holding Server/data (server: Server/web_api/data_git_publish.py)
+// No full song list and no old files any more (user request 2026-11-14): songs come from the VocaDB API (vocadb_api.js);
+// from the data branch only the files the server makes from its tables — export/db/ (master · karaoke · songs · lyrics/<id>).
+// Server: music_backend Server/vocadb/table_export.py
 /* 깃허브 API 로 보낼 파일 내용 (base64 — 한글이 깨지지 않게 UTF-8 바이트로) */
 function b64utf8(text) {
   const bytes = new TextEncoder().encode(text);
   let bin = "";
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
+}
+/* VocaDB lyrics (user request 2026-11-14: songs without other lyrics show VocaDB's own) come compact from the API
+   (VDB.lyricsDoc in vocadb_api.js: {vdb, src, roles, g: [[original, romanized?, Korean?]]}) — expand to
+   the usual lyrics shape; title · artist · colors come from the song list */
+// d.auto: roles the server's program made (자동 가사, user request 2026-11-14) — those lines get auto: true (the '자동' badge)
+// except the line numbers in d.manual[role] (checked or edited by the user in the manage screen)
+function vdbLyrics(d, it) {
+  const vc = (it.vocals || []).map(v => v[1]).slice(0, 3), auto = d.auto || [], manual = d.manual || {};
+  const groups = d.g.map((xs, k) => ({orig: xs[0], vc, lines: xs.map((text, i) => ({text, role: d.roles[i], ...(d.langs && d.langs[i] ? {lang: d.langs[i]} : {}),
+    ...(auto.includes(d.roles[i]) && !(manual[d.roles[i]] || []).includes(k) ? {auto: true} : {})})).filter(l => l.text)}));
+  const raw = [it.title, `작곡: ${it.composer || ""} / 노래: ${it.singer || ""}`, ...d.src.map((s, i) => (i ? "가사 출처: " : "출처: ") + s),
+    "※ 인용된 가사의 저작권은 원저작자 및 관련 권리자에게 있습니다.", "=".repeat(40), "", ...d.g.map(xs => xs.join("\n")), ""].join("\n");
+  return {site: it.site, name: it.name, title: it.title, artist: it.artist, sync_fail: null, lyrics_src: "vocadb", lyrics_kind: "vocadb",
+    lyrics_file: "", raw, notes: [], groups, sync_state: "", sync: null, link: null};
 }
 /* 썸네일 그림을 못 받으면(지워진 영상·주소 끝 값이 필요한 니코니코 새 영상) 깨진 그림 대신 ♪ 칸 — 그 주소는 기억해 다시 부르지 않음 */
 const BAD_THUMBS = new Set();
@@ -40,10 +58,7 @@ const LOCAL = {
 
   /* ---- 깃허브에서 열기: 저장소(아이디/이름)·토큰 → 그 저장소의 Server/data 를 읽고 씀 (기억: 이 브라우저에만) ---- */
   savedGitHub() {
-    const g = store.get("gh", null);
-    // GitHub account/repo renamed (Alie14/Music → AILEE126/music_backend): saved logins follow the new name
-    if (g && /^alie14\/music$/i.test(g.repo || "")) { g.repo = "AILEE126/music_backend"; store.set("gh", g); }
-    return g;
+    return store.get("gh", null);
   },
   async useGitHub(repo, token, remember = true) {
     repo = String(repo || "").trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/$/, "");
@@ -56,7 +71,6 @@ const LOCAL = {
     if (r.status === 401) throw new Error("토큰이 틀렸거나 만료·삭제됐습니다.");
     if (!r.ok) throw new Error(`이 토큰으로 ${repo} 저장소를 볼 수 없습니다 (${r.status}). 협업자 초대·토큰의 저장소 선택을 확인하세요.`);
     const info = await r.json();
-    const prev = {gh: this.gh, dir: this.dir, base: this.base};  // 못 열면 전에 열려 있던 곳 그대로
     // Data lives on the 'data' branch (one commit the server keeps replacing — user request: no pile of data commits).
     // Reads and writes (reports·sync edits) both go there; repo without that branch yet → its default branch.
     let ref = DATA_BRANCH;
@@ -66,11 +80,6 @@ const LOCAL = {
     } catch (e) {}
     this.gh = {repo, token, ref, write: !!(info.permissions || {}).push};
     this.dir = null; this.base = DATA_REPO_DIR;
-    // 곡 목록(수 MB)은 여기서 한 번만 받아 두고 곡 목록 그리기(library)에서 그대로 씀
-    this.libText = await this.readTextP(`${this.out}/library.json`, "곡 목록 받는 중", 0.1, 0.8).catch(e => {
-      Object.assign(this, prev);
-      throw e.name === "NotFoundError" ? new Error(`저장소에 ${DATA_REPO_DIR}export/library.json 이 없습니다. 서버를 켠 PC 에서 한 번 푸시하세요.`) : e;
-    });
     if (remember) store.set("gh", {repo, token});
   },
   forgetGitHub() { store.set("gh", null); this.gh = null; },
@@ -116,14 +125,16 @@ const LOCAL = {
     const bases = ["", "data/", DATA_REPO_DIR];
     try { for await (const [n, h] of dir.entries()) if (h.kind === "directory" && n !== "export" && n !== "lyrics") bases.push(`${n}/${DATA_REPO_DIR}`); } catch (e) {}
     let base = null;
-    for (const b of bases) { try { await this.file(`${b}export/library.json`, dir); base = b; break; } catch (e) {} }
+    // Server\data = the folder holding export\db
+    const hasExport = async b => { let d = dir; for (const p of `${b}export/db`.split("/").filter(Boolean)) d = await d.getDirectoryHandle(p); return true; };
+    for (const b of bases) { try { await hasExport(b); base = b; break; } catch (e) {} }
     if (base == null) {
-      throw new Error(`'${dir.name}' 폴더에서 export\\library.json 을 찾지 못했습니다.\n`
-        + "서버 PC 의 프로그램 폴더 안 Server\\data 폴더를 고르세요. 처음이면 서버를 한 번 켜야 이 파일이 생깁니다.");
+      throw new Error(`'${dir.name}' 폴더에서 Server\\data (안에 export\\db 폴더)를 찾지 못했습니다.\n`
+        + "서버 PC 의 프로그램 폴더 안 Server\\data 폴더를 고르세요. 처음이면 서버를 한 번 켜야 생깁니다.");
     }
     this.dir = dir; this.gh = null; this.base = base;
   },
-  get out() { return `${this.base}export`; },  // 서버가 화면용으로 써 둔 곡 목록·가사
+  get out() { return `${this.base}export`; },  // 서버가 화면용으로 써 둔 우리 곡·한글 이름·가사
   get data() { return this.base; },  // 서버와 같이 쓰는 파일 (Server\data: 오류 신고·싱크 수정 대기) · 영상 연결은 읽기만 (고치기는 음원 관리)
   get name() { return this.gh ? this.gh.repo : this.dir ? this.dir.name : ""; },
 
@@ -167,6 +178,10 @@ const LOCAL = {
   async readText(path) {
     if (this.gh) return (await this.ghFetch(path, {raw: true})).text();
     return (await (await this.file(path)).getFile()).text();
+  },
+  async readBytes(path) {  // binary files (gzip blocks)
+    if (this.gh) return (await this.ghFetch(path, {raw: true})).arrayBuffer();
+    return (await (await this.file(path)).getFile()).arrayBuffer();
   },
   async readJson(path, dflt) {
     try { return JSON.parse((await this.readText(path)).replace(/^\uFEFF/, "")); }
@@ -222,7 +237,7 @@ const LOCAL = {
     const body = opt.body ? JSON.parse(opt.body) : {};
     const post = (opt.method || "GET") === "POST";
     if (!post && u.pathname === "/api/library") return this.library();
-    // 곡 하나에 대한 요청인데 곡 목록을 아직 안 읽음: 한 번 읽어 둠
+    // 곡 하나에 대한 요청인데 우리 곡을 아직 안 읽음: 한 번 읽어 둠
     if ((q.name || body.name) && !this.items.size) await (this.itemsP = this.itemsP || this.library().finally(() => { this.itemsP = null; }));
     if (!post && u.pathname === "/api/lyrics") return this.lyrics(q.site, q.name);
     if (!post && u.pathname === "/api/stream/views") return this.streamViews(q.name);
@@ -265,49 +280,43 @@ const LOCAL = {
     if (!it) throw new Error("곡을 찾을 수 없습니다.");
     return it;
   },
+  /* songs met outside our list (VocaDB search · playlist · listen together) — lyrics · reports look them up by name */
+  remember(it) { if (it && !this.items.has(it.site + "/" + it.name)) this.items.set(it.site + "/" + it.name, it); return it; },
 
-  /* 곡 목록: 서버가 써 둔 library.json + 지금 파일의 영상 연결 */
+  /* 우리 곡·이름은 표에서만 (user request 2026-11-14 — 예전 파일은 안 읽음): export/db 의 master · karaoke · songs (vocadb_api.js) */
   async library() {
-    const text = this.libText || await this.readTextP(`${this.out}/library.json`, "곡 목록 받는 중", 0.1, 0.8).catch(() => null);
-    this.libText = null;
-    this.progress("영상 연결 읽는 중…", 0.85);
-    const links = await this.readJson(`${this.data}video_links.json`, {});
-    this.progress("곡 목록 정리하는 중…", 0.92);
-    let lib = null;
-    try { lib = text ? JSON.parse(text.replace(/^﻿/, "")) : null; } catch (e) {}
-    if (!lib) throw new Error("곡 목록(library.json)을 읽지 못했습니다. 서버를 한 번 켜면 다시 만듭니다.");
-    this.items.clear();
-    for (const it of lib.items) {
+    this.progress("우리 곡(노래방·가사·싱크)·한글 이름 읽는 중…", 0.3);
+    const items = await VDB.load();
+    for (const it of items) {
       this.items.set(it.site + "/" + it.name, it);
-      this.applyLink(it, (links[it.key] || {}).url || "");
       Object.assign(it, this.synced.get(it.site + "/" + it.name) || {});  // 이번에 서버 없이 맞춘 싱크
     }
-    lib.sync_ready = true;  // 싱크 단추는 그대로 보이고, 누르면 '서버를 실행시켜야 합니다'
-    return lib;
-  },
-  applyLink(it, url) {  // 영상 연결: 연결한 영상이 영상 후보 맨 앞 (서버 library() 와 같음)
-    const rest = (it.videos || []).filter(u => u !== it.video_link && u !== url);
-    it.videos = url ? [url, ...rest] : rest;
-    it.video_link = url;
+    return {items, sync_ready: true};
   },
 
-  /* 가사: 서버가 써 둔 곡 가사 + 지금 싱크 파일의 시간·밀기 (가사가 같을 때만 — 가사가 바뀌었으면 서버에서 다시 맞춰야 함) */
+  /* 가사: 우리 가사 (export/db/lyrics/<VocaDB 번호>.json — 서버가 가사 표·싱크 표에서 만듦) → 없으면 VocaDB 가사 (API).
+     싱크: 그 파일 안의 싱크 (가사와 맞을 때만) — 플레이어에서 고친 싱크가 확인을 기다리면 그것 */
   async lyrics(site, name) {
     const it = this.item(site, name);
-    const d = await this.readJson(`${this.out}/lyrics/${site}/${name}.json`, null);
+    let d = it.lyrics && it.vocadb ? await this.readJson(`${this.out}/db/lyrics/${it.vocadb}.json`, null) : null;
+    if (d) d = {site, name, title: it.title, artist: it.artist, sync_fail: null, lyrics_file: "", link: null, ...d};
+    else if (it.vocadb) {
+      const v = await VDB.lyricsDoc(it.vocadb).catch(() => null);  // nothing of ours → VocaDB's own lyrics (API)
+      if (v) d = vdbLyrics(v, it);
+    }
     if (!d) return {site, name, title: it.title, artist: it.artist, sync_fail: null, lyrics_src: "", lyrics_kind: "", lyrics_file: "",
       raw: "", notes: [], groups: [], sync_state: "", sync: null, link: null, live: false};
-    const {sj, pend} = it.sync_file ? await this.currentSync(it) : {sj: null, pend: null};
-    if (sj && Array.isArray(sj.times) && sj.times.length === d.groups.length
-        && sj.lyrics_hash === (d.sync ? d.sync.lyrics_hash : await lyricsHash(d.groups))) {
-      if (d.sync) Object.assign(d.sync, {times: sj.times, offset: sj.offset || 0, matched: sj.matched || d.sync.matched, method: sj.method, edited: sj.edited});
-      else { d.sync = sj; d.sync_state = "ok"; }  // 서버 없이 처음 맞춘 싱크 (화면용 데이터에는 아직 없음)
-      d.sync_pending = pend;  // 고친 싱크가 음원 관리의 확인(반영)을 기다리는 중
+    if (it.vocadb && d.groups.length) {
+      const pj = await this.readJson(this.pendingPath(it), null);
+      if (pj && Array.isArray(pj.times) && pj.times.length === d.groups.length && pj.lyrics_hash === (d.sync ? d.sync.lyrics_hash : await lyricsHash(d.groups))) {
+        d.sync = pj; d.sync_state = "ok";
+        d.sync_pending = pj.pending || {};  // 고친 싱크가 음원 관리의 확인(반영)을 기다리는 중
+      }
     }
     return d;
   },
 
-  /* ---- 저장 (서버의 video_search_and_link.py · sync_save_and_lrc.py 와 같은 파일·같은 모양) ---- */
+  /* ---- 저장 ---- */
   /* 오류 신고: 신고 하나에 파일 하나 (Server\data\reports\<시각>_<번호>.json — 여럿이 보내도 안 겹침).
      깃허브에서 열면 그 저장소에 커밋 (WEB 만 받은 다른 사람도) · 폴더로 열면 그 폴더에 → 서버 PC 의 음원 관리 › 오류 신고가 git 으로 받아 봄 */
   async saveReport(d) {
@@ -320,19 +329,19 @@ const LOCAL = {
                who: String(d.who || store.get("reportWho", "") || "").trim().slice(0, 40)};  // sender (shared token → name typed in the report dialog)
     if (d.diag) r.diag = String(d.diag).slice(-12000);  // 안 보는 동안 멈춤 신고: 재생기 진단 기록 (play_engine.js diag)
     if (d.request) r.request = String(d.request).trim().slice(0, 300);  // 신곡 추가 요청: requested song name
-    if (d.sync) r.sync = {file: String(d.sync.file), pending: String(d.sync.pending)};  // 싱크 수정 신고: 본 파일 · 기다리는 파일 (Server\data 기준)
+    if (d.sync) r.sync = {vocadb: String(d.sync.vocadb), pending: String(d.sync.pending)};  // 싱크 수정 신고: VocaDB 곡 · 기다리는 파일 (Server\data 기준)
     await this.writeText(`${this.data}reports/${id}.json`, JSON.stringify(r, null, 1));
     return {ok: true, id};
   },
-  /* Sync edits (user request): never replace the real sync file from the player. The edited sync waits in
-     Server/data/sync_pending/<sync file> and one '싱크 수정' report goes to the manage screen. Until it is confirmed
-     (반영 → real file replaced) or thrown away (버리기), the player plays the pending one. More edits to the same
-     song update the same pending file / report. */
-  pendingPath(it) { return `${this.base}sync_pending/${it.sync_file}`; },
-  async currentSync(it) {  // pending edit first, else the real sync file
+  /* Sync edits (user request): the player never replaces a sync. The edited sync waits in
+     Server/data/sync_pending/vocadb/<VocaDB id>.json (keyed by the VocaDB song since 2026-11-14 — no old file paths) and one
+     '싱크 수정' report goes to the manage screen. Until it is confirmed or thrown away the player plays the pending one. */
+  pendingPath(it) { return `${this.base}sync_pending/vocadb/${it.vocadb}.json`; },
+  async currentSync(it) {  // pending edit first, else the sync in our lyrics file
     const pj = await this.readJson(this.pendingPath(it), null);
     if (pj && Array.isArray(pj.times)) return {sj: pj, pend: pj.pending || {}};
-    return {sj: await this.readJson(this.base + it.sync_file, null), pend: null};
+    const d = await this.readJson(`${this.out}/db/lyrics/${it.vocadb}.json`, null);
+    return {sj: d && d.sync ? {...d.sync} : null, pend: null};
   },
   async savePending(it, sj, what) {
     const path = this.pendingPath(it);
@@ -341,8 +350,8 @@ const LOCAL = {
       let rid = old && old.pending && old.pending.report;
       if (!rid) {  // first edit since the last confirm → one report for it
         rid = (await this.saveReport({kind: "싱크 수정", text: `플레이어에서 싱크를 고쳤습니다 (${what}). 음원 관리에서 반영하거나 버리세요.`,
-          song: {site: it.site, name: it.name, title: it.title, artist: it.artist || ""},
-          sync: {file: it.sync_file, pending: `sync_pending/${it.sync_file}`}})).id;
+          song: {site: it.site, name: it.name, title: it.title, artist: it.artist || "", vocadb: String(it.vocadb)},
+          sync: {vocadb: it.vocadb, pending: `sync_pending/vocadb/${it.vocadb}.json`}})).id;
       }
       sj.pending = {report: rid, at: nowText(), what};
       await this.writeText(path, pyJson(sj));
@@ -351,7 +360,7 @@ const LOCAL = {
   /* 싱크 밀기(±초)만: 지금 싱크(기다리는 수정이 있으면 그것)의 offset 만 바꿔 기다리는 파일로 */
   async saveOffset(d) {
     const it = this.item(d.site, d.name);
-    if (!it.sync_file) throw new Error("싱크가 없는 곡입니다.");
+    if (!it.vocadb) throw new Error("싱크가 없는 곡입니다.");
     const {sj} = await this.currentSync(it);
     if (!sj || !Array.isArray(sj.times)) throw new Error("싱크가 없는 곡입니다.");
     const off = Math.round((+d.offset || 0) * 100) / 100;
@@ -363,7 +372,7 @@ const LOCAL = {
   async saveTimes(d) {
     const it = this.item(d.site, d.name);
     const L = await this.lyrics(d.site, d.name);
-    if (!L.groups.length || !it.sync_file) throw new Error("가사가 없는 곡입니다.");
+    if (!L.groups.length || !it.vocadb) throw new Error("가사가 없는 곡입니다.");
     if (!Array.isArray(d.times) || d.times.length !== L.groups.length) throw new Error("시간 개수가 가사 묶음 수와 다릅니다.");
     const times = d.times.map(t => Math.round(+t * 100) / 100);
     const ok = Array.isArray(d.matched) && d.matched.length === times.length ? d.matched.map(Boolean) : times.map(() => true);
@@ -377,7 +386,7 @@ const LOCAL = {
     if (cur.method == null) cur.method = "manual";
     Object.assign(cur, {version: 2, synced_at: now});
     await this.savePending(it, cur, `직접 맞추기 — 찍은 묶음 ${ok.filter(Boolean).length}/${ok.length}`);
-    this.synced.set(it.site + "/" + it.name, {sync: "ok", method: cur.method});  // 곡 목록 표시 (화면용 데이터는 반영 뒤 서버가 다시 씀)
+    this.synced.set(it.site + "/" + it.name, {sync: "ok", method: cur.method});  // 재생목록 표시 (화면용 데이터는 반영 뒤 서버가 다시 씀)
     Object.assign(it, this.synced.get(it.site + "/" + it.name));
     return this.lyrics(d.site, d.name);
   },

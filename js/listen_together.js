@@ -13,7 +13,7 @@
      0.1초 안으로 맞춤 (user request: 차이 거의 없게 — 주고받는 시간의 절반 + 이 기기의 '옮기는 데 걸리는 시간'(LT.lead,
      맞춘 뒤 남은 차이로 배움)을 더함, 최대 4번). 그 뒤로는 0.5초 넘게 벌어질 때만 맞춤
    · 신청곡 구역은 방 안에서 늘 보임 (user request 2026-11-12): 신청곡 목록(한 번에 5개, 넘으면 쪽 넘기기) 아래 맨 밑에 검색창 —
-     메인 화면 검색 드롭다운과 같은 항목 (검색어가 든 곡·보컬·프로듀서… + 곡 수) → 고르면 그 곡들 → 곡을 고르면 신청. 방장이 고르면 바로 대기열
+     이 플레이어가 아는 곡 + 우리 DB(전체 곡) 에서 찾은 곡 (2026-11-14 — VocaDB 검색 안 씀) → 곡을 고르면 신청. 방장이 고르면 바로 대기열
      손님이 맞춰 옮길 때마다 '방장과 싱크조정중...' 이 화면 아래에 잠깐 뜸 (user request)
    · 손님이 검색해서 요청 → '요청중' · 방장이 수락하면 '직접 넣은 곡'에 들어가고 '재생대기' →
      틀면 '재생중' → 다 틀고 다음 곡으로 넘어가면 사라짐. 요청곡과 상태는 방 안 모두에게 보임 (방장은 거절도 가능)
@@ -118,10 +118,11 @@ const ltIntent = () => audio.bridged ? !!audio.autoplay : !audio.paused;
 const ltStrip = it => Object.fromEntries(Object.entries(it).filter(([k]) => !k.startsWith("_")));
 /* 받은 곡 → 이 화면의 곡 (같은 키 → 같은 이름 → 온라인 곡이면 받은 곡 그대로 → 제목이 같은 온라인 곡) */
 function ltFindItem(key, item) {
-  const pools = [LIB.items, (typeof OFFDIR !== "undefined" && OFFDIR && OFFDIR.items) || []];
-  for (const p of pools) { const x = p.find(x => keyOf(x) === key); if (x) return x; }
+  if (LOCAL.items.has(key)) return LOCAL.items.get(key);  // our songs · songs met in search / playlist
+  const off = ((typeof OFFDIR !== "undefined" && OFFDIR && OFFDIR.items) || []).find(x => keyOf(x) === key);
+  if (off) return off;
   if (!item) return null;
-  if (item.site === "stream") { const x = {...item}; prepItem(x); return x; }
+  if (item.site === "stream") return liveItem(item);  // the host's song (e.g. a VocaDB result) — remembered so its lyrics load
   return LIB.items.find(x => x.title === item.title && canPlay(x)) || null;  // 방장의 mp3 곡 → 같은 곡의 온라인 곡
 }
 
@@ -726,19 +727,26 @@ function ltRenderReqs() {
 }
 $("ltReqPager").addEventListener("click", e => { const b = e.target.closest("button[data-p]"); if (!b) return; LT.reqPage += +b.dataset.p; ltRenderReqs(); });
 
-/* search = exactly the main screen's search dropdown (user request: same items): '"…" 들어간 곡' + matching 보컬·프로듀서·태그…
-   with song counts, grouped. Choosing one opens its songs (2nd step, ← back / Esc) and a song there is requested. */
-let ltHl = 0, ltOpt = null;  // ltOpt: the chosen option (2nd step) or null
+/* search (user request 2026-11-14 — the player has no full song list any more, so no 보컬·프로듀서 groups): the songs this
+   player knows that match, at once, then matches from our whole DB (after a short pause in typing). Choosing a
+   song requests it. */
+let ltHl = 0, ltOpt = null, ltSeq = 0, ltTimer = 0;  // ltOpt: {label, songs, busy} of the current search, or null
 const ltPool = () => allItems().filter(canPlay);
-function ltMainOpts() {  // same as qOpts() in player_screen.js, counted over the songs that can be requested
-  const raw = $("ltReqQ").value.trim(), v = fold(raw); if (!v) return [];
-  const pool = ltPool(), out = [{k: "text", v, label: `"${raw}" 들어간 곡`, n: pool.filter(it => FKIND.text[1](it, v)).length, grp: "검색"}];
-  for (const c of FCATS || []) for (const [val, cnt] of c.rows)
-    if (FKIND[c.k] && fold(c.lab(val)).includes(v) && out.length < 80) out.push({k: c.k, v: val, label: c.lab(val), n: cnt, grp: c.label});
-  return out;
+function ltSearch() {
+  const raw = $("ltReqQ").value.trim(), seq = ++ltSeq;
+  clearTimeout(ltTimer);
+  if (!raw) { ltOpt = null; return ltRenderPop(); }
+  const local = ltPool().filter(it => FKIND.text[1](it, fold(raw))).slice(0, 30);
+  ltOpt = {grp: "검색", label: `"${raw}"`, songs: local, busy: ONLINE};
+  ltRenderPop();
+  if (!ONLINE) return;
+  ltTimer = setTimeout(() => findSongs(raw, local).then(s => {
+    if (seq !== ltSeq) return;
+    ltOpt = {...ltOpt, songs: s.filter(canPlay), busy: false};
+    ltRenderPop();
+  }), 400);
 }
-function ltOptSongs(o) { return ltPool().filter(it => FKIND[o.k][1](it, o.v)).slice(0, 200); }
-const ltOpts = () => ltOpt ? ltOptSongs(ltOpt).map(it => ({it})) : ltMainOpts();
+const ltOpts = () => ltOpt ? ltOpt.songs.map(it => ({it})) : [];
 function ltRenderPop() {
   const q = $("ltReqQ"), os = ltOpts();
   let p = $("ltReqPop");
@@ -750,7 +758,6 @@ function ltRenderPop() {
     list.onmousedown = e => e.preventDefault();  // keep focus in the search box
     // choose on click, not mousedown (user request): hiding on mousedown let the rest of the tap land on 새로고침 under the box
     list.onclick = e => {
-      if (e.target.closest(".lt-back")) { ltOpt = null; ltHl = 0; return ltRenderPop(); }
       const o = e.target.closest(".fdd-opt"); if (!o) return;
       ltChoose(ltOpts()[+o.dataset.i]);
     };
@@ -758,7 +765,8 @@ function ltRenderPop() {
   ltHl = Math.max(0, Math.min(ltHl, os.length - 1));
   const list = p.querySelector(".fdd-list");
   if (ltOpt) {  // 2nd step: the songs of the chosen option
-    list.innerHTML = `<div class="fdd-grp lt-back" title="뒤로 (Esc)">← ${esc(ltOpt.grp)} · ${esc(ltOpt.label)} <span class="n">${os.length}</span></div>`
+    list.innerHTML = `<div class="fdd-grp">${esc(ltOpt.grp)} · ${esc(ltOpt.label)} <span class="n">${os.length}</span></div>`
+      + (ltOpt.busy ? '<div class="fdd-none">우리 DB 에서 찾는 중…</div>' : os.length ? "" : '<div class="fdd-none">맞는 곡이 없습니다</div>')
       + os.map((o, i) => {
         const r = LT.reqs.find(r => r.key === keyOf(o.it));
         return `<div class="fdd-opt${i === ltHl ? " hl" : ""}" data-i="${i}"><span class="t">${esc(o.it.title)} <span class="a">${esc(shortName(o.it.artist || ""))}</span></span>${
@@ -780,15 +788,15 @@ function ltRenderPop() {
     width: Math.max(rc.width, 240) + "px", maxHeight: h + "px", top: up ? "auto" : rc.bottom + 3 + "px", bottom: up ? H - rc.top + 3 + "px" : "auto"});
 }
 function ltChoose(o) {
-  if (!o) return;
-  if (!ltOpt) { ltOpt = o; ltHl = 0; return ltRenderPop(); }  // 1st step → its songs
+  if (!o || !o.it) return;
+  LOCAL.remember(o.it);  // a VocaDB result: lyrics · reports find it by name
   if (LT.reqs.some(r => r.key === keyOf(o.it))) return;
   LT.reqPage = 9999;  // show the page with the newest one (clamped in render)
   if (LT.role === "host") ltHostRequest(o.it);
   else if (LT.host) ltSend(LT.host, {t: "req", key: keyOf(o.it), item: ltStrip(o.it)});  // the host's list comes right back
   ltRenderReqs();  // the songs stay open (user request: the box doesn't close on its own) — the request shows as 요청중 there
 }
-$("ltReqQ").addEventListener("input", () => { ltHl = 0; ltOpt = null; ltRenderPop(); });
+$("ltReqQ").addEventListener("input", () => { ltHl = 0; ltSearch(); });
 $("ltReqQ").addEventListener("focus", ltRenderPop);
 $("ltReqQ").addEventListener("blur", () => { const p = $("ltReqPop"); if (p) try { p.hidePopover(); } catch (e) {} });
 $("ltReqQ").addEventListener("keydown", e => {
@@ -802,8 +810,7 @@ $("ltReqQ").addEventListener("keydown", e => {
   } else if (e.key === "Enter") { e.preventDefault(); ltChoose(os[ltHl]); }
   else if (e.key === "Escape") {
     const p = $("ltReqPop");
-    if (ltOpt) { e.preventDefault(); e.stopPropagation(); ltOpt = null; ltHl = 0; ltRenderPop(); }
-    else if (p && p.matches(":popover-open")) { e.preventDefault(); e.stopPropagation(); p.hidePopover(); }
+    if (p && p.matches(":popover-open")) { e.preventDefault(); e.stopPropagation(); p.hidePopover(); }
   }
 });
 /* '방장과 싱크조정중...' for a moment at every alignment seek (above dialogs too: popover) */

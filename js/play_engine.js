@@ -12,10 +12,11 @@ function vidRef(url) {
   m = (url || "").match(/(?:nicovideo\.jp\/watch\/|nico\.ms\/)((?:sm|nm|so)\d+)/);
   return m ? {kind: "nico", id: m[1], url} : null;
 }
-/* 온라인 곡 출처 차례: 직접 연결한 영상 → 곡 목록 차례 (니코니코 → 유튜브) — 서버의 싱크 만들기 소리 차례(_sources)와 같음 */
+/* 온라인 곡 출처 차례: 직접 연결한 영상 → 곡의 영상 차례 (니코니코 → 유튜브) — 서버의 싱크 만들기 소리 차례(_sources)와 같음 */
 const streamRefs = it => [...new Set([it.video_link, ...(it.sources || [])].filter(Boolean))].map(vidRef).filter(Boolean);
-/* 틀 수 있는 곡: 오프라인 곡(고른 mp3 폴더) · 원곡 영상 주소가 있는 온라인 곡 */
-const canPlay = it => !!it && (it.site === "local" || (it.site === "stream" && streamRefs(it).length > 0));
+/* 틀 수 있는 곡: 오프라인 곡(고른 mp3 폴더) · 원곡 영상 주소가 있는 온라인 곡.
+   deleted: original video confirmed gone (Manage › 오류 신고) — user request: shown greyed, never played or queued */
+const canPlay = it => !!it && (it.site === "local" || (it.site === "stream" && !it.deleted && streamRefs(it).length > 0));
 
 /* Diagnostic log (user: songs stop while another tab is in front — record what happened while hidden, read it after coming back).
    Last 400 lines kept in this browser (survives reload); playerDiag() in the console or a stall report attaches it. */
@@ -200,7 +201,7 @@ class LocalMedia extends EventTarget {
     this.priming = !autoplay;
     this.el.pause(); this.el.removeAttribute("src"); this.el.load();
     this.fire("emptied");
-    if (!this.gains) this.gains = await LOCAL.readJson(`${LOCAL.data}stream_loudness.json`, {}).catch(() => ({}));
+    if (!this.gains) this.gains = {};  // old stream_loudness.json no longer read (user request 2026-11-14: tables only) — no per-song volume until it has a table
     if (this.refs !== refs) { if (pre) pre.br.destroy(); return; }  // 그사이 다른 곡
     this.tryRef(0, pre && pre.br);
   }
@@ -325,7 +326,7 @@ function makePlayer(el) {
     async load(it, autoplay = true, how = "") {
       if (!it) return;
       if (!canPlay(it)) {
-        uiAlert(it.site === "stream" ? "이 곡은 곡 목록에 원곡 영상 주소가 없어 재생할 수 없습니다." : "오프라인 폴더에서 그 곡을 찾을 수 없습니다. 폴더를 다시 연결하세요.");
+        uiAlert(it.deleted ? "이 곡은 원곡 영상이 삭제되어 재생할 수 없습니다." : it.site === "stream" ? "이 곡은 원곡 영상(니코니코·유튜브) 주소가 없어 재생할 수 없습니다." : "오프라인 폴더에서 그 곡을 찾을 수 없습니다. 폴더를 다시 연결하세요.");
         return;
       }
       this.queueOnLoad(it, how);  // 지난 곡·다음 곡 순서 (play_queue.js)
@@ -358,10 +359,10 @@ function makePlayer(el) {
       lyrIdx = -2; this.lemit();
     },
     setOffset(o) { if (this.lyr) { this.lyr.offset = o; lyrIdx = -2; this.lemit(); } },
-    /* 가사 먼저 보이기(초): 싱크 파일은 그대로, 재생할 때 가사 표시만 이만큼 앞당김 (위 막대·플레이어·오버레이 모두) */
-    lead: Math.min(1, Math.max(0, +store.get("lyricsLead", 0) || 0)),
+    /* 가사 먼저 보이기(초): 싱크 파일은 그대로, 재생할 때 가사 표시만 이만큼 앞당김 (0.1~1.0초 · 기본 0.5초) (위 막대·플레이어·오버레이 모두) */
+    lead: Math.min(1, Math.max(0.1, +store.get("lyricsLead", 0.5) || 0.5)),
     setLead(v) {
-      this.lead = Math.round(Math.min(1, Math.max(0, +v || 0)) * 100) / 100;
+      this.lead = Math.round(Math.min(1, Math.max(0.1, +v || 0)) * 100) / 100;
       store.set("lyricsLead", this.lead);
       lyrIdx = -2; this.lemit();
     },
@@ -429,7 +430,8 @@ function makePlayer(el) {
     const it = P.now, L = P.lyr, i = P.lyrIndex(), g = L && L.times && i >= 0 ? L.groups[i] : null;
     const d = {title: it ? it.title : "", artist: it ? shortName(it.artist || "") : "", playing: !audio.paused,
       show_r: store.get("showR", true), show_t: store.get("showT", true), colors: g && !store.get("simple", false) ? (g.vc || []) : [],  // 간단 표시: 보컬 색 없이 흰색
-      lines: g ? g.lines.map(l => ({role: l.role, text: l.text})) : []};
+      // other-language lines (VocaDB): only the language picked in the player's 다른 언어 select (none by default)
+      lines: g ? g.lines.filter(l => l.role !== "x" || (l.lang && l.lang === store.get("xLang", ""))).map(l => ({role: l.role, text: l.text})) : []};
     const text = JSON.stringify(d);
     if (text === nowLast && !beat) return;
     nowLast = text;

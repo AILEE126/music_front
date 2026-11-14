@@ -40,10 +40,13 @@ const FKIND = {
     : v === "lyrics" ? !!it.lyrics : v === "nolyrics" ? !it.lyrics : v === "ok" ? it.sync === "ok"
     : v === "need" ? (it.site === "stream" ? !!(it.karaoke && it.sync !== "ok") : !!(it.lyrics && it.sync !== "ok")) : v === "stale" || v === "resync" ? it.sync === v : v === "fail" ? !!it.sync_fail : false],
 };
-/* 조건 칩 앞 작은 글자: 종류 (스트리밍 태그는 그 분류 — 시리즈·인원수) */
+/* 태그 → 그 분류 이름 (장르·테마 …) — 플레이어가 우리 DB 의 master 로 정함 (player_screen.js). 태그 이름에 ':' 가 있어도 그대로 이름
+   (VocaDB 태그 'Persona 5: …' 등 — 예전 스트리밍 '분류:이름' 형식은 이제 없음) */
+var tagGroupOf = v => "";
+/* 조건 칩 앞 작은 글자: 종류 (태그는 그 분류) */
 const firstV = c => Array.isArray(c.v) ? c.v[0] || "" : c.v;
-const chipKind = c => c.k === "tag" && firstV(c).includes(":") ? firstV(c).split(":")[0] : FKIND[c.k][0];
-const oneLabel = (k, v) => k === "tag" ? v.slice(v.indexOf(":") + 1) : k === "year" ? v + "년" : k === "state" ? STATES[v] || v
+const chipKind = c => c.k === "tag" && tagGroupOf(firstV(c)) || FKIND[c.k][0];
+const oneLabel = (k, v) => k === "tag" ? v : k === "year" ? v + "년" : k === "state" ? STATES[v] || v
   : k === "kara" && (v === "한국" || v === "일본") ? v + " 전체" : shortName(v);
 const chipLabel = c => Array.isArray(c.v) ? c.v.map(v => oneLabel(c.k, v)).join(" 또는 ") : oneLabel(c.k, c.v);
 /* 조건 하나에 맞는지 (값이 여러 개면 그중 하나라도) */
@@ -65,7 +68,7 @@ function countBy(listOfLists) {
 }
 /* 곡들에서 고를 수 있는 카테고리 [{id, label, k: 조건 종류, rows: [[값, 곡 수]], lab: 값 표시}] — 가나다순 · 값이 하나도 없는 카테고리는 뺌.
    가사·싱크 상태도 카테고리 하나 (online: 온라인 곡이면 가사 상태는 빼고 싱크 상태만).
-   태그: 노래방 목록은 값만(한국·일본), 온라인 스트리밍은 '분류:이름'(위키 상단 분류)의 분류마다 카테고리 하나 —
+   태그: 노래방 목록은 값만(한국·일본), 그 밖 태그는 분류(tagGroupOf)마다 카테고리 하나 —
    음성 합성 엔진·아티스트는 보컬·프로듀서 카테고리와 같아서 뺌 */
 function filterCats(its, online) {
   const cats = [], add = (id, label, k, rows, lab = x => x) => { if (rows.length) cats.push({id, label, k, rows, lab}); };
@@ -75,10 +78,10 @@ function filterCats(its, online) {
   add("composer", "프로듀서", "composer", countBy(its.map(it => it._composers)), shortName);
   const kara = new Map(countBy(its.map(it => (it.tags || []).filter(t => ONOFF_LISTS.includes(t)))));  // 한국·일본 목록 + 브랜드
   add("kara", "노래방", "kara", ONOFF_LISTS.filter(t => kara.has(t)).map(t => [t, kara.get(t)]), t => t === "한국" || t === "일본" ? `${t} 전체` : t);
-  const tags = countBy(its.map(it => (it.tags || []).filter(t => !ONOFF_LISTS.includes(t) && !/^(음성 합성 엔진|아티스트):/.test(t))));
+  const tags = countBy(its.map(it => (it.tags || []).filter(t => !ONOFF_LISTS.includes(t))));
   const groups = new Map();
-  for (const [k, n] of tags) { const g = k.includes(":") ? k.split(":")[0] : ""; groups.set(g, [...(groups.get(g) || []), [k, n]]); }
-  for (const [g, rows] of groups) add("tag:" + g, g || "태그", "tag", rows, k => k.slice(k.indexOf(":") + 1));
+  for (const [k, n] of tags) { const g = tagGroupOf(k); if (/^(음성 합성 엔진|아티스트)$/.test(g)) continue; groups.set(g, [...(groups.get(g) || []), [k, n]]); }
+  for (const [g, rows] of groups) add("tag:" + g, g || "태그", "tag", rows);
   add("cat", "나무위키 분류", "cat", countBy(its.map(it => it.categories || [])));
   add("year", "투고년도", "year", countBy(its.map(it => it._year ? [it._year] : [])).sort((a, b) => b[0].localeCompare(a[0])), k => k + "년");
   add("state", "가사·싱크 상태", "state", stateRows(its, online), k => STATES[k]);

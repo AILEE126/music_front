@@ -29,14 +29,15 @@ if (q.get("yt")) {
   document.head.appendChild(s);
   window.onYouTubeIframeAPIReady = () => {
     const STATE = {"-1": "buffering", 0: "ended", 1: "playing", 2: "paused", 3: "buffering", 5: "paused"};
-    let ccOff = false;
+    let ccOff = false, y = null, vid = q.get("yt"), from = Math.floor(start), retried = "", vol = startVol, muted = startMuted;
     // youtube-nocookie: 브라우저에 로그인된 유튜브 계정을 쓰지 않음 (다른 곳에서 같은 계정으로 듣는 중이어도 막히지 않게)
-    const y = new YT.Player("p", {host: "https://www.youtube-nocookie.com", videoId: q.get("yt"),
-      playerVars: {autoplay: 1, playsinline: 1, rel: 0, start: Math.floor(start), cc_load_policy: 0, controls: 0},  // no YouTube buttons (user request; the player has its own)
+    // 101·150 (퍼가기 금지) 이 nocookie 에서 나면 그 영상만 www.youtube.com 플레이어로 한 번 더 — 그래도 안 되면 오류를 올림
+    const make = (host, play = true) => { y = new YT.Player("p", {host, videoId: vid,
+      playerVars: {autoplay: play ? 1 : 0, playsinline: 1, rel: 0, start: from, cc_load_policy: 0, controls: 0},  // no YouTube buttons (user request; the player has its own)
       events: {
         onReady: e => {
-          if (startMuted) e.target.mute(); else { e.target.unMute(); e.target.setVolume(startVol); }
-          e.target.playVideo();
+          if (muted) e.target.mute(); else { e.target.unMute(); e.target.setVolume(vol); }
+          if (play) e.target.playVideo();
           up({ev: "ready", d: e.target.getDuration()});
         },
         onStateChange: e => {
@@ -49,14 +50,28 @@ if (q.get("yt")) {
           }
           up({ev: "state", s: STATE[e.data] || "buffering"});
         },
-        onError: e => up({ev: "error", code: e.data}),  // 2·5·100·101·150: 없는 영상·퍼가기 금지 등
-      }});
+        onError: e => {  // 2·5·100·101·150: 없는 영상·퍼가기 금지 등
+          if ((e.data === 101 || e.data === 150) && retried !== vid) { retried = vid; return remake("https://www.youtube.com", playing); }
+          up({ev: "error", code: e.data});
+        },
+      }}); };
+    let playing = true;  // the song should play (load {play}) — kept for the retry
+    const remake = (host, play) => {
+      try { y.destroy(); } catch (x) {}
+      if (!document.getElementById("p")) { const d = document.createElement("div"); d.id = "p"; document.body.prepend(d); }
+      ccOff = false; make(host, play);
+    };
+    make("https://www.youtube-nocookie.com");
     // load: next YouTube song in this same player. Chrome defers media in frames created while the tab is hidden
     // (until shown) → the parent keeps one YouTube bridge and reuses it, so songs go on while the user isn't looking.
     let want = "";  // video id loaded by "load" — "ready" is sent once its duration is known (state events don't come while folded)
     P = {play: () => y.playVideo(), pause: () => y.pauseVideo(), seek: t => y.seekTo(t, true),
-         volume: v => y.setVolume(v), mute: on => on ? y.mute() : y.unMute(),
-         load: v => { want = v.yt; ccOff = false; const o = {videoId: v.yt, startSeconds: +v.start || 0}; if (v.play) y.loadVideoById(o); else y.cueVideoById(o); }};
+         volume: v => { vol = v; y.setVolume(v); }, mute: on => { muted = on; on ? y.mute() : y.unMute(); },
+         load: v => {
+           // a player remade on www.youtube.com stays so (a new frame in a hidden tab may stay silent)
+           want = v.yt; vid = v.yt; from = Math.floor(+v.start || 0); playing = !!v.play; ccOff = false;
+           const o = {videoId: v.yt, startSeconds: from}; if (v.play) y.loadVideoById(o); else y.cueVideoById(o);
+         }};
     setInterval(() => {
       try {
         if (!y.getCurrentTime) return;

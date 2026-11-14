@@ -14,35 +14,14 @@
   <aside class="side">
     <div class="side-head">
       <div class="top"><h1 class="rainbow"><span class="t-full">사이버첨단노인정</span><span class="t-simple" hidden>음악플레이어</span></h1><button class="ib" id="btnTheme" title="밝은 화면 / 어두운 화면" aria-label="밝은 화면 / 어두운 화면 바꾸기"><svg class="moon" viewBox="0 0 24 24" fill="currentColor"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg><svg class="sun" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4.6"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"/></g></svg></button></div>  <!-- user request: theme toggle at the right end of the title row — moon in dark mode, sun in light mode (single color) -->  <!-- user request: name + diagonal rainbow text (old PPT style); 간단 mode: "음악플레이어" in plain text color -->
-      <div class="searchbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input type="search" id="q" placeholder="제목·가수 검색" title="제목·원제·발음·가수로 찾기 · Enter 를 누르면 검색어를 필터 조건으로"></div>
+      <!-- user request 2026-11-14: no full song list — the side panel is the playlist; songs are found in the search popup (VocaDB API) -->
       <div class="filters">
-        <button id="btnFilter" title="필터 조건 고르기 펼치기 / 접기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>필터<span class="cnt"></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
-        <button type="button" class="onoff" id="onOff" title="누르면 온라인 ↔ 오프라인 — 온라인: 곡 목록의 곡을 원곡 영상으로 바로 재생 (노래방 곡·브랜드는 필터의 '노래방') / 오프라인: 고른 mp3 폴더의 mp3 를 그대로 (같은 이름의 json 이 있으면 그 가사·싱크)"><span class="lb off">OFFLINE</span><span class="lb on">ONLINE</span></button>
-      </div>
-      <div class="sortrow">
-        <span>정렬</span><select id="fSort" title="목록 정렬 순서 (노래방 목록 순 = 나무위키 노래방 목록 페이지에 나오는 순서)"></select>
-        <button id="btnNo" title="곡 왼쪽에 노래방 번호 보이기 / 숨기기 — 지금 고른 목록의 번호 (TJ 목록이면 TJ, JOYSOUND 목록이면 JOYSOUND)">번호</button>
+        <button class="primary" id="btnSearch" title="곡 검색 창 열기 (전체 곡 · 노래방 곡 · 가사·싱크 있는 곡 — 우리 DB) — 찾은 곡을 바로 틀거나 재생목록에 넣음"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>곡 검색</button>
+        <button type="button" class="onoff" id="onOff" title="누르면 온라인 ↔ 오프라인 — 온라인: 재생목록의 곡을 원곡 영상으로 재생 / 오프라인: 고른 mp3 폴더의 mp3 를 그대로 (같은 이름의 json 이 있으면 그 가사·싱크)"><span class="lb off">OFFLINE</span><span class="lb on">ONLINE</span></button>
         <button id="btnSimple" title="간단 표시 — 목록의 썸네일 · 오른쪽 위 썸네일을 숨기고 영상도 접음 (소리는 그대로)">간단</button>
       </div>
-      <div class="fchips" id="fChips"></div>
-      <div class="fpanel" id="fPanel" hidden>
-        <div class="fhead" id="fNew">
-          <button data-new="inc" title="새 그룹 — 그룹끼리는 하나라도 맞으면 보임">＋ 그룹</button>
-          <button data-new="exc" title="새 제외 그룹 — 이 그룹 조건에 모두 맞는 곡은 빠짐">− 제외</button>
-          <span class="grow"></span>
-          <span class="fhelp" title="• 조건은 선택된 그룹(밝은 상자)에 들어갑니다&#10;• 한 그룹 안 조건은 모두 맞아야 보입니다 (그리고)&#10;• 그룹끼리는 하나라도 맞으면 보입니다 (또는)&#10;• 빨간 − 그룹에 맞는 곡은 빠집니다&#10;• 그룹을 누르면 선택, 동그라미(＋/−)를 누르면 포함↔제외">?</span>
-          <button class="ib" id="fReset" title="필터 모두 지우기">↺</button>
-          <button class="ib" id="fFold" title="접기">▴</button>
-        </div>
-        <div class="fgrid">
-          <select id="fKind" title="카테고리 — 고르면 오른쪽 칸에 그 카테고리의 값 목록 (보컬 · 프로듀서 · 노래방 · 시리즈 · 투고년도 …)"></select>
-          <select id="fVal" title="값 — 고르면 조건으로 더함"></select>
-          <label class="solo" title="보컬 카테고리에서 값을 고를 때: 이 보컬 혼자 부른 곡만"><input type="checkbox" id="fSolo"> 솔로곡만</label>
-        </div>
-      </div>
       <div class="libinfo"><span id="libInfo"></span>
-        <span class="acts"><button id="btnPlayView" title="지금 목록(검색어·필터)을 재생 목록으로 — 처음 곡부터 (무작위면 섞어서)">▶ 필터대로 재생</button><button id="btnFindCur" title="목록에서 지금 재생 중인 곡으로 이동">◎</button></span></div>
+        <span class="acts"><button id="btnPlayView" title="재생목록을 처음 곡부터 (무작위면 섞어서)">▶ 처음부터</button><button id="btnPlClear" title="재생목록 비우기">비우기</button><button id="btnFindCur" title="재생목록에서 지금 재생 중인 곡으로 이동">◎</button></span></div>
     </div>
     <div id="notice"></div>
     <div id="offBar"></div>
@@ -54,11 +33,11 @@
     <div class="now">
       <button class="tab" id="btnVideo" title="원곡 영상 보기 · 숨기기 (인터넷 필요) · 끌면 영상 높이 조절" aria-label="원곡 영상 보기 · 숨기기"><svg viewBox="0 0 16 10" aria-hidden="true"><rect x="1" y="1.5" width="9.5" height="7" rx="1.5" fill="currentColor"/><path d="M11.5 4.3 15 2.4v5.2l-3.5-1.9z" fill="currentColor"/></svg></button><!-- user request: video on/off as a tab at the player box's top-right · click folds, drag resizes (old grip bar removed) -->
       <div class="nowtop">
-        <button class="tab" id="btnList" title="곡 목록 접기 / 펴기" aria-label="곡 목록 접기 / 펴기"><svg viewBox="0 0 14 10" aria-hidden="true"><path d="M3 1.5v7M7 1.5v7M11 1.5v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button><!-- user request: tab shape, same place -->
+        <button class="tab" id="btnList" title="재생목록 접기 / 펴기" aria-label="재생목록 접기 / 펴기"><svg viewBox="0 0 14 10" aria-hidden="true"><path d="M3 1.5v7M7 1.5v7M11 1.5v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button><!-- user request: tab shape, same place -->
         <img id="nowCover" alt="" title="누르면 크게 보기 · 오른쪽 클릭하면 썸네일 저장" hidden>
         <div class="info">
           <div class="titleline"><h2 id="nowTitle">곡을 선택하세요</h2><span class="detail" id="nowDetail"></span></div>
-          <div class="artist" id="nowArtist">왼쪽 목록에서 곡을 누르면 재생합니다.</div>
+          <div class="artist" id="nowArtist">'곡 검색'에서 곡을 찾아 틀거나, 왼쪽 재생목록의 곡을 누르세요.</div>
           <div class="reldate" id="nowDate" title="원곡 투고(업로드) 날짜"></div>
         </div>
       </div>
@@ -88,11 +67,12 @@
       <span class="sep"></span>
       <button id="btnLyrics" title="가사 txt 미리보기 · 끌어서 복사 · txt로 받기">가사 보기</button>
       <span class="grow"></span>
+      <select id="xLang" title="VocaDB 의 다른 언어 번역 (영어·중국어 등) 줄 — 곡에 있는 언어만 고를 수 있음"><option value="">다른 언어 끔</option></select><!-- user request 2026-11-14: a select left of the toggles, not a 4th toggle -->
       <div class="seg" title="가사 줄 보이기 · 숨기기"><!-- user request: three joined on/off buttons instead of checkboxes -->
         <label><input type="checkbox" id="showR" checked hidden>발음</label><label><input type="checkbox" id="showT" checked hidden>번역</label><label title="이 줄을 부르는 보컬 (나무위키 가사에 보컬별 색 구분이 있는 곡)"><input type="checkbox" id="showP" checked hidden>파트</label>
       </div>
       <button class="ovpow" id="btnOverlayPower">오버레이 켜기</button>
-      <button class="ib" id="btnOverlaySet" title="가사 오버레이 설정 (tools\lyrics_overlay.bat 로 켜는 바탕 투명 가사 창)">⚙&#xFE0E;</button>
+      <button class="ib" id="btnOverlaySet" title="설정: 가사 먼저 보이기 · 가사 오버레이 (tools\lyrics_overlay.bat 로 켜는 바탕 투명 가사 창)">⚙&#xFE0E;</button>
     </div>
 
     <div class="bartab"><button class="tab" id="btnBar" title="가사 도구 접기 · 펴기" aria-label="가사 도구 접기 · 펴기"><svg viewBox="0 0 14 10" aria-hidden="true"><path d="M3 1.5v7M7 1.5v7M11 1.5v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></div><!-- user request: a tab hanging under the lyrics-tool bar folds / unfolds it · stays on the bar, not the sync guide -->
@@ -115,6 +95,41 @@
 
 
 
+<dialog id="searchDlg"><!-- 곡 검색 (user request 2026-11-14): VocaDB API + our songs — results are played or put in the playlist -->
+  <div class="dlg-head">곡 검색<span class="grow"></span><button class="ib" id="sClose" title="닫기 (Esc)">✕</button></div>
+  <div class="dlg-body">
+    <div class="srow">
+      <input type="search" id="sQ" placeholder="제목·원제·가수·프로듀서 (Enter)" autocomplete="off" spellcheck="false">
+      <select id="sScope" title="어디서 찾을지">
+        <option value="all">전체 곡</option><option value="kara">노래방 곡만</option><option value="ours">가사·싱크 있는 곡</option></select>
+      <select id="sSort" title="정렬"><option value="RatingScore">인기순</option></select>
+      <button class="primary" id="sGo">검색</button>
+    </div>
+    <!-- 필터 (user request 2026-11-14: the old list filter, as it was, moved into the search popup) -->
+    <div class="srow filters">
+      <button id="btnFilter" title="필터 조건 고르기 펼치기 / 접기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>필터<span class="cnt"></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+    </div>
+    <div class="fchips" id="fChips"></div>
+    <div class="fpanel" id="fPanel" hidden>
+      <div class="fhead" id="fNew">
+        <button data-new="inc" title="새 그룹 — 그룹끼리는 하나라도 맞으면 보임">＋ 그룹</button>
+        <button data-new="exc" title="새 제외 그룹 — 이 그룹 조건에 모두 맞는 곡은 빠짐">− 제외</button>
+        <span class="grow"></span>
+        <span class="fhelp" title="• 조건은 선택된 그룹(밝은 상자)에 들어갑니다&#10;• 한 그룹 안 조건은 모두 맞아야 보입니다 (그리고)&#10;• 그룹끼리는 하나라도 맞으면 보입니다 (또는)&#10;• 빨간 − 그룹에 맞는 곡은 빠집니다&#10;• 그룹을 누르면 선택, 동그라미(＋/−)를 누르면 포함↔제외">?</span>
+        <button class="ib" id="fReset" title="필터 모두 지우기">↺</button>
+        <button class="ib" id="fFold" title="접기">▴</button>
+      </div>
+      <div class="fgrid">
+        <select id="fKind" title="카테고리 — 고르면 오른쪽 칸에 그 카테고리의 값 목록 (보컬 · 프로듀서 · 노래방 · 시리즈 · 투고년도 …)"></select>
+        <select id="fVal" title="값 — 고르면 조건으로 더함"></select>
+        <label class="solo" title="보컬 카테고리에서 값을 고를 때: 이 보컬 혼자 부른 곡만"><input type="checkbox" id="fSolo"> 솔로곡만</label>
+      </div>
+    </div>
+    <div class="sinfo"><span id="sInfo">찾을 곡을 넣고 Enter</span><span class="grow"></span>
+      <button id="sAddAll" title="찾은 곡을 모두 (목록에 안 보이는 곡까지) 재생목록 끝에" disabled>결과 모두 재생목록에</button></div>
+    <div class="slist" id="sList"></div>
+  </div>
+</dialog>
 <dialog id="coverDlg"><img id="coverBig" alt="" title="누르면 닫기 · 오른쪽 클릭하면 저장"></dialog>
 <audio id="audioLocal" preload="metadata"></audio>
 
@@ -193,6 +208,7 @@ const STORE_PREFIX = "player.";  // 브라우저 저장값 이름 앞머리
 <script src="../js/local_files.js"></script>
 <script src="../js/play_engine.js"></script>
 <script src="../js/song_filter.js"></script>
+<script src="../js/vocadb_api.js"></script>
 <script src="../js/player_screen.js"></script>
 <script src="../js/listen_together.js"></script>
 <script src="../js/version_check.js"></script>

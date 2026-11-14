@@ -1,5 +1,6 @@
 /* player_screen.html 화면 동작 — 서버 없이 html 을 바로 열어 씀 (서버·음원 관리와 따로)
-   곡 목록·가사·싱크는 깃허브(토큰) 또는 고른 Server\data 폴더(서버 PC)에서 읽음 (local_files.js) · 오프라인 mp3 는 고른 mp3 폴더 (offline_folder.js)
+   곡 검색은 VocaDB API (vocadb_api.js) · 우리 곡(노래방·가사·싱크)·한글 이름은 깃허브(토큰) 또는 고른 Server\data 폴더(서버 PC)에서
+   읽음 (local_files.js) · 왼쪽 칸은 재생목록 · 오프라인 mp3 는 고른 mp3 폴더 (offline_folder.js)
    싱크 밀기·직접 맞추기·오류 신고는 그곳에 바로 저장. 싱크 만들기·가사 받기 등은 서버 PC 의 음원 관리에서 */
 const SHELL = makePlayer($("audioLocal"));  // 재생기 (play_engine.js)
 const audio = SHELL.audio;
@@ -12,20 +13,250 @@ let editShift = 0;  // +/− pushed while editing (shown next to the buttons)
 let times = null, offset = 0, curIdx = -1, editing = false, editTimes = null, editOk = null, cursor = 0;
 let userScrollAt = 0;
 
-/* ================= 곡 목록 ================= */
+/* ================= 재생목록 (user request 2026-11-14) =================
+   No full song list any more: the side panel is the playlist (SHELL.queue — the order ⏭ follows, play_queue.js), filled from the
+   search popup. Kept in this browser as whole items (VocaDB songs can't be looked up again without a request).
+   Offline (mp3 folder): the panel lists the folder's songs as before. */
 const keyOf = it => it.site + "/" + it.name;
+const PL_KEY = "playlist2", PL_DB = idbKV("music-playlist");  // 재생목록은 IndexedDB 에 (수십만 곡이면 localStorage 5MB 를 넘음)
+const plStrip = it => Object.fromEntries(Object.entries(it).filter(([k]) => !k.startsWith("_")));
+/* a saved / received song → the live item: our curated copy when we have that song (fresher lyrics · sync · numbers) */
+function liveItem(x) {
+  if (!x) return null;
+  const cur = x.vocadb && VDB.itemById(x.vocadb);
+  if (cur) return cur;
+  const it = {...x};
+  prepItem(it);
+  return LOCAL.remember(it);
+}
+const PL = {
+  get items() { return SHELL.queue; },
+  /* 우리 DB 곡은 VocaDB id 만 (숫자), 그 밖(mp3 · 예전 곡)은 곡 그대로. IndexedDB 를 못 쓰면 localStorage 에 */
+  save() {
+    const q = SHELL.queue.map(it => it.vocadb && VDB.rowById.has(String(it.vocadb)) ? +it.vocadb : plStrip(it));
+    PL_DB("put", PL_KEY, q).then(() => store.set(PL_KEY, null), () => store.set(PL_KEY, q));
+  },
+  set(list) { SHELL.setQueue(list); SHELL.plan(SHELL.now); this.save(); renderList(); },
+  add(list, next = false) {
+    const have = new Set(SHELL.queue.map(keyOf)), add = list.filter(it => canPlay(it) && !have.has(keyOf(it)));
+    if (!add.length) return 0;
+    add.forEach(it => LOCAL.remember(it));
+    let q = SHELL.queue.slice();
+    if (next && SHELL.now) { const i = q.findIndex(x => keyOf(x) === keyOf(SHELL.now)); q.splice(i + 1, 0, ...add); } else q = q.concat(add);
+    this.set(q);
+    return add.length;
+  },
+  remove(i) { const q = SHELL.queue.slice(); q.splice(i, 1); this.set(q); },
+  move(from, to) { const q = SHELL.queue.slice(), [it] = q.splice(from, 1); q.splice(to, 0, it); this.set(q); },
+  async restore() {
+    let q = await PL_DB("get", PL_KEY).catch(() => null);
+    if (!Array.isArray(q)) q = store.get(PL_KEY, []) || [];  // not saved there yet (older version) → the localStorage copy
+    return q.map(x => typeof x === "number" ? VDB.itemById(x) : liveItem(x)).filter(Boolean);
+  },
+};
 async function loadLibrary() {
   // the load bar (GitHub download progress) must close even when this is not the first open
   try { LIB = await api("/api/library"); } catch (e) { $("libInfo").textContent = e.message; return; } finally { hideLoad(); }
-  LIB.items.forEach(prepItem);
   renderOnOff();
-  renderSortOptions();  // 정렬 칸: 스트리밍은 '목록 순 (위키)', 번호 정렬·번호 버튼 없음
-  renderFilterOptions();
+  if (SHELL) await restoreQueue();
   renderList();
-  if (SHELL) restoreQueue();
+}
+/* 온라인 / 오프라인 (기본 온라인 · 기억). 온라인: 재생목록 · 오프라인: 고른 mp3 폴더의 mp3 그대로 (offline_folder.js) */
+var ONLINE = store.get("online", true);
+function renderOnOff() { $("onOff").classList.toggle("on", ONLINE); $("onOff").setAttribute("aria-pressed", ONLINE); renderOffBar(); }
+$("onOff").addEventListener("click", async () => {
+  ONLINE = !ONLINE; store.set("online", ONLINE);
+  if (ONLINE && SHELL.queue.some(it => it.site !== "stream")) { SHELL.setQueue(await PL.restore()); SHELL.plan(SHELL.now); }  // back from the mp3 folder's list
+  renderOnOff(); renderList();
+});
+/* songs this player knows (our songs · searched · playlist) — listen together · report search look here */
+const allItems = () => ONLINE ? [...LOCAL.items.values()] : OFFDIR.items;
+async function connectOffDir(pickNew) {
+  try {
+    if (!pickNew && await OFFDIR.saved()) { try { await OFFDIR.reconnect(); } catch (e) { if (e.name === "AbortError") throw e; await OFFDIR.pick(); } }
+    else await OFFDIR.pick();
+  } catch (e) { if (e.name !== "AbortError") uiAlert(e.message); return; }
+  OFFDIR.items.forEach(prepItem);
+  renderOffBar(); renderList();
+}
+/* 오프라인 폴더 줄: 연결된 폴더 이름 + 다른 폴더 고르기. not connected → the list shows only "폴더를 연결해 주세요" (renderRows) */
+function renderOffBar() {
+  const bar = $("offBar");
+  if (ONLINE || !OFFDIR.dir) { bar.innerHTML = ""; return; }
+  bar.innerHTML = `<div class="offnote">📁 <b>${esc(OFFDIR.name)}</b> · mp3 ${OFFDIR.items.length}곡 (같은 이름의 json 이 있는 곡만 가사·싱크)
+    <div class="row"><button id="offDirPick">다른 폴더 고르기</button></div></div>`;
+  $("offDirPick").onclick = () => connectOffDir(true);
+}
+var BRAND_COLOR = {TJ: "rgb(0,175,236)", 금영: "rgb(130,112,219)", DAM: "rgb(230,30,40)", JOYSOUND: "rgb(225,225,232)", UGA: "rgb(225,225,232)"};
+function renderList() {
+  view = ONLINE ? SHELL.queue.slice() : OFFDIR.items.slice();
+  $("libInfo").innerHTML = ONLINE ? `재생목록 <b>${view.length}</b>곡` : `mp3 <b>${view.length}</b>곡`;
+  $("btnPlClear").hidden = !ONLINE;
+  renderRows(true);
+}
+/* 목록은 보이는 줄(과 위아래 몇 줄)만 그림. 줄 높이가 모두 같아 그린 줄을 재서 위아래 빈 칸으로 전체 높이를 맞춤 */
+var ROW_H = 0, vlFrom = -1, vlTo = -1, VL_STEP = 20;
+function renderRows(force) {
+  const L = $("list");
+  if (!ONLINE && !OFFDIR.dir) {  // offline, no mp3 folder yet → one button only (user request)
+    L.innerHTML = `<div class="empty"><button class="primary" id="offConnect">폴더를 연결해 주세요</button></div>`;
+    $("offConnect").onclick = () => connectOffDir(false);
+    vlFrom = vlTo = -1; return;
+  }
+  if (!view.length) {
+    L.innerHTML = ONLINE ? `<div class="empty">재생목록이 비어 있습니다.<br><button class="primary" id="plSearch">곡 검색</button></div>` : `<div class="empty">곡이 없습니다.</div>`;
+    if ($("plSearch")) $("plSearch").onclick = openSearch;
+    vlFrom = vlTo = -1; return;
+  }
+  const h = ROW_H || 56, n = Math.ceil((L.clientHeight || 800) / h), top = Math.min(L.scrollTop, Math.max(0, view.length * h - L.clientHeight));
+  const from = Math.max(0, (Math.floor(top / h / VL_STEP) - 1) * VL_STEP), to = Math.min(view.length, from + n + 3 * VL_STEP);
+  if (!force && from === vlFrom && to === vlTo) return;
+  vlFrom = from; vlTo = to;
+  L.innerHTML = `<div class="vpad" style="height:${from * h}px"></div>` + view.slice(from, to).map((it, k) => itemHtml(it, from + k)).join("")
+    + `<div class="vpad" style="height:${(view.length - to) * h}px"></div>`;
+  L.scrollTop = top;
+  const real = (L.querySelector(".item") || {}).offsetHeight;
+  if (real && real !== ROW_H) { ROW_H = real; renderRows(true); }
+}
+var rowsQueued = false;
+$("list").addEventListener("scroll", () => {
+  if (rowsQueued) return;
+  rowsQueued = true;
+  requestAnimationFrame(() => { rowsQueued = false; renderRows(false); });
+});
+window.addEventListener("resize", () => renderRows(true));
+/* badges: our lyrics / sync state (songs of ours) · 'VocaDB' for songs found only on VocaDB */
+function badgesHtml(it) {
+  const bs = [];
+  if (it.site === "stream" && it.api) bs.push('<span class="b src" title="VocaDB 에서 찾은 곡 — 가사는 VocaDB 가사 (있으면)">VocaDB</span>');
+  else if (it.lyrics === "vocaro" && it.karaoke) bs.push('<span class="b src" title="나무위키에 가사가 없어 보카로 가사 위키(VL)에서 받은 가사">VL가사</span>');
+  else if (it.lyrics === "own" && it.site !== "local") bs.push('<span class="b src" title="직접 넣은 가사">직접 가사</span>');
+  else if (!it.lyrics && it.site === "local") bs.push('<span class="b warn" title="같은 이름의 가사·싱크 json 이 없음">가사X</span>');
+  if (it.sync === "ok" && it.method === "manual") bs.push('<span class="b ok">직접 싱크</span>');
+  else if (it.sync_fail) bs.push(`<span class="b err" title="자동 싱크 실패: ${esc(it.sync_fail)}">싱크 실패</span>`);
+  if (it.deleted) bs.unshift('<span class="b err" title="원곡 영상이 삭제되어 재생할 수 없음">삭제됨</span>');
+  return bs.join("");
+}
+function itemHtml(it, i) {
+  const pl = ONLINE;
+  return `<div class="item${cur && keyOf(cur) === keyOf(it) ? " cur" : ""}${it.deleted ? " gone" : ""}" data-i="${i}"${pl ? ' draggable="true"' : ""}${it.deleted ? ' aria-disabled="true"' : ""}>
+    ${coverHtml(it, "thumb")}<div class="meta"><div class="t">${esc(it.title)}</div><div class="a">${esc(shortName(it.artist || it.name))}</div></div>
+    <div class="badges">${badgesHtml(it)}</div>${pctHtml(it)}${pl ? '<button class="plx" title="재생목록에서 빼기">✕</button>' : ""}</div>`;
+}
+/* mp3 안의 썸네일 (오프라인 곡) · 원곡 영상의 썸네일 주소 (온라인 곡) — 못 받은 그림은 ♪ */
+const coverUrl = it => it.site === "local" ? OFFDIR.coverUrl(it) : LOCAL.coverUrl(it);
+const hasCover = it => it.site === "local" ? !!it.cover : !!coverUrl(it);
+const coverHtml = (it, cls) => hasCover(it) ? `<img class="${cls}" data-ck="${esc(keyOf(it))}" src="${coverUrl(it)}" loading="lazy" alt="">` : `<span class="${cls}">♪</span>`;
+/* 곡 상세: 제목 옆에 원제 · 제목 발음 (원제가 제목과 같으면 생략) */
+function detailHtml(it) {
+  const parts = [];
+  if (it.orig && it.orig !== it.title) parts.push(`<span title="원제">${esc(it.orig)}</span>`);
+  if (it.reading) parts.push(`<span title="제목 발음">${esc(it.reading)}</span>`);
+  return parts.join("");
+}
+/* ◎ 재생 중인 곡으로 (곡이 넘어가도 목록은 저절로 움직이지 않음) */
+$("btnFindCur").onclick = () => {
+  const now = SHELL.now || cur; if (!now) return;
+  const i = view.findIndex(it => keyOf(it) === keyOf(now));
+  if (i < 0) { uiAlert("지금 재생 중인 곡이 재생목록에 없습니다 (검색에서 바로 튼 곡)."); return; }
+  const L = $("list");
+  L.scrollTop = i * ROW_H - (L.clientHeight - ROW_H) / 2;
+  renderRows(false);
+  const el = L.querySelector(`.item[data-i="${i}"]`);
+  if (el) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+};
+$("list").addEventListener("click", e => {
+  const el = e.target.closest(".item"); if (!el) return;
+  const i = +el.dataset.i;
+  if (e.target.closest(".plx")) return PL.remove(i);
+  if (el.classList.contains("gone")) return;  // deleted song: can't be picked
+  play(view[i], true, ONLINE ? "" : "pick");  // playlist song: ⏭ goes on from it
+});
+/* drag a playlist row to reorder (user request 2026-11-14: the playlist moved to the side panel) */
+let dragFrom = -1;
+$("list").addEventListener("dragstart", e => { const el = e.target.closest(".item"); if (!el || !ONLINE) return; dragFrom = +el.dataset.i; e.dataTransfer.effectAllowed = "move"; });
+$("list").addEventListener("dragover", e => { if (dragFrom >= 0) { e.preventDefault(); const el = e.target.closest(".item"); document.querySelectorAll("#list .item.dropto").forEach(x => x !== el && x.classList.remove("dropto")); if (el) el.classList.add("dropto"); } });
+$("list").addEventListener("drop", e => {
+  const el = e.target.closest(".item"); e.preventDefault();
+  if (el && dragFrom >= 0 && +el.dataset.i !== dragFrom) PL.move(dragFrom, +el.dataset.i);
+  dragFrom = -1;
+});
+$("list").addEventListener("dragend", () => { dragFrom = -1; document.querySelectorAll("#list .item.dropto").forEach(x => x.classList.remove("dropto")); });
+/* 자동 싱크 인식 일치 % (직접 싱크·싱크 없음은 없음, 100 이면 생략) */
+var syncPct = it => it.sync === "ok" && it.method !== "manual" && it.score != null ? Math.round(it.score * 100) : null;
+var pctHtml = it => {
+  const p = syncPct(it);
+  return p != null && p < 100 ? `<span class="pct ${p >= 70 ? "ok" : "warn"}" title="자동 싱크 · 인식 일치 ${p}%">${p}%</span>` : "";
+};
+/* 곡 우클릭: 나무위키 문서 · 가사 위키 · VocaDB · 복사 (+ 재생목록: 다음에 재생 · 빼기) */
+function songContext(e, it, extra = []) {
+  songMenu(e, {namu: it.namu || "", vocaro: it.wiki || "", title: it.title, orig: it.orig, reading: it.reading,
+               composer: it.composer, singer: it.singer || (it.vocals || []).map(v => v[0]).join(", ")},
+           [...extra, ...(it.vocadb ? [{label: "VocaDB 에서 보기", fn: () => window.open(`https://vocadb.net/S/${it.vocadb}`, "_blank", "noopener")}] : [])]);
+}
+$("list").addEventListener("contextmenu", e => {
+  const el = e.target.closest(".item"); if (!el) return;
+  const i = +el.dataset.i, it = view[i];
+  songContext(e, it, ONLINE ? [{label: "다음에 재생", fn: () => SHELL.enqueue(it)}, {label: "재생목록에서 빼기", fn: () => PL.remove(i)}] : []);
+});
+$("btnPlClear").onclick = async () => { if (SHELL.queue.length && await uiConfirm("재생목록을 비울까요?")) PL.set([]); };
+
+/* ================= 곡 검색 창 (user request 2026-11-14) =================
+   our DB only (export/db — the tables on GitHub; user request 2026-11-14: no VocaDB API, so every match can be played):
+   전체 곡 (every collected song) · 노래방 곡만 · 가사·싱크 있는 곡. Results: ▶ play now · ＋ playlist · ⤵ next · 결과 모두 = every match */
+const S = {items: [], q: ""};
+const S_SCOPES = ["all", "kara", "ours"];
+if (!S_SCOPES.includes(store.get("sScope", "all"))) store.set("sScope", "all");  // was 'vocadb' (VocaDB 전체)
+for (const id of ["sScope", "sSort"]) { $(id).value = store.get(id, $(id).value); $(id).onchange = () => { store.set(id, $(id).value); if (id === "sScope") { renderSortOptions(); renderFilterOptions(); } runSearch(); }; }
+function openSearch() {
+  sfDefaultGroup();  // a group is always there to put conditions in (user request 2026-11-14)
+  renderSortOptions(); renderFilterOptions();
+  $("searchDlg").showModal();
+  $("sQ").focus(); $("sQ").select();
+  if (!S.items.length) runSearch();
+}
+$("btnSearch").onclick = openSearch;
+$("sClose").onclick = () => $("searchDlg").close();
+$("searchDlg").addEventListener("click", e => { if (e.target === $("searchDlg")) $("searchDlg").close(); });  // outside the box
+$("sGo").onclick = () => runSearch();
+let sTimer = 0;
+$("sQ").addEventListener("input", () => { clearTimeout(sTimer); sTimer = setTimeout(runSearch, 200); });  // as you type (local, no request)
+/* small song finder for the report dialog and the listen-together request box: the songs given (already known) first,
+   then matches from our whole DB — no duplicates */
+async function findSongs(q, known = [], max = 40) {
+  const v = fold(q), seen = new Set(), out = [];
+  const db = v ? VDB.all().filter(it => FKIND.text[1](it, v)).sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, max) : [];
+  for (const it of [...known, ...db]) if (!seen.has(keyOf(it))) { seen.add(keyOf(it)); out.push(it); }
+  return out.slice(0, max);
+}
+/* the scope's songs: 전체 곡 = our whole DB · 노래방 곡만 · 가사·싱크 있는 곡 = our songs */
+const scopeItems = () => { const sc = $("sScope").value; return sc === "kara" ? VDB.curated.filter(it => it.karaoke) : sc === "ours" ? VDB.curated.filter(it => !!(it.lyrics || it.sync)) : VDB.all(); };
+function runSearch() {
+  const scope = $("sScope").value, q = $("sQ").value.trim(), v = fold(q);
+  S.q = q; $("sList").scrollTop = 0;
+  S.items = ourSort(scopeItems().filter(it => passChips(it) && (!v || FKIND.text[1](it, v))));
+  renderSearch(`${{kara: "노래방 곡", ours: "가사·싱크 있는 곡"}[scope] || "전체 곡"} ${S.items.length.toLocaleString()}곡${q ? ` — "${q}"` : ""}${FG.some(g => g.c.length) ? " · 필터 적용" : ""}`);
+}
+function renderSearch(info) {
+  $("sInfo").textContent = info;
+  $("sAddAll").disabled = !S.items.some(canPlay);
+  const inPl = new Set(SHELL.queue.map(keyOf)), show = S.items.slice(0, 300);
+  $("sList").innerHTML = show.map((it, i) => {
+    const nums = Object.entries(it.nums || {}).map(([b, n]) => `<span class="b kara" style="--bc:${BRAND_COLOR[b] || "#888"}" title="${esc(b)}">${esc(b)} ${esc(n)}</span>`).join("");
+    const own = it.api ? "" : `<span class="b src" title="우리 데이터가 있는 곡">${it.sync === "ok" ? "싱크" : it.lyrics ? "가사" : "노래방"}</span>`;
+    return `<div class="sitem${canPlay(it) ? "" : " gone"}" data-i="${i}">${coverHtml(it, "thumb")}
+      <div class="meta"><div class="t">${esc(it.title)}${it.orig && it.orig !== it.title ? ` <span class="o">${esc(it.orig)}</span>` : ""}</div>
+        <div class="a">${esc(shortName(it.artist || ""))}</div>
+        <div class="tags">${own}${it.type ? `<span class="b">${esc(VDB_TYPE_KO[it.type] || it.type)}</span>` : ""}${it.date ? `<span class="d">${esc(it.date)}</span>` : ""}${nums}</div></div>
+      <div class="sacts">${canPlay(it) ? `<button data-a="play" title="지금 재생">▶</button><button data-a="next" title="다음에 재생 (재생목록에서 지금 곡 다음)">⤵</button>`
+        + `<button data-a="add" title="재생목록 끝에"${inPl.has(keyOf(it)) ? " disabled" : ""}>${inPl.has(keyOf(it)) ? "✓" : "＋"}</button>` : '<span class="hint">영상 없음</span>'}</div></div>`;
+  }).join("") + (S.items.length > show.length ? `<div class="hint">… ${(S.items.length - show.length).toLocaleString()}곡 더 ('결과 모두 재생목록에' 는 이 곡들까지 다 넣음)</div>` : "")
+    || `<div class="empty">맞는 곡이 없습니다.</div>`;
 }
 
-/* ================= 필터 (판정·카테고리는 song_filter.js — 음원 관리와 같이 씀) ================= */
+/* ================= 필터 (판정·카테고리는 song_filter.js — 음원 관리와 같이 씀) — 곡 검색 창 안 (user request 2026-11-14) ================= */
+/* 고를 값의 곡: 그 범위의 곡 (곡 수도 그 범위 기준) */
+const sfItems = scopeItems;
 /* 필터 그룹 [{x: 제외 그룹, m: '＋ 그룹'·'− 제외' 버튼으로 만든 그룹, c: [{k: 종류, v: 값}]}] — 그룹 안 조건은 모두 맞아야(교집합),
    포함 그룹끼리는 하나라도 맞으면 보임(합집합), 제외 그룹의 조건에 모두 맞는 곡은 빠짐. fCur: 새 조건이 들어갈 그룹.
    버튼으로 그룹을 만들지 않았으면(m 없음) 조건을 고를 때마다 그 조건 하나만으로 거름 (앞 조건은 바뀜).
@@ -34,7 +265,7 @@ let FG = (store.get("f.groups", null) || store.get("f.chips", []).map(c => ({x: 
   .map(g => "m" in g ? g : {...g, m: g.c.length > 1});
 let fCur = Math.min(store.get("f.cur", 0), FG.length - 1);
 const passChips = it => passGroups(it, FG);
-function saveChips() { store.set("f.groups", FG); store.set("f.cur", fCur); renderFilterOptions(); renderList(); }
+function saveChips() { store.set("f.groups", FG); store.set("f.cur", fCur); renderFilterOptions(); runSearch(); }
 function addChip(k, v) {  // v: 값 하나 또는 [값, …] (그중 하나라도)
   if (!v || (Array.isArray(v) && !v.length)) return;
   if (Array.isArray(v) && v.length === 1) v = v[0];
@@ -47,58 +278,20 @@ function addChip(k, v) {  // v: 값 하나 또는 [값, …] (그중 하나라�
   if (!g.c.some(c => c.k === k && JSON.stringify(c.v) === JSON.stringify(v))) g.c.push({k, v});
   saveChips();
 }
-/* 온라인 / 오프라인 (기본 온라인 · 기억).
-   온라인: 곡 목록의 곡 (노래방 곡·브랜드는 필터의 '노래방') · 오프라인: 고른 mp3 폴더의 mp3 그대로 (offline_folder.js) */
-var ONLINE = store.get("online", true);
-var JAPAN_LISTS = ["일본", "DAM", "UGA", "JOYSOUND"], KOREA_LISTS = ["한국", "TJ", "금영"];
-function renderOnOff() { $("onOff").classList.toggle("on", ONLINE); $("onOff").setAttribute("aria-pressed", ONLINE); renderOffBar(); }
-$("onOff").addEventListener("click", () => {
-  ONLINE = !ONLINE; store.set("online", ONLINE);
-  renderOnOff(); renderSortOptions(); renderFilterOptions(); renderList();
-});
-/* 지금 목록의 곡: 온라인은 곡 목록 · 오프라인은 연결한 mp3 폴더의 곡 */
-const allItems = () => ONLINE ? LIB.items : OFFDIR.items;
-/* 오프라인 mp3 폴더 연결 (누를 때만 — 브라우저가 그때만 권한을 물어볼 수 있음): 지난번 폴더가 있으면 그 폴더, 안 되면 새로 고르기 */
-async function connectOffDir(pickNew) {
-  try {
-    if (!pickNew && await OFFDIR.saved()) { try { await OFFDIR.reconnect(); } catch (e) { if (e.name === "AbortError") throw e; await OFFDIR.pick(); } }
-    else await OFFDIR.pick();
-  } catch (e) { if (e.name !== "AbortError") uiAlert(e.message); return; }
-  OFFDIR.items.forEach(prepItem);
-  renderOffBar(); renderFilterOptions(); renderList();
-}
-/* 오프라인 폴더 줄: 연결된 폴더 이름 + 다른 폴더 고르기. User request: not connected → nothing here,
-   the list itself shows only "폴더를 연결해 주세요" (renderRows) */
-function renderOffBar() {
-  const bar = $("offBar");
-  if (ONLINE || !OFFDIR.dir) { bar.innerHTML = ""; return; }
-  bar.innerHTML = `<div class="offnote">📁 <b>${esc(OFFDIR.name)}</b> · mp3 ${OFFDIR.items.length}곡 (같은 이름의 json 이 있는 곡만 가사·싱크)
-    <div class="row"><button id="offDirPick">다른 폴더 고르기</button></div></div>`;
-  $("offDirPick").onclick = () => connectOffDir(true);
-}
-/* 지금 목록 (번호·정렬이 보는 값): 오프라인은 local · 온라인은 필터에서 고른 노래방 목록 하나면 그 목록,
-   한국 쪽만/일본 쪽만이면 한국/일본, 노래방을 안 골랐으면 stream (곡 목록 전체) */
-function curSite() {
-  if (!ONLINE) return "local";
-  const k = karaPicked();
-  if (k.length === 1) return k[0];
-  if (k.length && k.every(x => JAPAN_LISTS.includes(x))) return "일본";
-  if (k.length && k.every(x => KOREA_LISTS.includes(x))) return "한국";
-  return k.length ? "" : "stream";
-}
+
 function renderFilterOptions() {
-  const its = allItems(), opt = (v, label) => `<option value="${esc(v)}">${esc(label)}</option>`;
-  const fill = (id, head, rows, label = k => k) => {
-    $(id).innerHTML = opt("", head) + rows.map(([k, n]) => opt(k, `${label(k)} (${n})`)).join("");
-    $(id).hidden = !rows.length;
+  const its = sfItems(), opt = (v, label) => `<option value="${esc(v)}">${esc(label)}</option>`;
+  const fill = (id, head, rows, label = k => k, show = rows.length) => {
+    $(id).innerHTML = opt("", head) + rows.map(([k, n]) => opt(k, n === "" ? label(k) : `${label(k)} (${n})`)).join("");
+    $(id).hidden = !show;
   };
-  const cats = filterCats(its, ONLINE);
+  const cats = sfCats(its);
   FCATS = cats;
   const want = store.get("f.kind", "singer"), c = cats.find(x => x.id === want) || cats[0];
-  $("fKind").innerHTML = cats.map(x => opt(x.id, `${x.label} (${x.rows.length})`)).join("");
+  $("fKind").innerHTML = cats.map(x => opt(x.id, x.rows.length ? `${x.label} (${x.rows.length})` : x.label)).join("");
   $("fKind").value = c ? c.id : "";
   $("fKind").hidden = !cats.length;
-  fill("fVal", c ? c.label : "값", c ? c.rows : [], c ? c.lab : undefined);
+  fill("fVal", c ? c.label : "값", c ? c.rows : [], c ? c.lab : undefined, !!c);
   $("fSolo").disabled = !c || c.k !== "singer";
   $("fSolo").parentNode.classList.toggle("off", $("fSolo").disabled);
   syncDD();
@@ -126,8 +319,11 @@ function setFilterOpen(open) {
     fCur = Math.max(0, keep && keep.c.length ? FG.indexOf(keep) : FG.length - 1);
     store.set("f.groups", FG); store.set("f.cur", fCur);
   }
-  $("fPanel").hidden = !open; store.set("fOpen", open); renderFilterOptions();
+  else sfDefaultGroup();
+  $("fPanel").hidden = !open; store.set("sfOpen", open); renderFilterOptions();
 }
+/* open panel with no group yet → one empty include group, ready for the first condition (user request 2026-11-14) */
+function sfDefaultGroup() { if (!FG.length) { FG = [{x: false, m: true, c: []}]; fCur = 0; } }
 /* 필터 목록 칸 펼치기: 맨 위 검색창 + 항목 (optgroup 은 작은 제목). 글자를 치면 그 글자가 든 항목만, Enter 는 위에서 첫 항목,
    ↑↓ 로 고르기, Esc·바깥 누르기로 닫힘. 항목을 누르면 원래 select 의 change 로 조건을 더함 */
 var DD_IDS = ["fKind", "fVal"];
@@ -162,7 +358,7 @@ function openDD(id) {
   p.innerHTML = `<div class="fdd-top"><input type="search" placeholder="${esc($(id).options[0].text)} 검색" spellcheck="false" autocomplete="off">`
     + (multi ? `<button type="button" class="fdd-add" disabled title="체크한 값들을 조건 하나로 (그중 하나라도 맞으면)">추가</button>` : "") + `</div><div class="fdd-list"></div>`;
   if (multi) p.querySelector(".fdd-add").onclick = () => { const vs = [...ddSel]; closeDD(); addValues(vs); };
-  document.body.appendChild(p);
+  $("searchDlg").appendChild(p);  // inside the dialog (top layer) so it shows above it
   placePop(p, w, 240);
   w.classList.add("open");
   const q = p.querySelector("input");
@@ -212,7 +408,8 @@ function renderDD() {
   const name = o => o.text.replace(/ \(\d+\)$/, ""), cnt = o => (o.text.match(/ \((\d+)\)$/) || [])[1];
   let html = "", k = 0;
   for (const node of $(ddOpen).children) {
-    const grp = node.tagName === "OPTGROUP", hit = (grp ? [...node.children] : [node]).filter(o => o.value && (!q || fold(name(o)).includes(q)));
+    const grp = node.tagName === "OPTGROUP";
+    const hit = (grp ? [...node.children] : [node]).filter(o => o.value && (!q || fold(name(o)).includes(q)));
     if (!hit.length) continue;
     if (grp) html += `<div class="fdd-grp">${esc(node.label)}</div>`;
     html += hit.map(o => `<div class="fdd-opt${k++ === ddHl ? " hl" : ""}" data-v="${esc(o.value)}">`
@@ -223,7 +420,7 @@ function renderDD() {
     const vs = ddVisible(), on = vs.filter(v => ddSel.has(v)).length;
     html = `<div class="fdd-all"><input type="checkbox"${on && on === vs.length ? " checked" : ""}> <b>전체 선택</b><span class="n">${vs.length}</span></div>` + html;
   }
-  p.querySelector(".fdd-list").innerHTML = html || '<div class="fdd-none">맞는 항목이 없습니다</div>';
+  p.querySelector(".fdd-list").innerHTML = html || `<div class="fdd-none">맞는 항목이 없습니다</div>`;
   const a = p.querySelector(".fdd-all input");
   if (a) { const vs = ddVisible(), on = vs.filter(v => ddSel.has(v)).length; a.indeterminate = on > 0 && on < vs.length; }
 }
@@ -253,7 +450,7 @@ document.addEventListener("scroll", e => {
 window.addEventListener("resize", closeDD);
 $("btnFilter").onclick = () => setFilterOpen($("fPanel").hidden);
 $("fFold").onclick = () => setFilterOpen(false);
-$("fPanel").hidden = !store.get("fOpen", false);
+$("fPanel").hidden = !store.get("sfOpen", true);  // in the search popup: open unless folded there (user request 2026-11-14)
 $("fNew").addEventListener("click", e => {
   const b = e.target.closest("[data-new]"); if (!b) return;
   const x = b.dataset.new === "exc";
@@ -279,12 +476,13 @@ $("fChips").addEventListener("click", e => {
   saveChips();
 });
 $("fReset").onclick = () => { FG = []; fCur = 0; saveChips(); };
-/* 검색창도 펼친 목록처럼: 글자를 치면 바로 아래에 '검색어가 든 곡' + 이름이 맞는 보컬·프로듀서·태그 등 (곡 수와 함께)
-   누르거나 Enter(↑↓ 로 고름) → 그 조건을 필터에 더함. 친 글자로는 목록도 바로 걸러 보임. Esc·바깥 누르기로 닫힘 */
+
+/* 검색창도 펼친 목록처럼: 글자를 치면 바로 아래에 '"…" 검색' + 이름이 맞는 보컬·프로듀서·태그 등 (우리 곡 수와 함께)
+   첫 줄(Enter)은 검색, 다른 줄을 누르거나 ↑↓ 로 골라 Enter → 그 조건을 필터에 더함. Esc·바깥 누르기로 닫힘 */
 var qHl = 0;
 function qOpts() {
-  const raw = $("q").value.trim(), v = fold(raw); if (!v) return [];
-  const n = view.length, out = [{k: "text", v, label: `"${raw}" 들어간 곡`, n, grp: "검색"}];
+  const raw = $("sQ").value.trim(), v = fold(raw); if (!v) return [];
+  const out = [{k: "text", v, label: `"${raw}" 검색 (Enter)`, n: "", grp: "검색"}];
   for (const c of FCATS || []) for (const [val, cnt] of c.rows)
     if (fold(c.lab(val)).includes(v) && out.length < 80) out.push({k: c.k, v: val, label: c.lab(val), n: cnt, grp: c.label});
   return out;
@@ -292,8 +490,8 @@ function qOpts() {
 function renderQPop() {
   const os = qOpts();
   let p = $("qPop");
-  if (!os.length || document.activeElement !== $("q")) { if (p) p.remove(); return; }
-  if (!p) { p = document.createElement("div"); p.id = "qPop"; p.className = "fddpop"; p.innerHTML = '<div class="fdd-list"></div>'; document.body.appendChild(p); }
+  if (!os.length || document.activeElement !== $("sQ")) { if (p) p.remove(); return; }
+  if (!p) { p = document.createElement("div"); p.id = "qPop"; p.className = "fddpop"; p.innerHTML = '<div class="fdd-list"></div>'; $("searchDlg").appendChild(p); }  // inside the dialog (top layer) so it shows above it
   qHl = Math.min(qHl, os.length - 1);
   let g = "";
   p.querySelector(".fdd-list").innerHTML = os.map((o, i) => (o.grp !== g ? `<div class="fdd-grp">${esc(g = o.grp)}</div>` : "")
@@ -302,18 +500,20 @@ function renderQPop() {
     const o = e.target.closest(".fdd-opt"); if (!o) return;
     e.preventDefault(); pickQ(qOpts()[+o.dataset.i]);
   };
-  placePop(p, $("q"), 240);
+  placePop(p, $("sQ"), 240);
 }
 function pickQ(o) {
   if (!o) return;
-  $("q").value = ""; if ($("qPop")) $("qPop").remove();
+  if ($("qPop")) $("qPop").remove();
+  if (o.k === "text") return runSearch();  // the first one: search with the box as it is
+  $("sQ").value = "";
   if (o.k === "solo" || (o.k === "singer" && $("fSolo").checked)) o = {...o, k: "solo"};
   addChip(o.k, o.v);
 }
-$("q").addEventListener("input", () => { qHl = 0; setTimeout(renderQPop); });  // 목록(view)을 먼저 거른 뒤 곡 수를 셈
-$("q").addEventListener("focus", renderQPop);
-$("q").addEventListener("blur", () => { if ($("qPop")) $("qPop").remove(); });
-$("q").addEventListener("keydown", e => {
+$("sQ").addEventListener("input", () => { qHl = 0; setTimeout(renderQPop); });
+$("sQ").addEventListener("focus", renderQPop);
+$("sQ").addEventListener("blur", () => { if ($("qPop")) $("qPop").remove(); });
+$("sQ").addEventListener("keydown", e => {
   if (e.isComposing) return;
   const os = qOpts();
   if ((e.key === "ArrowDown" || e.key === "ArrowUp") && os.length) {
@@ -325,189 +525,84 @@ $("q").addEventListener("keydown", e => {
   else if (e.key === "Escape" && $("qPop")) { e.preventDefault(); $("qPop").remove(); }
 });
 
-/* 노래방 번호: 지금 고른 목록의 브랜드 번호 (전체 목록은 한국 TJ → 금영(KY), 일본 DAM → JOYSOUND(JS) → UGA) */
-var NO_OF = {"": ["TJ", "금영", "DAM", "JOYSOUND", "UGA"], 한국: ["TJ", "금영"], TJ: ["TJ"], 금영: ["금영"], 일본: ["DAM", "JOYSOUND", "UGA"], DAM: ["DAM"], UGA: ["UGA"], JOYSOUND: ["JOYSOUND"]};
-var NO_SHORT = {금영: "KY", JOYSOUND: "JS", UGA: "UGA"};
-var BRAND_COLOR = {TJ: "rgb(0,175,236)", 금영: "rgb(130,112,219)", DAM: "rgb(230,30,40)", JOYSOUND: "rgb(225,225,232)", UGA: "rgb(225,225,232)"};  // 반투명 칩이라 검정 브랜드는 밝은 회색으로
-/* 필터에서 고른 노래방 브랜드 (그룹 상관없이) — 고르면 그 브랜드 번호를 먼저 보임 */
-var karaPicked = () => [...new Set(FG.flatMap(g => g.c.filter(c => c.k === "kara").map(c => c.v)))];
-/* 번호를 브랜드 색으로: 한국·일본 전체 목록이거나 노래방 필터를 2개 이상 골랐을 때 (색이 곧 브랜드라 KY·JS 표시 없음, UGA 만 JOYSOUND 와 같은 색이라 표시) */
-var brandColored = () => ["", "stream", "한국", "일본"].includes(curSite()) || karaPicked().length >= 2;
-function numFor(it) {
-  const site = curSite(), base = NO_OF[site === "stream" ? "" : site] || [], picked = karaPicked().filter(b => base.includes(b));
-  const bs = picked.length ? [...picked, ...base.filter(b => !picked.includes(b))] : base;
-  const n = it.nums || {}, i = bs.findIndex(b => n[b]);
-  if (i < 0) return null;
-  const b = bs[i], col = brandColored();
-  return {brand: b, i, n: n[b], color: col ? BRAND_COLOR[b] : "", label: (col ? (b === "UGA" ? "UGA " : "") : i ? NO_SHORT[b] + " " : "") + n[b]};
+/* 곡 종류 (user request 2026-11-14: moved from the search row into the filter) — value = Korean name, our songs keep VocaDB's type */
+FKIND.type = ["곡 종류", (it, v) => (VDB_TYPE_KO[it.type] || it.type) === v];
+/* filter categories: the scope's songs (with counts) + 곡 종류 */
+function sfCats(its) {
+  const cats = filterCats(its, true), types = countBy(its.map(it => it.type ? [VDB_TYPE_KO[it.type] || it.type] : []));
+  if (types.length) cats.push({id: "type", label: "곡 종류", k: "type", rows: types, lab: x => x});
+  return cats.sort((a, b) => a.label.localeCompare(b.label, "ko"));
 }
-/* 정렬: 노래방 목록 순(나무위키 노래방 목록 페이지 순서 = 곡 목록 줄 순서, 스트리밍은 위키 목록 순서) · 제목 · 번호 · 투고일 · 프로듀서 · 보컬 */
-var SORTS = [["list", "노래방 목록 순"], ["title", "제목 (가나다)"], ["no", "노래방 번호"], ["new", "투고일 (최신)"], ["old", "투고일 (오래된)"],
-               ["composer", "프로듀서"], ["singer", "보컬"]];
-var listOf = site => site === "stream" || site === "local" ? site : ["일본", "DAM", "UGA", "JOYSOUND"].includes(site) ? "japan" : "namu";
-var titleGroup = t => { const c = (t || "").trim()[0] || ""; return /[가-힣ㄱ-ㅣ]/.test(c) ? 0 : /\d/.test(c) ? 1 : /[a-z]/i.test(c) ? 2 : 3; };
+/* 태그 → 분류 (song_filter.js tagGroupOf): master tag rows keep VocaDB's category — remade when master is read again */
+let tagCats = {of: null, map: new Map()};
+tagGroupOf = v => {
+  if (tagCats.of !== VDB.master) tagCats = {of: VDB.master, map: new Map((VDB.master.tag || []).map(t => [t.name, TAG_CAT_KO[t.cat] || t.cat || ""]))};
+  return tagCats.map.get(v) || "";
+};
+/* VocaDB tag categories (master tag rows keep VocaDB's) → Korean labels for the filter */
+const TAG_CAT_KO = {Genres: "장르", Themes: "테마", Subjective: "분위기", Instruments: "악기", Composition: "곡 구성", Vocalists: "보컬 관련",
+  Copyrights: "원작", Series: "시리즈", Animation: "애니메이션", Games: "게임", "MMD models": "MMD 모델", Sources: "출처", Distribution: "배포",
+  "Editor notes": "편집 메모", "Synthesizer engines": "음성 합성 엔진", Lyrics: "가사", Derivative: "2차 창작", Design: "디자인", Events: "이벤트",
+  Media: "매체", Jobs: "역할", Languages: "언어"};
+/* 곡 정렬: 이전 목록의 정렬 그대로 (전체 곡도 같음) */
+const OUR_SORTS = [["RatingScore", "인기순"], ["list", "노래방 목록 순"], ["Name", "제목 (가나다)"], ["no", "노래방 번호"], ["PublishDate", "투고일 (최신)"],
+                   ["old", "투고일 (오래된)"], ["composer", "프로듀서"], ["singer", "보컬"]];
 function renderSortOptions() {
-  const local = !ONLINE, kara = karaPicked().length, v = store.get("sort", "list");
-  $("fSort").innerHTML = SORTS.filter(([k]) => !(local && k === "no"))
-    .map(([k, label]) => `<option value="${k}">${k === "list" ? (local ? "파일 이름 순" : kara ? label : "목록 순 (위키)") : label}</option>`).join("");
-  $("fSort").value = [...$("fSort").options].some(o => o.value === v) ? v : "list";
-  $("btnNo").hidden = local;
-  $("btnNo").classList.toggle("on", !!store.get("showNo", false));
+  const list = OUR_SORTS, v = store.get("sSort", "RatingScore");
+  $("sSort").innerHTML = list.map(([k, l]) => `<option value="${k}">${l}</option>`).join("");
+  $("sSort").value = list.some(([k]) => k === v) ? v : "RatingScore";
 }
-function sortView(v) {
-  const site = curSite(), lst = listOf(site), big = 1e9;
-  // 노래방 한국·일본을 같이 고름 (""): 한국 목록 순 → 일본에만 있는 곡은 그 뒤에 일본 목록 순
-  const ord = site === "" ? it => { const o = it.ord || {}; return o.namu != null ? o.namu : o.japan != null ? 1e6 + o.japan : big; }
-    : it => { const o = (it.ord || {})[lst]; return o == null ? big : o; };
-  const byTitle = (a, b) => titleGroup(a.title) - titleGroup(b.title) || a.title.localeCompare(b.title, "ko");
-  const num = it => { const x = numFor(it); return x ? [x.i, parseInt(String(x.n).replace(/\D/g, ""), 10) || big] : [big, big]; };
-  const txt = (a, b) => (a ? 0 : 1) - (b ? 0 : 1) || (a || "").localeCompare(b || "", "ko");  // 빈 값은 맨 뒤
-  const cmp = {
-    list: (a, b) => ord(a) - ord(b),
-    title: () => 0,
+const titleGroup = t => { const c = (t || "").trim()[0] || ""; return /[가-힣ㄱ-ㅣ]/.test(c) ? 0 : /\d/.test(c) ? 1 : /[a-z]/i.test(c) ? 2 : 3; };
+const KO_CMP = new Intl.Collator("ko").compare;  // same order as localeCompare(…, "ko"), much faster over 수십만 곡
+function ourSort(list) {
+  const big = 1e9, txt = (a, b) => (a ? 0 : 1) - (b ? 0 : 1) || KO_CMP(a || "", b || "");
+  const ord = it => { const o = it.ord || {}; return o.namu != null ? o.namu : o.japan != null ? 1e6 + o.japan : big; };
+  const num = it => { const n = it.nums || {}, b = ["TJ", "금영", "DAM", "JOYSOUND", "UGA"].findIndex(x => n[x]); return b < 0 ? [big, big] : [b, parseInt(String(n[["TJ", "금영", "DAM", "JOYSOUND", "UGA"][b]]).replace(/\D/g, ""), 10) || big]; };
+  const byTitle = (a, b) => titleGroup(a.title) - titleGroup(b.title) || KO_CMP(a.title, b.title);
+  const cmp = {RatingScore: (a, b) => (b.rating || 0) - (a.rating || 0), list: (a, b) => ord(a) - ord(b), Name: () => 0,
     no: (a, b) => { const x = num(a), y = num(b); return x[0] - y[0] || x[1] - y[1]; },
-    new: (a, b) => (a.date ? 0 : 1) - (b.date ? 0 : 1) || (b.date || "").localeCompare(a.date || ""),
-    old: (a, b) => txt(a.date, b.date),
-    composer: (a, b) => txt(a.composer, b.composer),
-    singer: (a, b) => txt(a.singer, b.singer),
-  }[$("fSort").value] || (() => 0);
-  return v.sort((a, b) => cmp(a, b) || byTitle(a, b));
+    PublishDate: (a, b) => (a.date ? 0 : 1) - (b.date ? 0 : 1) || (b.date || "").localeCompare(a.date || ""), old: (a, b) => txt(a.date, b.date),
+    composer: (a, b) => txt(a.composer, b.composer), singer: (a, b) => txt(a.singer, b.singer)}[$("sSort").value] || (() => 0);
+  return list.sort((a, b) => cmp(a, b) || byTitle(a, b));
 }
-$("fSort").onchange = () => { store.set("sort", $("fSort").value); renderList(); };
-$("btnNo").onclick = () => { store.set("showNo", !store.get("showNo", false)); renderSortOptions(); renderList(); };
-/* 곡 왼쪽 노래방 번호 칸 (번호 버튼이 꺼져 있거나 번호가 없으면 빈 칸 → 숨김) */
-var noHtml = x => x ? `<span class="no${x.color ? " brand" : ""}" title="${esc(x.brand)} 번호"${x.color ? ` style="--bc:${x.color}"` : ""}>${esc(x.label)}</span>` : '<span class="no"></span>';
-function renderList() {
-  const q = fold($("q").value.trim()), site = curSite();
-  view = sortView(allItems().filter(it => passChips(it) && (!q || FKIND.text[1](it, q))));
-  const showNo = store.get("showNo", false) && site !== "local";
-  // 싱크 필요: 지금 목록(필터)에 걸린 곡만 셈 — 여러 곡 싱크 만들기는 음원 관리 › 온라인 스트리밍 '싱크 만들기'에서
-  const need = view.filter(needSync).length;
-  const fails = view.filter(it => it.sync_fail).length;
-  $("libInfo").innerHTML = `<b>${view.length}</b>곡 · 싱크 필요 ${need}` + (fails ? ` · 실패 ${fails}` : "");
-  rowShowNo = showNo;
-  renderRows(true);  // 보던 위치 그대로 (작업이 끝나 목록을 새로 읽을 때 등)
-}
-/* 곡 목록은 보이는 줄(과 위아래 몇 줄)만 그림 — 온라인 스트리밍은 6천 곡이 넘어 다 그리면 검색 글자마다·곡을 고를 때마다 0.2초씩 걸림.
-   줄 높이가 모두 같아 그린 줄을 재서 위아래 빈 칸으로 전체 높이를 맞춤. 20줄 단위로 끊어 스크롤할 때 자주 다시 그리지 않음 */
-var ROW_H = 0, rowShowNo = false, vlFrom = -1, vlTo = -1, VL_STEP = 20;
-function renderRows(force) {
-  const L = $("list");
-  if (!ONLINE && !OFFDIR.dir) {  // offline, no mp3 folder yet → one button only (user request)
-    L.innerHTML = `<div class="empty"><button class="primary" id="offConnect">폴더를 연결해 주세요</button></div>`;
-    $("offConnect").onclick = () => connectOffDir(false);
-    vlFrom = vlTo = -1; return;
-  }
-  if (!view.length) { L.innerHTML = `<div class="empty">곡이 없습니다.</div>`; vlFrom = vlTo = -1; return; }
-  // 목록이 줄어 보던 자리가 끝을 넘으면 끝으로
-  const h = ROW_H || 56, n = Math.ceil((L.clientHeight || 800) / h), top = Math.min(L.scrollTop, Math.max(0, view.length * h - L.clientHeight));
-  const from = Math.max(0, (Math.floor(top / h / VL_STEP) - 1) * VL_STEP), to = Math.min(view.length, from + n + 3 * VL_STEP);
-  if (!force && from === vlFrom && to === vlTo) return;
-  vlFrom = from; vlTo = to;
-  L.innerHTML = `<div class="vpad" style="height:${from * h}px"></div>` + view.slice(from, to).map((it, k) => itemHtml(it, from + k)).join("")
-    + `<div class="vpad" style="height:${(view.length - to) * h}px"></div>`;
-  L.scrollTop = top;
-  const real = (L.querySelector(".item") || {}).offsetHeight;  // 처음 · 화면 크기·번호 칸이 바뀌면 줄 높이를 다시 재서 한 번 더
-  if (real && real !== ROW_H) { ROW_H = real; renderRows(true); }
-}
-var rowsQueued = false;
-$("list").addEventListener("scroll", () => {
-  if (rowsQueued) return;
-  rowsQueued = true;
-  requestAnimationFrame(() => { rowsQueued = false; renderRows(false); });
+
+$("sList").addEventListener("click", e => {
+  const b = e.target.closest("button[data-a]"), row = e.target.closest(".sitem"); if (!b || !row) return;
+  const it = LOCAL.remember(S.items[+row.dataset.i]);
+  if (b.dataset.a === "play") { PL.add([it], true); play(it, true, "pick"); }
+  else if (b.dataset.a === "next") PL.add([it], true);
+  else PL.add([it]);
+  renderSearch($("sInfo").textContent);
 });
-window.addEventListener("resize", () => renderRows(true));
-function itemHtml(it, i) {
-  const bs = [], showNo = rowShowNo;
-  // 가사 출처: 나무위키 곡 문서 / 보카로 가사 위키에서 받음 / 직접 넣음 / 다른 곡 가사 연결
-  // 가사·싱크 표시: 노래방 곡·오프라인 곡·싱크가 있는 곡만 (가사 위키 곡 대부분은 가사를 고를 때 읽고 싱크가 없음).
-  // 보통인 상태(나무위키 가사 · 자동 싱크)는 표시하지 않고, 없거나 다른 경우만 표시
-  const show = it.karaoke || it.site === "local" || !!it.sync;
-  if (!show) { /* 표시 없음 */ }
-  else if (it.lyrics === "vocaro" && it.karaoke) bs.push('<span class="b src" title="나무위키에 가사가 없어 보카로 가사 위키(VL)에서 받은 가사">VL가사</span>');
-  else if (it.lyrics === "own" && it.site !== "local") bs.push('<span class="b src" title="직접 넣은 가사">직접 가사</span>');
-  else if (!it.lyrics) bs.push(`<span class="b warn" title="${it.site === "local" ? "같은 이름의 가사·싱크 json 이 없음" : "가사가 없음"}">가사X</span>`);
-  if (!show) { /* 표시 없음 */ }
-  else if (it.sync === "ok") { if (it.method === "manual") bs.push('<span class="b ok">직접 싱크</span>'); }
-  else if (it.sync_fail) bs.push(`<span class="b err" title="자동 싱크 실패: ${esc(it.sync_fail)}">싱크 실패</span>`);
-  else if (it.sync === "stale") bs.push('<span class="b warn" title="가사가 바뀌어 다시 맞춰야 함">싱크 다시</span>');
-  else if (it.sync === "resync") bs.push('<span class="b warn" title="싱크를 맞춘 뒤 mp3를 다시 받음 → 다시 싱크해야 함">재싱크 필요</span>');
-  else if (it.lyrics) bs.push('<span class="b warn" title="가사는 있는데 싱크가 없음">싱크X</span>');
-  return `<div class="item${cur && keyOf(cur) === keyOf(it) ? " cur" : ""}" data-i="${i}">
-    ${noHtml(showNo && numFor(it))}${coverHtml(it, "thumb")}<div class="meta"><div class="t">${esc(it.title)}</div><div class="a">${esc(shortName(it.artist || it.name))}</div></div>
-    <div class="badges">${bs.join("")}</div>${pctHtml(it)}</div>`;
-}
-/* mp3 안의 썸네일 (주소에 파일 수정 시각을 넣어 썸네일이 바뀌면 새로 읽음. 오프라인은 mp3 파일에서 바로 잘라 씀) */
-const coverUrl = it => it.site === "local" ? OFFDIR.coverUrl(it) : LOCAL.coverUrl(it);  // 오프라인 곡: mp3 안의 썸네일 · 온라인 곡: 원곡 영상의 썸네일 주소
-/* 썸네일 칸: 온라인 곡은 썸네일 주소가 있으면 (곡 목록의 cover 값이 예전 것이어도 — 니코니코 옛 주소) · 못 받은 그림은 ♪ */
-const hasCover = it => it.site === "local" ? !!it.cover : !!coverUrl(it);
-const coverHtml = (it, cls) => hasCover(it) ? `<img class="${cls}" data-ck="${esc(keyOf(it))}" src="${coverUrl(it)}" loading="lazy" alt="">` : `<span class="${cls}">♪</span>`;
-/* 곡 상세: 제목 옆에 원제 · 제목 발음 (원제가 제목과 같으면 생략). 발매일은 아티스트 아래 줄 */
-function detailHtml(it) {
-  const parts = [];
-  if (it.orig && it.orig !== it.title) parts.push(`<span title="원제">${esc(it.orig)}</span>`);
-  if (it.reading) parts.push(`<span title="제목 발음">${esc(it.reading)}</span>`);
-  return parts.join("");
-}
-/* ◎ 재생 중인 곡: 목록을 지금 곡 위치로 (곡이 넘어가도 목록은 저절로 움직이지 않음) */
-$("btnFindCur").onclick = () => {
-  const now = SHELL.now || cur; if (!now) return;
-  const i = view.findIndex(it => keyOf(it) === keyOf(now));
-  if (i < 0) { uiAlert("지금 재생 중인 곡이 검색어·필터에 가려져 목록에 없습니다."); return; }
-  const L = $("list");
-  // 줄 높이가 모두 같아 i 번째 줄 자리를 바로 셈 (scrollTop 과 같은 단위 — 화면 축소 --ui-zoom 때도)
-  L.scrollTop = i * ROW_H - (L.clientHeight - ROW_H) / 2;
-  renderRows(false);
-  const el = L.querySelector(`.item[data-i="${i}"]`);
-  if (el) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
-};
-$("list").addEventListener("click", e => {
-  const el = e.target.closest(".item"); if (!el) return;
-  play(view[+el.dataset.i]);
-});
-/* 자동 싱크 인식 일치 % (직접 싱크·싱크 없음은 없음, 100 이면 생략) — 색은 가사 위 '자동 싱크 · 인식 일치' 칩과 같게 */
-var syncPct = it => it.sync === "ok" && it.method !== "manual" && it.score != null ? Math.round(it.score * 100) : null;
-var pctHtml = it => {
-  const p = syncPct(it);
-  return p != null && p < 100 ? `<span class="pct ${p >= 70 ? "ok" : "warn"}" title="자동 싱크 · 인식 일치 ${p}%">${p}%</span>` : "";
-};
-/* 곡 우클릭: 나무위키 문서 (스트리밍 곡은 짝인 노래방 목록 곡의 문서) · 가사 위키 페이지 (스트리밍 곡) · 복사 */
-$("list").addEventListener("contextmenu", e => {
-  const el = e.target.closest(".item"); if (!el) return;
-  const it = view[+el.dataset.i];
-  songMenu(e, {namu: it.namu || "", vocaro: it.wiki || "", title: it.title, orig: it.orig, reading: it.reading,
-               composer: it.composer, singer: it.singer || (it.vocals || []).map(v => v[0]).join(", ")},
-           SHELL && SHELL.enqueue ? [{label: "대기열에 추가 (다음에 재생)", fn: () => SHELL.enqueue(it)}] : []);
-});
-$("q").addEventListener("input", renderList);
+$("sList").addEventListener("contextmenu", e => { const row = e.target.closest(".sitem"); if (row) songContext(e, S.items[+row.dataset.i]); });
+$("sAddAll").onclick = () => { const n = PL.add(S.items); renderSearch($("sInfo").textContent); uiAlert(n ? `재생목록에 ${n}곡을 넣었습니다.` : "새로 넣을 곡이 없습니다 (이미 들어 있음)."); };
 
 /* ================= 재생 ================= */
 /* 가사·싱크를 저장했으면 재생기 가사(오버레이 알림)도 다시 읽게 함 */
 const syncShell = () => { if (SHELL.now && cur && keyOf(SHELL.now) === keyOf(cur)) SHELL.reloadLyrics(); };  // 저장한 싱크를 재생기 가사(오버레이)에도
-/* 곡을 눌러 틀면 그 곡만 틀고 재생 목록(다음 곡 순서)은 그대로 — 재생 목록은 '필터대로 재생'으로만 바뀜 */
+/* 재생목록의 곡을 누르면 그 곡부터 (⏭ 는 재생목록 순서대로) · 검색 창에서 바로 튼 곡은 재생목록 지금 곡 다음에 들어감 */
 async function play(it, autoplay = true, how = "pick") {  // how '': 재생 목록에서 그 곡 다음부터 (처음 열 때 지난 곡)
   if (!it) return;
   if (editing && !await uiConfirm("직접 맞추던 싱크를 저장하지 않고 다른 곡으로 넘어갈까요?")) return;
   stopEdit();
   SHELL.load(it, autoplay, how);  // 곡이 바뀌면 재생기가 알려 줌 → showSong
 }
-/* ▶ 필터대로 재생: 지금 목록(검색어·필터·정렬)을 재생 목록으로 — 처음 곡부터 (무작위면 섞은 첫 곡). 다음에 열어도 이어지게 곡 키를 기억 */
+/* ▶ 처음부터: 재생목록(오프라인은 mp3 폴더의 곡)을 처음 곡부터 (무작위면 섞은 첫 곡) */
 async function playView() {
   const list = view.filter(canPlay);
-  if (!list.length) return uiAlert("재생할 곡이 없습니다.");
+  if (!list.length) return ONLINE ? openSearch() : uiAlert("재생할 곡이 없습니다.");
   if (editing && !await uiConfirm("직접 맞추던 싱크를 저장하지 않고 다른 곡으로 넘어갈까요?")) return;
   stopEdit();
   SHELL.setQueue(list);
-  store.set("playQueue", list.map(keyOf));
   SHELL.load(SHELL.shuffle ? list[Math.floor(Math.random() * list.length)] : list[0], true);
 }
 $("btnPlayView").onclick = playView;
-/* 기억해 둔 재생 목록을 되살림 (화면을 새로 열었을 때 — 한 번도 '필터대로 재생'을 안 했으면 지금 목록) */
-function restoreQueue() {
+/* 기억해 둔 재생목록을 되살림 (화면을 새로 열었을 때) */
+async function restoreQueue() {
   if (SHELL.queue.length) return;
-  const keys = store.get("playQueue", null), by = new Map(allItems().map(x => [keyOf(x), x]));
-  const list = keys ? keys.map(k => by.get(k)).filter(Boolean) : view.slice();
-  SHELL.setQueue(list);
+  const q = await PL.restore();
+  if (SHELL.queue.length) return;
+  SHELL.setQueue(q);
   SHELL.plan(SHELL.now);
 }
 /* 재생기에서 곡이 바뀜 (직접 고르거나, 곡이 끝나 다음 곡으로 넘어감) → 화면 갱신 */
@@ -531,7 +626,7 @@ async function showSong(it) {
   renderRows(true);  // 지금 곡 표시만 (목록을 다시 거르지 않음)
   await loadSong();
 }
-/* 투고일 (곡 목록에 저장한 값) · 니코니코 원곡 재생수 (그때그때 — 서버는 니코니코 정보 API, 서버 없이는 중계 페이지의 니코니코 플레이어. 유튜브 원곡은 안 보임) */
+/* 투고일 (곡 정보의 값) · 니코니코 원곡 재생수 (그때그때 — 서버는 니코니코 정보 API, 서버 없이는 중계 페이지의 니코니코 플레이어. 유튜브 원곡은 안 보임) */
 function showViews(it) {
   const date = it.date ? `투고 ${it.date}` : "";
   $("nowDate").textContent = date; $("nowDate").title = "";
@@ -547,13 +642,11 @@ const KARAOKE_TAG = {TJ: "TJ", JOYSOUND: "JOY"};
 function renderMeta(it) {
   const tags = it.tags || [], notes = it.notes || [], box = $("songMeta");
   const kara = tags.filter(t => KARAOKE_TAG[t]).map(t => [KARAOKE_TAG[t], t]);
-  // 온라인 스트리밍 태그 '분류:이름' 은 이름만 (분류는 마우스를 올리면). 음성 합성 엔진은 맨 앞 보컬(보컬 색)로 보이므로 뺌
-  const inner = tags.filter(t => !KARA_RE.test(t) && !t.startsWith("음성 합성 엔진:"));
-  const tagChip = t => {
-    const i = t.indexOf(":");
-    if (i < 0) return `<span class="b inner${t === "한국" ? " ko" : t === "일본" ? " ja" : ""}" title="곡 목록 분류">${esc(t)}</span>`;
-    return `<span class="b" title="${esc(t.slice(0, i))}">${esc(t.slice(i + 1))}</span>`;
-  };
+  // 우리 DB 태그는 많이 붙은 순 앞 8개만 (분류는 마우스를 올리면). 음성 합성 엔진은 맨 앞 보컬(보컬 색)로 보이므로 뺌
+  const lists = tags.filter(t => t === "한국" || t === "일본");
+  const inner = [...lists, ...tags.filter(t => !KARA_RE.test(t) && !lists.includes(t) && tagGroupOf(t) !== "음성 합성 엔진").slice(0, 8)];
+  const tagChip = t => lists.includes(t) ? `<span class="b inner${t === "한국" ? " ko" : " ja"}" title="노래방 목록 (한국·일본)">${esc(t)}</span>`
+    : `<span class="b" title="${esc(tagGroupOf(t) || "태그")}">${esc(t)}</span>`;
   const chips = [
     ...(it.vocals || []).map(([n, c]) => `<span class="b vocal" style="--vc:${esc(c)}" title="보컬">${esc(n)}</span>`),
     ...kara.map(([t, b]) => `<span class="b kara" style="--bc:${BRAND_COLOR[b]}" title="노래방 수록">${esc(t)}</span>`),
@@ -620,11 +713,12 @@ function renderLyrics() {
     (p.colors || [null]).map(c => c && /^#[0-9a-f]{6}$/i.test(c) ? `<i style="--pc:${c}"></i>` : "<i></i>").join("")}${esc(p.name)}</div>` : "";
   // 동시에 부르는 묶음(g.cols): 보컬마다 칸을 나란히 (칸 위에 그 보컬 이름)
   box.innerHTML = notes + song.groups.map((g, i) => `<div class="g${times && song.sync.method !== "manual" && matched[i] === false ? " guess" : ""}" data-i="${i}">
-      ${g.cols ? lyrCols(g, p => partTag(p) || '<div class="part">&nbsp;</div>') : partTag(g.part) + g.lines.map(l => lyrLine(l.role, l.text, g.vc)).join("")}
+      ${g.cols ? lyrCols(g, p => partTag(p) || '<div class="part">&nbsp;</div>') : partTag(g.part) + g.lines.map(l => lyrLine(l.role + (l.auto ? " auto" : "") + (l.lang ? ` xl-${l.lang}` : ""), l.text, g.vc)).join("")}
       <div class="prog"><i></i></div>
       <div class="stamp"><button data-d="-1" title="1초 앞으로">&lt;&lt;</button><button data-d="-0.2" title="0.2초 앞으로">&lt;</button><span class="tv"></span><button data-d="0.2" title="0.2초 뒤로">&gt;</button><button data-d="1" title="1초 뒤로">&gt;&gt;</button></div>
     </div>`).join("");
   box.className = (times ? "" : "nosync ") + (editing ? "editing " : "") + ($("showR").checked ? "" : "hide-r ") + ($("showT").checked ? "" : "hide-t ") + ($("showP").checked ? "" : "hide-p ");
+  renderXLang();
   box.scrollTop = 0;
   if (editing) renderStamps();
   tick(true);
@@ -718,6 +812,20 @@ $("btnShuffle").onclick = () => SHELL.setShuffle(!SHELL.shuffle);
 $("btnRepeat").onclick = () => SHELL.setRepeat({off: "all", all: "one", one: "off"}[SHELL.repeat]);
 
 /* ================= 표시 옵션 · 밀기 ================= */
+/* 다른 언어 (user request 2026-11-14): VocaDB translations other than Korean (role x, lang = culture code) — off by default;
+   the select lists the languages this song has; the choice is remembered and used for every song that has that language */
+const LANG_NAME = (() => { try { const n = new Intl.DisplayNames(["ko"], {type: "language"}); return c => n.of(c) || c; } catch (e) { return c => c; } })();
+function renderXLang() {
+  const langs = song ? [...new Set(song.groups.flatMap(g => (g.lines || []).filter(l => l.role === "x" && l.lang).map(l => l.lang)))] : [];
+  const want = store.get("xLang", ""), sel = $("xLang");
+  sel.innerHTML = `<option value="">${langs.length ? "다른 언어 끔" : "다른 언어 없음"}</option>` + langs.map(c => `<option value="${esc(c)}">${esc(LANG_NAME(c))}</option>`).join("");
+  sel.value = langs.includes(want) ? want : "";
+  sel.disabled = !langs.length;
+  $("lyrics").dataset.xl = sel.value;  // css shows only .x lines of that language (#xlStyle)
+  $("xlStyle").textContent = sel.value ? `#lyrics .g .x.xl-${CSS.escape(sel.value)}{display:block}` : "";
+}
+document.head.appendChild(Object.assign(document.createElement("style"), {id: "xlStyle"}));
+$("xLang").addEventListener("change", () => { store.set("xLang", $("xLang").value); renderXLang(); SHELL.notify(); });  // overlay too
 for (const [id, cls] of [["showR", "hide-r"], ["showT", "hide-t"], ["showP", "hide-p"]]) {
   $(id).checked = store.get(id, true);
   $(id).addEventListener("change", () => { store.set(id, $(id).checked); $("lyrics").classList.toggle(cls, !$(id).checked); SHELL.notify(); });  // 오버레이의 발음·번역 줄도
@@ -809,7 +917,8 @@ function openLyricsView() {
   if (!cur || !song || !song.raw) return;
   $("lyrViewTitle").textContent = `가사 — ${cur.title}`;
   $("lyrViewHint").textContent = cur.site === "local" ? "mp3 와 같은 이름의 json 에 든 가사입니다."
-    : {namu: "나무위키 곡 문서에서 받은 가사입니다.", vocaro: "보카로 가사 위키에서 받은 가사입니다."}[song.lyrics_kind] || "직접 고친 가사입니다.";
+    : {namu: "나무위키 곡 문서에서 받은 가사입니다.", vocaro: "보카로 가사 위키에서 받은 가사입니다.",
+       vocadb: "VocaDB 에서 받은 가사입니다 (가사 출처는 맨 위)."}[song.lyrics_kind] || "직접 고친 가사입니다.";
   $("lyrViewText").textContent = song.raw;
   $("lyrView").showModal();
   $("lyrViewText").scrollTop = 0;
@@ -827,14 +936,14 @@ $("btnLyrics").onclick = openLyricsView;
 /* ================= 원곡 영상 칸: 재생 중인 온라인 곡의 중계 플레이어(니코니코·유튜브)가 곧 영상 =================
    재생기(play_engine.js)가 중계 플레이어를 이 칸 위에 겹쳐 보임 (placeVideo). 영상을 숨기면 칸만 접음 — 소리는 그대로 */
 const VID = {on: store.get("video", false)};
-/* 간단 표시 (왼쪽 목록의 '간단' 버튼): 목록 썸네일 · 오른쪽 위 썸네일을 숨기고 영상도 접음 (영상 켜기 설정은 그대로 — 간단 표시를 끄면 다시 보임)
+/* 간단 표시 (왼쪽 위 '간단' 버튼): 재생목록 썸네일 · 오른쪽 위 썸네일을 숨기고 영상도 접음 (영상 켜기 설정은 그대로 — 간단 표시를 끄면 다시 보임)
    · 가사·오버레이도 보컬 색 없이 일반 글자색 (파트 표시는 그대로 — player_screen.css · play_engine.js sendNow) */
 let SIMPLE = !!store.get("simple", false);
 function applySimple() {
   document.body.classList.toggle("simple", SIMPLE);
   $("btnSimple").classList.toggle("on", SIMPLE);
   $("btnVideo").disabled = SIMPLE;
-  $("btnVideo").title = SIMPLE ? "간단 표시 중에는 영상을 접습니다 (왼쪽 목록의 '간단'을 끄면 보임)" : "원곡 영상 보기 · 숨기기 (인터넷 필요) · 끌면 영상 높이 조절";
+  $("btnVideo").title = SIMPLE ? "간단 표시 중에는 영상을 접습니다 (왼쪽 위 '간단'을 끄면 보임)" : "원곡 영상 보기 · 숨기기 (인터넷 필요) · 끌면 영상 높이 조절";
 }
 $("btnSimple").onclick = () => { SIMPLE = !SIMPLE; store.set("simple", SIMPLE); applySimple(); showVideo(); renderRows(true); SHELL.notify(); };  // 썸네일이 빠져 줄 높이가 바뀜 → 다시 잼 · 오버레이 글자색도 바로
 applySimple();
@@ -857,7 +966,7 @@ function showVideo() {
   if (!on || live) { $("videoFrame").innerHTML = ""; return; }
   // 영상이 없을 때: 썸네일을 꽉 차게 + 맨 위 가운데에 까닭
   const msg = cur.site === "local" ? "오프라인 곡(mp3 폴더)은 영상이 없습니다."
-    : !playing ? "재생 중인 곡의 영상만 보입니다 — 곡을 누르면 재생합니다."
+    : !playing ? "재생 중인 곡의 영상만 보입니다 — 재생목록이나 곡 검색에서 곡을 누르면 재생합니다."
     : audio.error ? audio.error.reason || "원곡 영상을 재생할 수 없습니다." : "원곡 영상을 여는 중…";
   const bg = hasCover(cur) ? `style="background-image:url('${esc(coverUrl(cur))}')"` : "";
   $("videoFrame").innerHTML = `<div class="vfallback" ${bg}><div class="vmsg">${esc(msg)}
@@ -957,24 +1066,34 @@ SHELL.stallSubs.add(it => {
   openReport({kind: REPORT_STALL, it, text: "플레이어를 안 보는 동안 다음 곡이 재생되지 않고 멈춰 있었습니다.", diag: playerDiag().split("\n").slice(-120).join("\n")});
 });
 cleanups.push(() => SHELL.stallSubs.clear());
-/* 다른 곡 고르기: 검색 글자가 든 곡 (곡 목록 검색과 같은 비교) 20곡까지 */
+/* 다른 곡 고르기: 이 플레이어가 아는 곡 (우리 곡·재생목록·찾아본 곡) 먼저, 그다음 VocaDB 검색 (곡 검색 창과 같은 곳) */
+let reportSeq = 0;
 $("reportQ").addEventListener("input", () => {
   if (reportReq()) { reportCanSend(); return; }  // request: the box is the song name, no search
-  const q = fold($("reportQ").value.trim());
-  const hits = q ? allItems().filter(it => FKIND.text[1](it, q)).slice(0, 20) : [];
-  $("reportList").innerHTML = hits.map((it, i) => `<div class="ri" data-i="${i}"><b>${esc(it.title)}</b> <span class="hint">${esc(shortName(it.artist || ""))}</span></div>`).join("")
-    || (q ? '<div class="hint">맞는 곡이 없습니다</div>' : "");
-  $("reportList").onclick = e => { const r = e.target.closest(".ri"); if (!r) return; setReportSong(hits[+r.dataset.i]); $("reportQ").value = ""; $("reportList").innerHTML = ""; };
+  const raw = $("reportQ").value.trim(), seq = ++reportSeq;
+  const show = (hits, more) => {
+    $("reportList").innerHTML = hits.map((it, i) => `<div class="ri" data-i="${i}"><b>${esc(it.title)}</b> <span class="hint">${esc(shortName(it.artist || ""))}${it.deleted ? " · 삭제됨" : ""}${it.api ? " · VocaDB" : ""}</span></div>`).join("")
+      + (more ? '<div class="hint">우리 DB 에서 찾는 중…</div>' : "") || (raw ? '<div class="hint">맞는 곡이 없습니다</div>' : "");
+    $("reportList").onclick = e => { const r = e.target.closest(".ri"); if (!r) return; setReportSong(LOCAL.remember(hits[+r.dataset.i])); $("reportQ").value = ""; $("reportList").innerHTML = ""; };
+  };
+  const local = raw ? allItems().filter(it => FKIND.text[1](it, fold(raw))).slice(0, 20) : [];
+  show(local, !!raw && ONLINE);
+  if (!raw || !ONLINE) return;
+  clearTimeout(reportFind.timer);
+  reportFind.timer = setTimeout(() => findSongs(raw, local).then(hits => { if (seq === reportSeq) show(hits, false); }), 400);
 });
+const reportFind = {timer: 0};
 $("reportCancel").onclick = () => $("reportDlg").close();
 $("reportSend").onclick = async () => {
   const it = reportReq() ? null : reportIt, req = reportReq() ? $("reportQ").value.trim() : "";
   if (!it && !req) return;
+  // user request: reporting a deleted song is allowed, but ask first
+  if (it && it.deleted && !await uiConfirm("해당 곡은 삭제됐습니다. 신고하시겠습니까?", "예")) return;
   const playing = it && SHELL.now && keyOf(SHELL.now) === keyOf(it);
   $("reportSend").disabled = true;
   try {
     await post("/api/report", {kind: $("reportKind").value, text: $("reportText").value, who: $("reportWho").value.trim(), request: req,
-      song: it ? {site: it.site, name: it.name, title: it.title, artist: it.artist || ""} : null,
+      song: it ? {site: it.site, name: it.name, title: it.title, artist: it.artist || "", ...(it.vocadb ? {vocadb: String(it.vocadb)} : {})} : null,  // VocaDB id: the song's key from now on
       pos: playing ? Math.round(audio.currentTime * 10) / 10 : null, source: playing ? audio.src : "",
       diag: $("reportKind").value === REPORT_STALL ? reportDiag : ""});
   } catch (e) { reportCanSend(); uiAlert(e.message); return; }
@@ -982,11 +1101,11 @@ $("reportSend").onclick = async () => {
   uiAlert("신고를 보냈습니다. 고맙습니다!");
 };
 
-/* ================= 곡 목록 접기 / 펴기 (상태 기억) ================= */
+/* ================= 재생목록 칸 접기 / 펴기 (상태 기억) ================= */
 function setListOpen(open) {
   document.querySelector(".app").classList.toggle("nolist", !open);
   $("btnList").classList.toggle("on", !open);
-  $("btnList").title = open ? "곡 목록 접기" : "곡 목록 펴기";
+  $("btnList").title = open ? "재생목록 접기" : "재생목록 펴기";
   store.set("listOpen", open);
 }
 $("btnList").onclick = () => setListOpen(document.querySelector(".app").classList.contains("nolist"));
@@ -1005,9 +1124,9 @@ function saveCover(e) {
 $("nowCover").addEventListener("contextmenu", saveCover);
 $("coverBig").addEventListener("contextmenu", saveCover);
 
-/* ================= 서버 없이 연 화면: 곡 목록·가사·싱크를 어디서 읽을지 (깃허브 또는 Server\data 폴더 · 또는 오프라인 mp3 폴더만) =================
+/* ================= 서버 없이 연 화면: 우리 곡·가사·싱크를 어디서 읽을지 (깃허브 또는 Server\data 폴더) =================
    지난번 것(깃허브 토큰·폴더 권한)이 그대로 열리면 바로, 아니면 팝업 — 제대로 열릴 때까지 닫히지 않음 (Esc·바깥 눌러도) */
-/* 화면 가운데 로딩 막대 (깃허브·폴더에서 곡 목록을 읽는 동안): 단계 글 + 막대 (얼마나 남았는지 모르면 흐르는 막대) */
+/* 화면 가운데 로딩 막대 (깃허브·폴더에서 우리 곡을 읽는 동안): 단계 글 + 막대 (얼마나 남았는지 모르면 흐르는 막대) */
 function showLoad(label, frac) {
   let b = $("loadBox");
   if (!b) {
@@ -1027,19 +1146,15 @@ function showLoad(label, frac) {
 function hideLoad() { if ($("loadBox")) $("loadBox").hidden = true; }
 LOCAL.progress = showLoad;
 async function offlineOpened() {
-  showLoad("곡 목록 읽는 중…", 0.1);
+  showLoad("여는 중…", 0.1);
   LOCAL.ovReopen();  // 이 브라우저에서 오버레이를 쓴 적이 있으면 바로 오버레이와 주고받음
-  $("notice").innerHTML = `<div class="offnote">${LOCAL.gh ? "☁" : "📁"} <b>${esc(LOCAL.name)}</b> · 서버 없이 재생 중`
-    + (LOCAL.gh && !LOCAL.gh.write ? " · 읽기만 (저장 안 됨)" : "") + ` (음원 관리·자동 싱크는 서버 필요)
-    <button id="offPick">다른 토큰으로 열기</button></div>`;
-  $("offPick").onclick = () => offlineDialog();
   await loadLibrary();
-  if ((LIB.items || []).some(x => x.site !== "stream"))  // 예전 곡 목록(한국·일본 mp3 곡이 따로)을 연 경우 — 그 곡들은 재생 안 됨
-    $("notice").insertAdjacentHTML("beforeend", '<div class="offnote warn">예전 형식의 곡 목록입니다. 노래방 mp3 곡은 재생되지 않습니다 — 서버를 켠 PC 에서 바뀐 곡 목록을 깃허브에 올린 뒤 다시 여세요.</div>');
+  $("notice").innerHTML = `<div class="offnote">${LOCAL.gh ? "☁" : "📁"} <b>${esc(LOCAL.name)}</b> · 서버 없이 재생 중`
+    + (LOCAL.gh && !LOCAL.gh.write ? " · 읽기만 (저장 안 됨)" : "") + ` (음원 관리·자동 싱크는 서버 필요)</div>`;  // no '다른 토큰으로 열기' (user request 2026-11-14: one token per user — a token that stops working brings the box back by itself)
   // tab reloaded while a song played (e.g. the browser reloaded it by itself) → go on playing it from there; else show the last song paused
-  const res = SHELL.takeResume(), find = k => LIB.items && LIB.items.find(x => keyOf(x) === k);
+  const res = SHELL.takeResume(), find = k => SHELL.queue.find(x => keyOf(x) === k) || LOCAL.items.get(k);
   const rit = res && find(res.k), it = rit && canPlay(rit) ? rit : find(store.get("last", ""));
-  showLoad("곡 목록 그리는 중…", 1);
+  showLoad("재생목록 여는 중…", 1);
   if (it && canPlay(it) && !SHELL.now) { if (it === rit) SHELL.resumeAt(it, res.t); play(it, it === rit, ""); }
   setTimeout(hideLoad, 150);
 }
@@ -1057,23 +1172,26 @@ async function offlineIntro() {
   offlineDialog();
 }
 /* 처음 화면: 깃허브 토큰 입력만 (user request — repo field, Server\data folder and mp3-folder choices removed;
-   offline mp3 folder is connected from the list after switching to offline). Repo = last one used or the default. */
+   offline mp3 folder is connected from the list after switching to offline). Repo = last one used or the default.
+   Nothing open yet → can't be closed until a token opens. Already open ('다른 토큰으로 열기') → 취소 · Esc close it and the
+   player stays as it was (user request 2026-11-14: the box wouldn't go away). */
 async function offlineDialog(err = "") {
   hideLoad();
-  const gh = LOCAL.savedGitHub(), repo = (gh || {}).repo || "AILEE126/music_backend";
+  const gh = LOCAL.savedGitHub(), repo = (gh || {}).repo || "AILEE126/music_backend", cancelable = LOCAL.ready;
   document.querySelector("dialog.offdlg")?.remove();
   const d = document.createElement("dialog");
   d.className = "uidlg offdlg";
-  d.innerHTML = `<div class="dlg-body"><b>깃허브 토큰을 넣어 주세요</b> <span class="muted">(받은 토큰 — 곡 목록·가사·싱크를 읽음)</span>
+  d.innerHTML = `<div class="dlg-body"><b>깃허브 토큰을 넣어 주세요</b> <span class="muted">(받은 토큰 — 우리 곡의 노래방 번호·가사·싱크를 읽음 · 곡 검색은 VocaDB)</span>
       <div class="ghform"><input type="password" id="ghToken" placeholder="깃허브 토큰 (github_pat_…)" autocomplete="off">
-        <button class="primary" id="ghOpen">열기</button></div>
+        <button class="primary" id="ghOpen">열기</button>${cancelable ? '<button id="ghCancel" title="지금 열린 그대로 (Esc)">취소</button>' : ""}</div>
     <div class="offerr" id="offErr"></div></div>`;
   const q = sel => d.querySelector(sel), btns = () => d.querySelectorAll("button");
   const showErr = m => { q("#offErr").textContent = m; };
   showErr(err);
   let done = false;
-  d.addEventListener("cancel", e => e.preventDefault());  // Esc 로 못 닫음
-  d.addEventListener("close", () => { if (!done) d.showModal(); });  // 그래도 닫히면 다시 (제대로 열려야만 닫힘)
+  d.addEventListener("cancel", e => { if (!cancelable) e.preventDefault(); });  // Esc: closes only when something is open already
+  d.addEventListener("close", () => { if (done) return; if (cancelable) d.remove(); else d.showModal(); });  // first open: comes back until a token opens
+  if (cancelable) q("#ghCancel").onclick = () => { done = true; d.close(); d.remove(); };
   const tryOpen = async open => {
     showErr(""); btns().forEach(b => b.disabled = true); q("#offErr").textContent = "여는 중…";
     try { await open(); }
@@ -1095,7 +1213,7 @@ bindOverlayPower($("btnOverlayPower"));  // 오버레이 켜기/끄기 (켜짐 �
 
 /* ================= 키보드 ================= */
 document.addEventListener("keydown", e => {
-  if (e.target.closest("input[type=text],input[type=search],textarea,select") || $("lyrView").open || $("coverDlg").open || $("reportDlg").open || document.querySelector("dialog.uidlg[open]")) return;
+  if (e.target.closest("input[type=text],input[type=search],textarea,select") || $("lyrView").open || $("coverDlg").open || $("reportDlg").open || $("searchDlg").open || document.querySelector("dialog.uidlg[open]")) return;
   if (editing && (e.code === "Space" || e.key === "ArrowDown")) { e.preventDefault(); if (audio.paused) audio.play(); else stamp(); return; }
   if (editing && e.key === "ArrowUp") { e.preventDefault(); cursor = Math.max(0, cursor - 1); renderStamps(); return; }
   if (e.code === "Space") { e.preventDefault(); $("btnPlay").click(); }
@@ -1113,5 +1231,5 @@ $("btnBar").onclick = () => { const f = !document.body.classList.contains("barfo
   renderModes();
   cleanups.push(SHELL.subscribe(now => { renderModes(); showSong(now); }));
   cleanups.push(SHELL.lsubscribe(() => tick(true)));
-  await offlineIntro();  // 곡 목록을 어디서 읽을지 (지난번 것이 그대로 열리면 바로)
+  await offlineIntro();  // 우리 곡·가사를 어디서 읽을지 (지난번 것이 그대로 열리면 바로)
 })();
