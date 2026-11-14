@@ -417,6 +417,7 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
 .sitem .tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px;font-size:11px;align-items:center}
 .sitem .tags .d{color:var(--muted)}
 .sitem .b.kara{--bc:var(--muted);color:var(--bc);border:1px solid var(--bc);background:none}
+.b.kara.gone{text-decoration:line-through;text-decoration-thickness:2px;opacity:.6}
 /* 하위 태그 색 (user request 2026-11-15 — 음원 관리 › 필터): the karaoke-number look in the tag's color */
 .b.tc,.songmeta .b.tc,.songmeta .b.inner.tc{color:var(--tc);background:none;box-shadow:inset 0 0 0 1px var(--tc)}
 .sitem .sacts{display:flex;gap:4px;flex:none}

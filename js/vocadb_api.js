@@ -98,14 +98,16 @@ const VDB = {
   },
   /* karaoke table row → numbers · lists (the old item shape: nums {TJ…}, list tags 한국 / 일본 + brands, ord namu / japan) */
   karaInfo(k) {
-    if (!k) return {nums: {}, ord: {}, karaoke: false, extraTags: [], namu: ""};
-    const nums = {}, col = {tj: "TJ", kumyoung: "금영", dam: "DAM", uga: "UGA", joys: "JOYSOUND"};
-    for (const [c, b] of Object.entries(col)) if (/\d/.test(k[c] || "")) nums[b] = k[c];
-    const lists = [["한국", ["tj", "kumyoung"]], ["일본", ["dam", "uga", "joys"]]].filter(([, cs]) => cs.some(c => k[c])).map(([l]) => l);
+    if (!k) return {nums: {}, gone: {}, ord: {}, karaoke: false, extraTags: [], namu: ""};
+    // gone = machines the song was taken off (karaoke.gone, user request 2026-11-15): their numbers stay out of nums —
+    // so 랜덤 추천 · 노래방 필터 · 노래방 모드 skip them — and are kept in gone only to show struck through in the tags
+    const nums = {}, gone = {}, col = {tj: "TJ", kumyoung: "금영", dam: "DAM", uga: "UGA", joys: "JOYSOUND"}, off = String(k.gone || "").split(",");
+    for (const [c, b] of Object.entries(col)) if (/\d/.test(k[c] || "")) (off.includes(c) ? gone : nums)[b] = k[c];
+    const lists = [["한국", ["tj", "kumyoung"]], ["일본", ["dam", "uga", "joys"]]].filter(([, cs]) => cs.some(c => k[c] && !off.includes(c))).map(([l]) => l);
     const ord = {};
     if (k.kr_order != null) ord.namu = k.kr_order;
     if (k.jp_order != null) ord.japan = k.jp_order;
-    return {nums, ord, karaoke: lists.length > 0, extraTags: [...lists, ...Object.keys(nums)], namu: k.namu_url || ""};
+    return {nums, gone, ord, karaoke: lists.length > 0, extraTags: [...lists, ...Object.keys(nums)], namu: k.namu_url || ""};
   },
   /* data table row (+ karaoke row) → player item */
   fromRow(r, k) {
@@ -116,7 +118,7 @@ const VDB = {
       singer: r.singer || "", composer: r.composer || "", vocals: people(r.singer).map(n => [n, vocalColor(n)]),
       date: d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : "", thumb: r.thumb || "", type: r.song_type || "",
       rating: +r.rating_score || 0, sources: [r.video_url, ...String(r.alt_urls || "").split(" ")].filter(u => /nicovideo\.jp|nico\.ms|youtube\.com|youtu\.be/.test(u || "")),
-      tags: [...String(r.tags || "").split("|").filter(Boolean), ...ki.extraTags], nums: ki.nums, ord: ki.ord, karaoke: ki.karaoke, namu: ki.namu,
+      tags: [...String(r.tags || "").split("|").filter(Boolean), ...ki.extraTags], nums: ki.nums, gone: ki.gone, ord: ki.ord, karaoke: ki.karaoke, namu: ki.namu,
       lyrics: ours.lyrics || "", ...(ours.sync === "ok" ? {sync: "ok", method: ours.method || "", score: ours.score ?? null} : {})};
     it.flags = songFlags(it, r.lyrics === "Y", !!(r.title_ko && r.title_ko !== r.title_ja));  // 곡 상태 (song_filter.js FLAGS)
     vdbDerive(it); prepItem(it);

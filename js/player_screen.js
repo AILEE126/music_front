@@ -249,7 +249,8 @@ function renderSearch(info) {
   $("sMakePl").disabled = !S.items.some(canPlay);
   const inPl = new Set(SHELL.queue.map(keyOf)), show = S.items.slice(0, 300), inF = new Set(fSongIds());
   $("sList").innerHTML = show.map((it, i) => {
-    const nums = Object.entries(it.nums || {}).map(([b, n]) => `<span class="b kara" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b] || "#888"}" title="${esc(b)}">${esc(b)} ${esc(n)}</span>`).join("");
+    const nums = Object.entries(it.nums || {}).map(([b, n]) => `<span class="b kara" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b] || "#888"}" title="${esc(b)}">${esc(b)} ${esc(n)}</span>`).join("")
+      + Object.entries(it.gone || {}).map(([b, n]) => `<span class="b kara gone" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b] || "#888"}" title="노래방에서 내려간 곡입니다">${esc(b)} ${esc(n)}</span>`).join("");
     // 우리 곡 표시 · 곡 종류 · 보컬 인원수 — 하위 태그 색이 있으면 그 색 (user request 2026-11-15: 인원수도 태그로 보이게)
     const own = it.api ? "" : it.sync === "ok" ? tagChipHtml("flag", "싱크 있음", "싱크", "src", "우리 데이터가 있는 곡")
       : it.lyrics ? tagChipHtml("flag", "우리 가사 있음", "가사", "src", "우리 데이터가 있는 곡") : `<span class="b src" title="우리 데이터가 있는 곡">노래방</span>`;
@@ -816,7 +817,7 @@ function showViews(it) {
     $("nowDate").title = "니코니코 원곡 재생수 (지금 받은 값)";
   }).catch(() => {});
 }
-/* 곡 태그: 보컬(보컬 색) → 노래방(TJ·JOY만) → 내부 분류(한국·일본 목록) → 나무위키 분류(평범한 칩) · 아래에 노래방 목록 각주(작게) */
+/* 곡 태그: 보컬(보컬 색) → 노래방(TJ·JOY만; 내려간 기기는 어느 기기든 취소선 칩 — user request 2026-11-15) → 내부 분류(한국·일본 목록) → 나무위키 분류(평범한 칩) · 아래에 노래방 목록 각주(작게) */
 const KARAOKE_TAG = {TJ: "TJ", JOYSOUND: "JOY"};
 function renderMeta(it) {
   const tags = it.tags || [], notes = it.notes || [], box = $("songMeta");
@@ -829,6 +830,7 @@ function renderMeta(it) {
   const chips = [
     ...(it.vocals || []).map(([n, c]) => `<span class="b vocal" style="--vc:${esc(c)}" title="보컬">${esc(n)}</span>`),
     ...kara.map(([t, b]) => `<span class="b kara" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b]}" title="노래방 수록">${esc(t)}</span>`),
+    ...Object.keys(it.gone || {}).map(b => `<span class="b kara gone" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b] || "#888"}" title="노래방에서 내려간 곡입니다 (${esc(b)} ${esc(it.gone[b])})">${esc(KARAOKE_TAG[b] || b)}</span>`),
     ...inner.map(tagChip),
     ...(it.categories || []).map(c => `<span class="b" title="나무위키 분류">${esc(c)}</span>`)];
   box.hidden = !chips.length && !notes.length;
