@@ -112,7 +112,7 @@ function ltTurn() {
   })();
 }
 const ltNewCode = () => String(crypto.getRandomValues(new Uint32Array(1))[0] % 900000 + 100000);
-const ltLink = code => location.href.split("#")[0] + "#lt=" + code;
+const ltLink = code => (APP.on ? APP.publicUrl : location.href.split("#")[0]) + "#lt=" + code;  // 폰 앱: its own address is not shareable
 /* 재생하려는 중인가 (온라인 곡은 뜨는 동안 paused 라 재생 의도로 봄) */
 const ltIntent = () => audio.bridged ? !!audio.autoplay : !audio.paused;
 const ltStrip = it => Object.fromEntries(Object.entries(it).filter(([k]) => !k.startsWith("_")));

@@ -255,6 +255,7 @@ const LOCAL = {
   ovEnable() { this.ovOn = true; store.set("ovOn", true); },
   async ovReopen() { this.ovOn = store.get("ovOn", false); },
   async overlay(path, post, body) {
+    if (APP.on) return APP.overlay(path, post, body);  // 폰 앱: the app's floating lyrics window (app_bridge.js)
     const local = () => {  // overlay not running (or never used): drop the song notice, keep settings in this browser
       if (path === "/api/now") return {ok: true};
       if (path === "/api/ovset") { if (post) store.set("ovset", {...store.get("ovset", {}), ...body}); return {...OVSET_DEFAULTS, ...store.get("ovset", {})}; }

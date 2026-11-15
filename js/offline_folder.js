@@ -52,8 +52,12 @@ var OFFDIR = (() => {
   const D = {
     dir: null, items: [], byName: new Map(), urls: [], subs: new Set(),
     get name() { return this.dir ? this.dir.name : ""; },
-    async saved() { try { return await idb("get", "mp3-dir"); } catch (e) { return null; } },
+    async saved() {
+      if (APP.on) return APP.savedDir();  // 폰 앱: the app remembers the picked folder (app_bridge.js)
+      try { return await idb("get", "mp3-dir"); } catch (e) { return null; }
+    },
     async pick() {
+      if (APP.on) return this.use(await APP.pickDir());
       if (!window.showDirectoryPicker) throw new Error("이 브라우저는 폴더 열기를 지원하지 않습니다. 크롬이나 엣지로 여세요.");
       const dir = await showDirectoryPicker({id: "mp3", mode: "readwrite"});
       await this.use(dir);
@@ -85,7 +89,7 @@ var OFFDIR = (() => {
         const g = x => t.tags[x] || "", side = jsons.get(stem.toLowerCase());
         let sj = null;
         if (side) { try { sj = JSON.parse((await (await side.getFile()).text()).replace(/^﻿/, "")); } catch (e) {} }
-        const url = URL.createObjectURL(file), cover = t.cover ? URL.createObjectURL(t.cover) : "";
+        const url = file._src || URL.createObjectURL(file), cover = t.cover ? URL.createObjectURL(t.cover) : "";
         this.urls.push(url); if (cover) this.urls.push(cover);
         const date = g("TDRC").slice(0, 10), sync = sj && sj.groups && sj.groups.length ? (sj.sync && sj.sync.times ? sj.sync_state || "ok" : "") : "";
         items.push({site: "local", name: h.name, title: g("TIT2") || stem, artist: g("TPE1"), composer: g("TCOM"), singer: g("TXXX:SINGER"),

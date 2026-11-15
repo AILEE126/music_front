@@ -171,7 +171,7 @@ async function openOverlaySettings() {
     <label title="싱크는 그대로 두고, 재생할 때 가사(위 막대·플레이어·오버레이)만 이만큼 먼저 넘어감 (0.10 ~ 1.00초, 0.01초 단위 · 기본 0.50초)">먼저 보이기 <b data-lead></b><input type="range" min="0.1" max="1" step="0.01" data-lead-r></label>
     <hr>` : ""}<b>가사 오버레이 설정</b>
     <p class="muted">바탕이 투명한 가사 창 (어느 브라우저든). 이 창을 열어 둔 동안은 오버레이가 늘 보이고 끌어서 옮길 수 있어요.</p>
-    <label>이 프로그램이 앞에 있을 때만 보이기 <select data-k="target">
+    <label${APP.on ? " hidden" : ""}>이 프로그램이 앞에 있을 때만 보이기 <select data-k="target">
       <option value="">(늘 보임)</option>${opts.map(p => `<option value="${esc(p.exe)}">${esc(p.exe)}${p.title ? ` — ${esc(p.title)}` : ""}</option>`).join("")}</select>
       <span class="muted">그 프로그램이 꺼져 있으면 늘 보임 · 목록은 오버레이가 켜져 있을 때 채워짐</span></label>
     <label class="inline"><input type="checkbox" data-k="clickthrough"> 클릭 통과 (가사를 눌러도 뒤 창으로 — 끄면 가사를 끌어 옮김)</label>

@@ -1,0 +1,88 @@
+/* 폰 앱 (music_app — 안드로이드·iOS 껍데기) 안에서 열렸을 때 폰 기능 쓰기
+   User request 2026-11-15: the app is only a shell that runs this repo's files (downloaded, updated without reinstall);
+   what a phone browser can't do comes from the app's plugin "MusicApp":
+   · 백그라운드 재생: play state + title → the app keeps playing with the screen off (notification / lock-screen buttons)
+   · 오프라인 모드: the mp3 folder is picked with the phone's folder picker (remembered) — offline_folder.js uses APP.pickDir
+   · 가사 오버레이: the same /api/now · /api/ovset the PC overlay gets go to the app's floating lyrics window
+     (html/lyrics_overlay_mobile.html — change its look there)
+   Outside the app APP.on is false and nothing here runs. */
+var APP = (() => {
+  const C = window.Capacitor;
+  const on = !!(C && C.isNativePlatform && C.isNativePlatform());
+  const A = {on, platform: on ? C.getPlatform() : "", publicUrl: "https://raw.githack.com/AILEE126/music_front/main/html/player_screen.html"};
+  if (!on) return A;
+  const M = C.registerPlugin("MusicApp");
+  A.native = M;
+
+  /* ---- mp3 folder: handles shaped like the browser's folder handles (what offline_folder.js reads) ---- */
+  const b64bytes = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
+  const mediaUrl = uri => `/_app_media_?u=${encodeURIComponent(uri)}`;
+  function fileHandle(dir, f) {
+    const read = async (offset, length) => b64bytes((await M.readFile({uri: f.uri, offset, length})).data);
+    const blobPart = (a, b) => ({arrayBuffer: async () => (await read(a, Math.max(0, b - a))).buffer});
+    return {kind: "file", name: f.name,
+      async getFile() {
+        // not loaded into memory: tags / json read only the bytes asked for, the audio plays from the app's media path
+        return {name: f.name, size: f.size, lastModified: f.modified, _src: mediaUrl(f.uri),
+          slice: (a = 0, b = f.size) => blobPart(a, Math.min(b, f.size)),
+          arrayBuffer: async () => (await read(0, f.size)).buffer,
+          text: async () => new TextDecoder().decode(await read(0, f.size))};
+      },
+      async createWritable() {
+        let text = "";
+        return {write: async t => { text += t; }, close: () => M.writeText({uri: f.uri, text})};
+      }};
+  }
+  function dirHandle(d) {
+    return {kind: "directory", name: d.name, _app: d,
+      async *entries() {
+        for (const f of (await M.listFolder({tree: d.tree, uri: d.uri})).items)
+          yield [f.name, f.kind === "directory" ? dirHandle({...d, uri: f.uri, name: f.name}) : fileHandle(d, f)];
+      },
+      queryPermission: async () => "granted", requestPermission: async () => "granted"};
+  }
+  A.pickDir = async () => {
+    try { return dirHandle(await M.pickFolder()); }
+    catch (e) { const x = new Error("폴더를 고르지 않았습니다."); if (e.code === "cancel") x.name = "AbortError"; throw x; }
+  };
+  A.savedDir = async () => { const d = await M.savedFolder(); return d && d.uri ? dirHandle(d) : null; };
+
+  /* ---- lyrics overlay: answers what local_files.js would ask the PC overlay (127.0.0.1:47613) ---- */
+  let ovOn = false;
+  M.overlayState().then(s => { ovOn = !!s.on; }).catch(() => {});
+  const ovset = () => ({...OVSET_DEFAULTS, ...store.get("ovset", {}), enabled: ovOn});
+  A.overlay = async (path, post, body) => {
+    if (path === "/api/now") { if (post) M.overlayNow(body).catch(() => {}); return {ok: true}; }
+    if (path === "/api/ovprograms") return {items: [], running: true};  // the overlay is part of the app: always "running"
+    if (post) {
+      const {enabled, ...rest} = body;
+      store.set("ovset", {...store.get("ovset", {}), ...rest});
+      if (enabled !== undefined) ovOn = !!(await M.overlayShow({on: !!enabled})).on;
+      M.overlaySet(ovset()).catch(() => {});
+    }
+    return ovset();
+  };
+  M.overlaySet(ovset()).catch(() => {});
+
+  /* ---- background play: tell the app what plays; its notification / lock-screen / earphone buttons come back here ---- */
+  addEventListener("DOMContentLoaded", () => {
+    if (typeof SHELL === "undefined") return;
+    const audio = SHELL.audio;
+    let last = "";
+    const send = () => {
+      const it = SHELL.now, s = {playing: !!it && !audio.paused, title: it ? it.title || "" : "", artist: it ? shortName(it.artist || "") : ""};
+      const k = JSON.stringify(s);
+      if (k !== last) { last = k; M.state(s).catch(() => {}); }
+    };
+    ["play", "playing", "pause", "ended", "emptied", "sourcechange"].forEach(ev => audio.addEventListener(ev, send));
+    setInterval(send, 2000);
+    M.addListener("media", ({action}) => {
+      if (action === "next") SHELL.next(false);
+      else if (action === "prev") SHELL.prev();
+      else if (action === "play") { if (audio.paused) SHELL.toggle(); }
+      else if (action === "pause") { if (!audio.paused) SHELL.toggle(); }
+      else if (SHELL.now) SHELL.toggle();
+    });
+  });
+  return A;
+})();

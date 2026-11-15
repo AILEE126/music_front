@@ -27,6 +27,12 @@ async function vcCheck(force) {
     if (!r.ok) return;  // offline / rate limit → try next time
     const sha = (await r.text()).trim();
     if (!sha || sha === VC.sha) return;
+    if (APP.on) {  // 폰 앱: runs a downloaded copy — compare its commit (web_manifest.json from the app's loader) with main
+      const m = await fetch("/web_manifest.json", {cache: "no-store"}).then(x => x.json()).catch(() => null);
+      VC.sha = sha;
+      if (m && m.sha && m.sha !== sha) { VC.stale = true; vcShow(sha); }
+      return;
+    }
     const files = vcFiles(), local = vcLocal();
     // Only ask for a refresh when the site already serves the new files: GitHub Pages / githack can lag a few minutes or
     // fail a deploy (Pages 502), and then a refresh brings back the same old file → the notice came back forever.
@@ -47,7 +53,7 @@ async function vcCheck(force) {
 }
 
 /* notice: popover so it shows above open dialogs too */
-const vcLocal = () => /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+const vcLocal = () => !APP.on && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
 function vcShow(sha) {
   const local = vcLocal();
   let tried = "";
@@ -59,14 +65,16 @@ function vcShow(sha) {
   box.innerHTML = `<video class="vc-gif" src="../img/hard_refresh.mp4" autoplay loop muted playsinline></video>
     <b>🔄 ${local ? "GitHub 의 화면과 다릅니다" : "새 버전이 나왔어요"}</b>
     <span>${local ? "이 PC의 music_front 폴더가 예전 것이면 최신으로 받은 뒤(git pull) 새로고침해 주세요. (아직 올리지 않은 수정이 있어도 이렇게 보입니다)"
+      : APP.on ? "지금 받으면 바뀐 화면이 나와요. (앱은 다시 설치하지 않아도 됩니다)"
       : again ? "새로고침했는데도 아직 예전 화면이에요 — 몇 분 뒤 다시 새로고침하거나 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> 를 눌러 주세요."
       : "지금 새로고침하면 바뀐 화면이 나와요. (안 바뀌면 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>)"}</span>
-    <span class="vc-btns"><button class="primary" id="vcReload">👉 강력 새로고침</button><button id="vcLater">나중에</button></span>`;
+    <span class="vc-btns"><button class="primary" id="vcReload">👉 ${APP.on ? "업데이트" : "강력 새로고침"}</button><button id="vcLater">나중에</button></span>`;
   document.body.appendChild(box);
   try { box.showPopover(); } catch (e) { box.classList.add("vc-fallback"); }
   $("vcLater").onclick = () => { try { box.hidePopover(); } catch (e) {} box.remove(); };  // asks again on the next newer version
   $("vcReload").onclick = async () => {
     $("vcReload").disabled = true; $("vcReload").textContent = "받는 중…";
+    if (APP.on) return location.replace("/index.html?update=1");  // the app's loader downloads the new files and opens them
     try { sessionStorage.setItem("vcTried", sha); } catch (e) {}
     // hard refresh: re-download every file into the browser cache, then reload
     await Promise.all(vcFiles().map(f => fetch(f.url, {cache: "reload"}).catch(() => {})));
