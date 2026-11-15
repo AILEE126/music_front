@@ -339,6 +339,10 @@ a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.
 /* rows are the same at every width (user request 2026-11-15): 재생 막대 (a whole row) / 버튼 가운데 (🔀 ⏮ ▶ ⏭ 🔁 ≡) / 태그 / 링크 버튼 */
 .seek{display:flex;align-items:center;gap:8px;flex:1 0 100%;min-width:0}
 .transport{flex:1 0 100%;display:flex;align-items:center;justify-content:center;gap:14px}
+.transport .ib{flex:none;width:40px;height:40px;padding:0}  /* same-size boxes on one center line, so ▶ sits exactly in the middle */
+.transport .ib.play{width:48px;height:48px}
+.transport .ib.mode.on::after{bottom:7px}
+.volbox #btnPlayQueue{margin-right:6px}
 .time{font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted);white-space:nowrap;min-width:34px;text-align:center}
 /* 곡 정보: 나무위키 곡 문서의 분류(칩) · 각주(작게) — 재생 막대와 영상 버튼 사이 한 줄 */
 .songmeta{flex:1 0 100%;min-width:0}
@@ -575,4 +579,4 @@ body.m #miniBar.empty{display:none}
 #miniBar .minfo span{font-size:12px;color:var(--muted)}
 #miniBar .ib{flex:none;width:40px;height:40px;font-size:18px}
 /* Touch phones (user request 2026-11-15): no volume slider / mute — the device's volume keys only (mobile_view.js keeps full volume) */
-@media (pointer:coarse){body.m .volbox{display:none}}
+@media (pointer:coarse){body.m #btnMute,body.m #vol{display:none}}

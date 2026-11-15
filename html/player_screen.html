@@ -53,18 +53,17 @@
         <div class="info">
           <div class="titleline"><h2 id="nowTitle">곡을 선택하세요</h2><span class="detail" id="nowDetail"></span></div>
           <div class="artist" id="nowArtist">'곡 검색'에서 곡을 찾아 틀거나, 왼쪽 재생목록의 곡을 누르세요.</div>
-          <div class="dateline"><div class="reldate" id="nowDate" title="원곡 투고(업로드) 날짜"></div><span class="volbox"><button class="ib vol" id="btnMute" title="음소거 / 해제"></button><input type="range" class="bar-range" id="vol" min="0" max="1" step="0.01" value="0.8" title="음량"></span></div><!-- user request 2026-11-15: volume at the right end of the 투고 · 재생수 line -->
+          <div class="dateline"><div class="reldate" id="nowDate" title="원곡 투고(업로드) 날짜"></div><span class="volbox"><button class="ib mode" id="btnPlayQueue" title="재생 대기열 (다음에 틀 곡 · 지난 곡)" hidden></button><button class="ib vol" id="btnMute" title="음소거 / 해제"></button><input type="range" class="bar-range" id="vol" min="0" max="1" step="0.01" value="0.8" title="음량"></span></div><!-- user request 2026-11-15: 재생 대기열 + volume at the right end of the 투고 · 재생수 line -->
         </div>
       </div>
       <div class="ctrl">
         <div class="seek"><span class="time" id="tCur">0:00</span><input type="range" class="bar-range" id="seek" min="0" max="1000" value="0"><span class="time" id="tDur">0:00</span></div>
-        <div class="transport"><!-- user request 2026-11-15: seek bar as its own row, buttons gathered in the middle below it (same at every width) -->
+        <div class="transport"><!-- user request 2026-11-15: seek bar as its own row, buttons gathered in the middle below it (same at every width) — play exactly in the middle -->
           <button class="ib mode" id="btnShuffle" title="무작위 재생"></button>
           <button class="ib" id="btnPrev" title="이전 곡">⏮&#xFE0E;</button>
           <button class="ib play" id="btnPlay" title="재생 / 일시정지 (Space)">▶&#xFE0E;</button>
           <button class="ib" id="btnNext" title="다음 곡">⏭&#xFE0E;</button>
           <button class="ib mode" id="btnRepeat" title="반복"></button>
-          <button class="ib mode" id="btnPlayQueue" title="재생 대기열 (다음에 틀 곡 · 지난 곡)" hidden></button>
         </div>
         <div class="songmeta" id="songMeta" hidden></div>
         <a class="btn" id="btnSrc" target="_blank" rel="noopener" title="원곡 영상 페이지를 새 탭으로" hidden>원곡 ↗</a>
