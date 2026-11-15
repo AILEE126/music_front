@@ -120,7 +120,7 @@ if (q.get("yt")) {
   P = {play: () => send("play"), pause: () => send("pause"), seek: t => send("seek", {time: t * 1000}),
        volume: v => { vol = v; send("volumeChange", {volume: v / 100}); }, mute: on => { muted = on; send("mute", {mute: on}); },
        comments: on => { cmt = on; send("commentVisibilityChange", {commentVisibility: on}); },
-       load: v => { if (!v.nico) return; cur = {nico: v.nico, start: +v.start || 0, play: !!v.play}; dur = 0; f.src = url(cur); }};
+       load: v => { if (!v.nico) return; cur = {nico: v.nico, start: +v.start || 0, play: !!v.play}; dur = 0; f.contentWindow.location.replace(url(cur)); }};  // replace: no history entry per song (phone app's back button stepped the video back — user report)
 } else {
   up({ev: "error", code: "no-video"});
 }

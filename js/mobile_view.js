@@ -18,6 +18,8 @@
     if (history.state && history.state.mplay) history.back();
   }
   addEventListener("popstate", () => body.classList.remove("mplay"));
+  // phone app's back button (music_app MainActivity): true = handled here, false = the app hides itself
+  window.appBack = () => { if (!isOpen()) return false; close(); return true; };
   const apply = () => { body.classList.toggle("m", mq.matches); if (!mq.matches) close(); };
   mq.addEventListener("change", apply);
   apply();
