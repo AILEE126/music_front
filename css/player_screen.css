@@ -768,6 +768,8 @@ body.m .mnav{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;heig
 .msetdlg .mset .onoff{flex:none}
 .msetdlg .mset .onoff .lb{min-width:44px}
 .msetdlg .hint{margin:0}
+.msetdlg .mzoom input{flex:1;min-width:0;accent-color:var(--accent)}
+.msetdlg .mzoom b{flex:none;min-width:48px;text-align:right;font-variant-numeric:tabular-nums}
 .earsnooze{display:flex;align-items:center;gap:6px;margin-top:12px;font-size:13px;color:var(--muted)}
 /* 폰 (user request 2026-11-15 — phone only): the side panel keeps just the playlist (곡 검색 · 같이듣기 · 노래방 모드 are in the
    bottom menu, the rest in 설정); 곡 검색 and 노래방 번호 추천 open as full pages, not popups */

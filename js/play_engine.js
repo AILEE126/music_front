@@ -62,7 +62,7 @@ function nicoViews(id) {
 /* 중계 페이지 하나 = 플레이어 하나. on(메시지): ready · state(s: playing|paused|ended|buffering) · time · error */
 class BridgePlayer {
   constructor(host, ref, {start = 0, mute = false, volume = 1, on = () => {}} = {}) {
-    this.id = "b" + ++bridgeSeq; this.t = start; this.at = performance.now(); this.d = 0; this.state = "buffering"; this.ready = false;
+    this.id = "b" + ++bridgeSeq; this.t = start; this.at = this.heard = performance.now(); this.d = 0; this.state = "buffering"; this.ready = false;
     this.ref = ref; this.on = on;  // on: 메시지 받는 곳 (미리 띄워 둔 플레이어를 넘겨받으면 바뀜)
     const f = this.frame = document.createElement("iframe");
     f.allow = "autoplay; encrypted-media; fullscreen";
@@ -73,6 +73,7 @@ class BridgePlayer {
     this.onMsg = e => {
       if (e.source !== f.contentWindow || !e.data || !e.data.bridge) return;
       const m = e.data;
+      this.heard = performance.now();  // the frame still answers (LocalMedia.watch)
       this.ver = +m.ver || 1;  // bridge page version (2+: can "load" another YouTube song — older deployed page cannot)
       if (this.loopAt && performance.now() - this.loopAt < 1000 && (m.ev === "time" || m.ev === "state")) return;  // the loop's own paused/playing/time
       if (m.ev === "time") {
@@ -157,6 +158,11 @@ class LocalMedia extends EventTarget {
     for (const ev of ["play", "pause", "playing", "ended", "seeked", "loadedmetadata", "error", "waiting", "emptied", "timeupdate"])
       el.addEventListener(ev, () => { if (!this.refs) this.fire(ev); });
     el.addEventListener("volumechange", () => { this.applyVolume(); this.fire("volumechange"); });
+    setInterval(() => this.watch(), 1000);
+    // back in sight: the frame's timers were slowed meanwhile — give it a moment before watch() counts its silence
+    const grace = () => { if (this.br) this.br.heard = performance.now(); };
+    document.addEventListener("visibilitychange", grace);
+    addEventListener("appscreen", grace);
   }
   fire(ev) { this.dispatchEvent(new Event(ev)); }
   get bridged() { return !!this.refs; }
@@ -295,8 +301,38 @@ class LocalMedia extends EventTarget {
   set currentTime(t) { if (!this.refs) { this.el.currentTime = t; return; } if (this.br) { this.br.seek(t); setTimeout(() => this.fire("seeked"), 0); } }
   get duration() { return this.refs ? (this.br && this.br.d) || NaN : this.el.duration; }
   get paused() { return this.refs ? this.brPaused : this.el.paused; }
-  play() { if (!this.refs) return this.el.play(); this.autoplay = true; if (this.br) this.br.play(); return Promise.resolve(); }
-  pause() { if (!this.refs) return this.el.pause(); this.autoplay = false; if (this.br && !this.priming) this.br.pause(); if (!this.brPaused) { this.brPaused = true; this.fire("pause"); } }  // priming pauses by itself
+  /* User report 2026-11-16 (S24, phone app): after moving from 곡 검색 to 재생목록 the song went silent, the bar kept moving
+     (time() runs on while the state is "playing") and ▶ did nothing — the bridge frame had stopped answering (not seen on the
+     emulator or a PC). A frame silent while it should play, or that doesn't answer a ▶, is replaced by a new one at the last
+     position it told. Only while the page is in sight: a hidden tab / screen off delays the frame's timers. */
+  watch() {
+    const br = this.br, now = performance.now();
+    if (!br || !this.refs || this.brPaused || this.priming || !br.ready || br.state !== "playing") return;
+    if (document.hidden || APP.screenOff || now - br.heard < 5000 || now - (this.revivedAt || 0) < 30000) return;
+    this.revive("silent");
+  }
+  revive(why) {
+    const br = this.br;
+    diag("revive", why, br.ref.kind + ":" + br.ref.id, `t=${Math.round(br.t)}`);
+    this.revivedAt = performance.now();
+    this.start = Math.floor(br.t); this.autoplay = true; this.priming = false;
+    if (this.kept[br.ref.kind] === br) this.kept[br.ref.kind] = null;
+    this.br = null; br.destroy();
+    this.tryRef(this.ri);  // brPaused stays: a playing song shows no ▶ flicker, a paused one turns to playing when the new frame plays
+  }
+  play() {
+    if (!this.refs) return this.el.play();
+    this.autoplay = true;
+    const br = this.br;
+    if (br) {
+      const sent = performance.now();
+      diag("cmd play", br.ref.kind + ":" + br.ref.id, `${br.state}${br.ready ? "" : " not-ready"} heard ${Math.round((sent - br.heard) / 1000)}s ago`);
+      br.play();
+      setTimeout(() => { if (this.br === br && br.ready && !this.priming && br.heard < sent && !document.hidden && !APP.screenOff) this.revive("no answer to play"); }, 3000);
+    }
+    return Promise.resolve();
+  }
+  pause() { if (!this.refs) return this.el.pause(); this.autoplay = false; if (this.br) diag("cmd pause", this.br.ref.kind + ":" + this.br.ref.id, this.br.state); if (this.br && !this.priming) this.br.pause(); if (!this.brPaused) { this.brPaused = true; this.fire("pause"); } }  // priming pauses by itself
   get volume() { return this.el.volume; }
   set volume(v) { this.el.volume = v; }
   get muted() { return this.el.muted; }

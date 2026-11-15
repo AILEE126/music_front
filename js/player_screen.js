@@ -1125,7 +1125,8 @@ function loop() { tick(false); if (!audio.paused) requestAnimationFrame(loop); }
 const tickTimer = setInterval(() => { if (!audio.paused && !APP.screenOff) tick(false); }, 200);
 on(window, "appscreen", e => { if (e.detail.on) { tick(true); if (!audio.paused) requestAnimationFrame(loop); } });
 cleanups.push(() => clearInterval(tickTimer));
-on(audio, "play", () => { $("btnPlay").textContent = "⏸︎"; requestAnimationFrame(loop); });
+// ❚❚ not ⏸︎: Samsung phones ignore the text selector and draw ⏸ as an orange emoji (user report 2026-11-16)
+on(audio, "play", () => { $("btnPlay").textContent = "❚❚"; requestAnimationFrame(loop); });
 on(audio, "pause", () => { $("btnPlay").textContent = "▶︎"; tick(false); });
 on(audio, "seeked", () => tick(true));
 on(audio, "loadedmetadata", () => { $("tDur").textContent = fmt(audio.duration); });
@@ -1478,7 +1479,8 @@ $("reportSend").onclick = async () => {
     await post("/api/report", {kind: $("reportKind").value, text: $("reportText").value, who: $("reportWho").value.trim(), request: req,
       song: it ? {site: it.site, name: it.name, title: it.title, artist: it.artist || "", ...(it.vocadb ? {vocadb: String(it.vocadb)} : {})} : null,  // VocaDB id: the song's key from now on
       pos: playing ? Math.round(audio.currentTime * 10) / 10 : null, source: playing ? audio.src : "",
-      diag: $("reportKind").value === REPORT_STALL ? reportDiag : "", images: reportImgs,
+      // phone app: every report carries the playback log (user report 2026-11-16: S24 went silent after a page change — not seen elsewhere)
+      diag: $("reportKind").value === REPORT_STALL ? reportDiag : APP.on ? playerDiag().split("\n").slice(-120).join("\n") : "", images: reportImgs,
       ...(reportRepl() ? {replace: {from: $("reportFrom").value.trim(), to: $("reportTo").value.trim()}} : {})});
   } catch (e) { reportCanSend(); uiAlert(e.message); return; }
   $("reportDlg").close();

@@ -25,9 +25,20 @@
   const touch = matchMedia("(pointer:coarse)").matches;
   /* user request 2026-11-15: the playlist head looks the same at every width — 온/오프라인 · theme stay in the title row,
      간단 + 노래방 모드 stay under the song count (no moving them into 설정 or the count row on a phone) */
+  /* 설정 › 화면 크기 (user request 2026-11-16): a slider over the page zoom on the phone — 100% = the size it had (the
+     smallest, --ui-zoom .8), up to 160%. Phone width only; a wide screen keeps the stylesheet's .8 */
+  const ZOOM_BASE = 0.8, zoomPct = () => Math.min(160, Math.max(100, +store.get("mZoom", 100) || 100));
+  const applyZoom = () => {
+    const p = zoomPct();
+    if (mq.matches && p !== 100) document.documentElement.style.setProperty("--ui-zoom", ZOOM_BASE * p / 100);
+    else document.documentElement.style.removeProperty("--ui-zoom");
+    $("mZoom").value = p; $("mZoomVal").textContent = p + "%";
+  };
+  $("mZoom").addEventListener("input", e => { store.set("mZoom", +e.target.value); applyZoom(); });
   const apply = () => {
     body.classList.toggle("m", mq.matches); if (!mq.matches) close();
     if (mq.matches && touch) { audio.muted = false; audio.volume = 1; }
+    applyZoom();
   };
   mq.addEventListener("change", apply);
   apply();
@@ -43,7 +54,7 @@
     const url = has && hasCover(SHELL.now) ? coverUrl(SHELL.now) : "";
     $("miniCover").hidden = !url;
     if (url && $("miniCover").getAttribute("src") !== url) $("miniCover").src = url;
-    $("miniPlay").textContent = audio.paused ? "▶︎" : "⏸︎";
+    $("miniPlay").textContent = audio.paused ? "▶︎" : "❚❚";  // not ⏸︎ — an orange emoji on Samsung (player_screen.js)
     body.classList.toggle("mbar", has);  // the bar takes its room above the bottom menu only when a song is there
   }
   new MutationObserver(render).observe(document.querySelector(".now"), {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["src", "hidden"]});

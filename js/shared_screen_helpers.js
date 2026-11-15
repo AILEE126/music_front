@@ -16,6 +16,33 @@ async function api(path, opt = {}) {
 }
 const post = (path, body) => api(path, {method: "POST", body: JSON.stringify(body)});
 
+/* 터치 화면(폰): 글 칸은 사용자가 직접 눌렀을 때만 키패드가 뜸 (user request 2026-11-16 — 창·화면을 넘길 때마다 키패드가 떴음).
+   코드가 부르는 focus()·select() 와 창(dialog)이 열릴 때 첫 글 칸으로 가는 기본 동작을 터치 화면에서만 막음 (PC 는 그대로) */
+(() => {
+  const touch = () => matchMedia("(pointer: coarse)").matches;
+  const NOKEY = /^(button|checkbox|radio|range|color|file|submit|reset|image|hidden)$/i;
+  const typing = el => !!el && !el.readOnly && (el.tagName === "TEXTAREA" || el.tagName === "INPUT" && !NOKEY.test(el.type));
+  for (const P of [HTMLInputElement, HTMLTextAreaElement]) {
+    const focus = P.prototype.focus, select = P.prototype.select;
+    P.prototype.focus = function (...a) { if (!(touch() && typing(this))) return focus.apply(this, a); };
+    // select() on a field that isn't focused would focus it; already focused (tapped) = fine
+    P.prototype.select = function () { if (!(touch() && typing(this) && document.activeElement !== this)) return select.call(this); };
+  }
+  for (const k of ["show", "showModal"]) {
+    const open = HTMLDialogElement.prototype[k];
+    HTMLDialogElement.prototype[k] = function () {
+      if (!touch()) return open.call(this);
+      const had = this.hasAttribute("autofocus");
+      this.autofocus = true;  // the dialog itself takes the focus, not its first text field
+      try { return open.call(this); } finally {
+        if (!had) this.removeAttribute("autofocus");
+        const a = document.activeElement;
+        if (typing(a) && this.contains(a)) a.blur();
+      }
+    };
+  }
+})();
+
 /* 알림·확인 창: 브라우저 기본 alert·confirm 은 떠 있는 동안 화면 전체(재생기 포함)를 멈춰
    곡이 끝나도 다음 곡으로 못 넘어가고 영상도 서므로, 화면 안의 창으로 띄움 (Promise: 확인 true / 취소·Esc false) */
 function uiDialog(msg, ok, cancel) {
@@ -103,7 +130,7 @@ function ctxMenu(e, items) {
 async function copyText(s) {
   try { await navigator.clipboard.writeText(s); return; } catch (e) {}
   const t = document.createElement("textarea");
-  t.value = s; t.style.position = "fixed"; t.style.opacity = "0";
+  t.value = s; t.readOnly = true; t.style.position = "fixed"; t.style.opacity = "0";  // readOnly: no phone keyboard
   document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove();
 }
 function ctxClose() { document.querySelectorAll(".ctxm").forEach(m => m.remove()); }
