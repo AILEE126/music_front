@@ -336,13 +336,12 @@ a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.
 #btnReport:hover,#sReport:hover{color:var(--text)}
 .ctrl .play{font-size:30px;color:var(--text);min-width:40px}  /* 재생/일시정지: 동그라미 없이 아이콘만 (조금 크게) */
 #btnOverlaySet{font-size:22px}
-/* rows are the same at every width (user request 2026-11-15): ⏮ ▶ ⏭ … 셔플 · 반복 · 대기열 / 재생 막대 (a whole row) / 태그 / 링크 버튼 */
-.seek{display:flex;align-items:center;gap:8px;flex:1 0 100%;min-width:0;order:1}
-#btnShuffle{margin-left:auto}
-.ctrl>.btn,.ctrl>button:not(.ib){order:3}
+/* rows are the same at every width (user request 2026-11-15): 재생 막대 (a whole row) / 버튼 가운데 (🔀 ⏮ ▶ ⏭ 🔁 ≡) / 태그 / 링크 버튼 */
+.seek{display:flex;align-items:center;gap:8px;flex:1 0 100%;min-width:0}
+.transport{flex:1 0 100%;display:flex;align-items:center;justify-content:center;gap:14px}
 .time{font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted);white-space:nowrap;min-width:34px;text-align:center}
 /* 곡 정보: 나무위키 곡 문서의 분류(칩) · 각주(작게) — 재생 막대와 영상 버튼 사이 한 줄 */
-.songmeta{flex:1 0 100%;min-width:0;order:2}
+.songmeta{flex:1 0 100%;min-width:0}
 .songmeta .cats{display:flex;flex-wrap:wrap;gap:4px}
 .songmeta .b.vocal{color:var(--vc);background:color-mix(in srgb,var(--vc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vc) 55%,transparent)}
 .songmeta .b.kara{--bc:var(--muted);font-weight:600;color:color-mix(in srgb,var(--bc) 78%,#fff);background:color-mix(in srgb,var(--bc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--bc) 55%,transparent)}

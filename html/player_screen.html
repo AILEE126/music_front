@@ -57,13 +57,15 @@
         </div>
       </div>
       <div class="ctrl">
-        <button class="ib" id="btnPrev" title="이전 곡">⏮&#xFE0E;</button>
-        <button class="ib play" id="btnPlay" title="재생 / 일시정지 (Space)">▶&#xFE0E;</button>
-        <button class="ib" id="btnNext" title="다음 곡">⏭&#xFE0E;</button>
         <div class="seek"><span class="time" id="tCur">0:00</span><input type="range" class="bar-range" id="seek" min="0" max="1000" value="0"><span class="time" id="tDur">0:00</span></div>
-        <button class="ib mode" id="btnShuffle" title="무작위 재생"></button>
-        <button class="ib mode" id="btnRepeat" title="반복"></button>
-        <button class="ib mode" id="btnPlayQueue" title="재생 대기열 (다음에 틀 곡 · 지난 곡)" hidden></button>
+        <div class="transport"><!-- user request 2026-11-15: seek bar as its own row, buttons gathered in the middle below it (same at every width) -->
+          <button class="ib mode" id="btnShuffle" title="무작위 재생"></button>
+          <button class="ib" id="btnPrev" title="이전 곡">⏮&#xFE0E;</button>
+          <button class="ib play" id="btnPlay" title="재생 / 일시정지 (Space)">▶&#xFE0E;</button>
+          <button class="ib" id="btnNext" title="다음 곡">⏭&#xFE0E;</button>
+          <button class="ib mode" id="btnRepeat" title="반복"></button>
+          <button class="ib mode" id="btnPlayQueue" title="재생 대기열 (다음에 틀 곡 · 지난 곡)" hidden></button>
+        </div>
         <div class="songmeta" id="songMeta" hidden></div>
         <a class="btn" id="btnSrc" target="_blank" rel="noopener" title="원곡 영상 페이지를 새 탭으로" hidden>원곡 ↗</a>
         <a class="btn" id="btnWiki" target="_blank" rel="noopener" title="나무위키 곡 문서를 새 탭으로" hidden>위키 ↗</a>
