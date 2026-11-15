@@ -3,6 +3,7 @@
    what a phone browser can't do comes from the app's plugin "MusicApp":
    · 백그라운드 재생: play state + title → the app keeps playing with the screen off (notification / lock-screen buttons)
    · 오프라인 모드: the mp3 folder is picked with the phone's folder picker (remembered) — offline_folder.js uses APP.pickDir
+   · 화면 꺼짐: APP.screenOff — lyrics stop being followed, the video shrinks to a low quality (battery)
    · 가사 오버레이: the same /api/now · /api/ovset the PC overlay gets go to the app's floating lyrics window
      (html/lyrics_overlay_mobile.html — change its look there)
    Outside the app APP.on is false and nothing here runs. */
@@ -69,6 +70,13 @@ var APP = (() => {
     return ovset();
   };
   M.overlaySet(ovset()).catch(() => {});
+
+  /* ---- screen off (user request 2026-11-15, battery): APP.screenOff · window event "appscreen" when it changes.
+     The page is kept "visible" for background play, so document.hidden can't tell; older app builds never send it. ---- */
+  A.screenOff = false;
+  const setScreen = on => { if (A.screenOff === !on) return; A.screenOff = !on; dispatchEvent(new CustomEvent("appscreen", {detail: {on}})); };
+  M.addListener("screen", ({on}) => setScreen(!!on));
+  M.screen().then(s => setScreen(!!s.on)).catch(() => {});
 
   /* ---- background play: tell the app what plays; its notification / lock-screen / earphone buttons come back here ---- */
   addEventListener("DOMContentLoaded", () => {

@@ -403,6 +403,8 @@ function makePlayer(el) {
   let place = null;
   function placeNow() {
     let r = null;
+    // 폰 화면이 꺼짐: 영상 칸을 1px 로 접음 → 작은 플레이어라 유튜브·니코니코가 낮은 화질로 받음 (user request 2026-11-15, battery)
+    if (APP.screenOff) { host.className = "folded"; host.style.cssText = ""; return; }
     try {
       if (place && place.isConnected && audio.bridged) {
         const b = place.getBoundingClientRect(), w = place.ownerDocument.defaultView;
@@ -422,7 +424,8 @@ function makePlayer(el) {
     host.className = "shown";
     host.style.cssText = `left:${r.left / hz}px;top:${r.top / hz}px;width:${r.width / hz}px;height:${r.height / hz}px`;
   }
-  setInterval(placeNow, 250);  // 영상 칸이 움직이거나(스크롤·창 크기·목록 접기) 화면이 바뀌면 따라감
+  setInterval(() => { if (!APP.screenOff) placeNow(); }, 250);
+  addEventListener("appscreen", () => { placeNow(); sendNow(true); });  // 영상 칸이 움직이거나(스크롤·창 크기·목록 접기) 화면이 바뀌면 따라감
   addEventListener("resize", placeNow);
   audio.addEventListener("sourcechange", placeNow);
   audio.addEventListener("emptied", placeNow);
@@ -433,7 +436,7 @@ function makePlayer(el) {
      발음·번역 줄은 플레이어의 '발음'·'번역' 체크 그대로 (같은 브라우저 저장값) */
   let nowLast = "", lyrIdx = -2;
   function sendNow(beat = false) {
-    if (!LOCAL.ready) return;
+    if (!LOCAL.ready || APP.screenOff) return;  // 폰 화면이 꺼짐: 가사 위치를 안 봄 (켜지면 appscreen 에서 바로 보냄)
     const it = P.now, L = P.lyr, i = P.lyrIndex(), g = L && L.times && i >= 0 ? L.groups[i] : null;
     const d = {title: it ? it.title : "", artist: it ? shortName(it.artist || "") : "", playing: !audio.paused,
       show_r: store.get("showR", true), show_t: store.get("showT", true), colors: g && !store.get("simple", false) ? (g.vc || []) : [],  // 간단 표시: 보컬 색 없이 흰색
@@ -445,7 +448,7 @@ function makePlayer(el) {
     post("/api/now", d).catch(() => {});  // 못 써도 재생은 그대로
   }
   setInterval(() => sendNow(true), 5000);
-  setInterval(() => { if (!audio.paused) { const i = P.lyrIndex(); if (i !== lyrIdx) { lyrIdx = i; sendNow(); } } }, 200);
+  setInterval(() => { if (!audio.paused && !APP.screenOff) { const i = P.lyrIndex(); if (i !== lyrIdx) { lyrIdx = i; sendNow(); } } }, 200);
   ["play", "pause"].forEach(ev => audio.addEventListener(ev, () => sendNow()));
 
   /* ---- 다음 곡 미리 띄워 두기: 지금 곡이 4초쯤 흐른 뒤 다음에 틀 온라인 곡 (한 곡 반복·다음 곡 없음이면 안 함) ---- */

@@ -39,6 +39,7 @@
   new MutationObserver(render).observe(document.querySelector(".now"), {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["src", "hidden"]});
   ["play", "pause", "emptied", "sourcechange"].forEach(ev => audio.addEventListener(ev, render));
   setInterval(() => {
+    if (APP.screenOff) return;  // phone screen off: nothing to draw
     const d = audio.duration;
     $("miniProg").style.width = d > 0 && isFinite(d) ? `${Math.min(100, audio.currentTime / d * 100)}%` : "0";
   }, 500);

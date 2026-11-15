@@ -952,6 +952,7 @@ function tick(force) {
   }
   // 다음 줄로 바뀌는 그 순간에 한 번 더 (창이 가려져 화면 갱신 신호가 멈추면 0.2초마다 확인만으로는 최대 0.2초 늦음)
   clearTimeout(nextTimer);
+  if (APP.screenOff) return;  // phone screen off: no lyrics checks until it is on again (battery)
   const nb = T.find((t, i) => i > idx && t != null);
   if (!audio.paused && nb != null) nextTimer = setTimeout(() => tick(false), Math.max(0, (nb + off - 0.05 - now) * 1000 / (audio.playbackRate || 1)) + 2);
 }
@@ -963,7 +964,9 @@ document.addEventListener("change", e => { if (e.target.tagName === "SELECT") e.
 document.addEventListener("focusout", e => { if (e.target.tagName === "SELECT") setTimeout(() => tick(true), 0); });
 function loop() { tick(false); if (!audio.paused) requestAnimationFrame(loop); }
 // 창이 가려지거나 최소화되면 화면 갱신 신호가 멈추므로 0.2초마다도 확인 (화면을 떠나면 멈춤)
-const tickTimer = setInterval(() => { if (!audio.paused) tick(false); }, 200);
+// 폰 화면이 꺼지면 가사를 아예 확인하지 않음 — 켜지면 그 자리로 바로 맞춤 (user request 2026-11-15, battery)
+const tickTimer = setInterval(() => { if (!audio.paused && !APP.screenOff) tick(false); }, 200);
+on(window, "appscreen", e => { if (e.detail.on) { tick(true); if (!audio.paused) requestAnimationFrame(loop); } });
 cleanups.push(() => clearInterval(tickTimer));
 on(audio, "play", () => { $("btnPlay").textContent = "⏸︎"; requestAnimationFrame(loop); });
 on(audio, "pause", () => { $("btnPlay").textContent = "▶︎"; tick(false); });
