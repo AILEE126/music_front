@@ -11,7 +11,7 @@ var APP = (() => {
   const on = !!(C && C.isNativePlatform && C.isNativePlatform());
   const A = {on, platform: on ? C.getPlatform() : "", publicUrl: "https://raw.githack.com/AILEE126/music_front/main/html/player_screen.html"};
   if (!on) return A;
-  const M = C.registerPlugin("MusicApp");
+  const M = C.Plugins.MusicApp;
   A.native = M;
 
   /* ---- mp3 folder: handles shaped like the browser's folder handles (what offline_folder.js reads) ---- */
@@ -23,7 +23,8 @@ var APP = (() => {
     return {kind: "file", name: f.name,
       async getFile() {
         // not loaded into memory: tags / json read only the bytes asked for, the audio plays from the app's media path
-        return {name: f.name, size: f.size, lastModified: f.modified, _src: mediaUrl(f.uri),
+        // (iOS gives a file path: Capacitor serves it, ranges included)
+        return {name: f.name, size: f.size, lastModified: f.modified, _src: f.src ? C.convertFileSrc(f.src) : mediaUrl(f.uri),
           slice: (a = 0, b = f.size) => blobPart(a, Math.min(b, f.size)),
           arrayBuffer: async () => (await read(0, f.size)).buffer,
           text: async () => new TextDecoder().decode(await read(0, f.size))};
@@ -57,7 +58,12 @@ var APP = (() => {
     if (post) {
       const {enabled, ...rest} = body;
       store.set("ovset", {...store.get("ovset", {}), ...rest});
-      if (enabled !== undefined) ovOn = !!(await M.overlayShow({on: !!enabled})).on;
+      if (enabled !== undefined) {
+        const r = await M.overlayShow({on: !!enabled});
+        ovOn = !!r.on;
+        if (enabled && r.unsupported) uiAlert("아이폰 앱에는 아직 가사 오버레이가 없습니다.");
+        else if (enabled && !r.allowed) uiAlert("가사 오버레이를 띄우려면 '다른 앱 위에 표시'를 허용해 주세요.");
+      }
       M.overlaySet(ovset()).catch(() => {});
     }
     return ovset();
