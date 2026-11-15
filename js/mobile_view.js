@@ -20,7 +20,12 @@
   addEventListener("popstate", () => body.classList.remove("mplay"));
   // phone app's back button (music_app MainActivity): true = handled here, false = the app hides itself
   window.appBack = () => { if (!isOpen()) return false; close(); return true; };
-  const apply = () => { body.classList.toggle("m", mq.matches); if (!mq.matches) close(); };
+  // touch phone (user request 2026-11-15): volume only by the device's keys — the slider is hidden, so the player stays at full volume
+  const touch = matchMedia("(pointer:coarse)").matches;
+  const apply = () => {
+    body.classList.toggle("m", mq.matches); if (!mq.matches) close();
+    if (mq.matches && touch) { audio.muted = false; audio.volume = 1; }
+  };
   mq.addEventListener("change", apply);
   apply();
 

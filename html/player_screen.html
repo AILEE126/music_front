@@ -46,6 +46,7 @@
     <div id="videoBox" hidden><div class="frame" id="videoFrame"></div></div><!-- 재생 중인 온라인 곡의 중계 플레이어가 이 칸 위에 겹쳐 보임 -->
     <div class="now">
       <button class="tab" id="btnVideo" title="원곡 영상 보기 · 숨기기 (인터넷 필요) · 끌면 영상 높이 조절" aria-label="원곡 영상 보기 · 숨기기"><svg viewBox="0 0 16 10" aria-hidden="true"><rect x="1" y="1.5" width="9.5" height="7" rx="1.5" fill="currentColor"/><path d="M11.5 4.3 15 2.4v5.2l-3.5-1.9z" fill="currentColor"/></svg></button><!-- user request: video on/off as a tab at the player box's top-right · click folds, drag resizes (old grip bar removed) -->
+      <button class="tab" id="btnCmt" title="니코니코 댓글 켜기 · 끄기 (다음 곡에도 그대로)" aria-label="니코니코 댓글 켜기 · 끄기" hidden><svg viewBox="0 0 16 14" aria-hidden="true"><path d="M2.5 1.5h11a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H8l-3.5 3v-3h-2A1.5 1.5 0 0 1 1 9V3a1.5 1.5 0 0 1 1.5-1.5z" fill="currentColor"/></svg></button><!-- user request 2026-11-15: comments as a tab left of the video tab — on (default) = white, hangs lower · off = folded like the video tab -->
       <div class="nowtop">
         <button class="tab" id="btnList" title="재생목록 접기 / 펴기" aria-label="재생목록 접기 / 펴기"><svg viewBox="0 0 14 10" aria-hidden="true"><path d="M3 1.5v7M7 1.5v7M11 1.5v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button><!-- user request: tab shape, same place -->
         <img id="nowCover" alt="" title="누르면 크게 보기 · 오른쪽 클릭하면 썸네일 저장" hidden>
@@ -65,7 +66,6 @@
         <button class="ib mode" id="btnPlayQueue" title="재생 대기열 (다음에 틀 곡 · 지난 곡)" hidden></button>
         <button class="ib vol" id="btnMute" title="음소거 / 해제"></button><input type="range" class="bar-range" id="vol" min="0" max="1" step="0.01" value="0.8" title="음량">
         <div class="songmeta" id="songMeta" hidden></div>
-        <button id="btnCmt" title="니코니코 댓글 켜기 · 끄기 (다음 곡에도 그대로)" hidden>💬 댓글</button>
         <a class="btn" id="btnSrc" target="_blank" rel="noopener" title="원곡 영상 페이지를 새 탭으로" hidden>원곡 ↗</a>
         <a class="btn" id="btnWiki" target="_blank" rel="noopener" title="나무위키 곡 문서를 새 탭으로" hidden>위키 ↗</a>
         <button id="btnInfo" title="곡 전체 정보 — 이 곡을 불러오는 데 쓴 칸과 값 (곡 표 · 노래방 표)" hidden>곡 정보</button><!-- user request 2026-11-15 -->

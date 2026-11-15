@@ -830,14 +830,18 @@ function renderMeta(it) {
   const inner = [...lists, ...tags.filter(t => !KARA_RE.test(t) && !lists.includes(t) && tagGroupOf(t) !== "음성 합성 엔진").slice(0, 8)];
   const tagChip = t => lists.includes(t) ? tagChipHtml("kara", t, t, `inner${t === "한국" ? " ko" : " ja"}`, "노래방 목록 (한국·일본)")
     : tagChipHtml("tag:" + tagGroupOf(t), t, t, "", tagGroupOf(t) || "태그");
+  // user request 2026-11-15: only colored chips are shown; the plain ones fold behind a "+N" chip (open state remembered)
+  const isPlain = t => !lists.includes(t) && !tagColor("tag:" + tagGroupOf(t), t);
   const chips = [
     ...(it.vocals || []).map(([n, c]) => `<span class="b vocal" style="--vc:${esc(c)}" title="보컬">${esc(n)}</span>`),
     ...kara.map(([t, b]) => `<span class="b kara" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b]}" title="${esc(karaOnlyTip(it, b, "노래방 수록"))}">${esc(t)}${karaOnlyMark(it, b)}</span>`),
     ...Object.keys(it.gone || {}).map(b => `<span class="b kara gone" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b] || "#888"}" title="노래방에서 내려간 곡입니다 (${esc(b)} ${esc(it.gone[b])})">${esc(KARAOKE_TAG[b] || b)}</span>`),
-    ...inner.map(tagChip),
-    ...(it.categories || []).map(c => `<span class="b" title="나무위키 분류">${esc(c)}</span>`)];
-  box.hidden = !chips.length && !notes.length;
-  box.innerHTML = (chips.length ? `<div class="cats">${chips.join("")}</div>` : "")
+    ...inner.filter(t => !isPlain(t)).map(tagChip)];
+  const plain = [...inner.filter(isPlain).map(tagChip), ...(it.categories || []).map(c => `<span class="b" title="나무위키 분류">${esc(c)}</span>`)];
+  const open = !!store.get("tagsOpen", false);
+  const more = plain.length ? `<button class="b more" id="tagsMore" title="${open ? "나머지 태그 접기" : "나머지 태그 보기"}">${open ? "접기" : `+${plain.length}`}</button>` : "";
+  box.hidden = !chips.length && !plain.length && !notes.length;
+  box.innerHTML = (chips.length || plain.length ? `<div class="cats">${chips.join("")}${open ? plain.join("") : ""}${more}</div>` : "")
     + (notes.length ? `<div class="fn" title="노래방 수록 목록의 각주">${notes.map(n => `<div>※ ${esc(n)}</div>`).join("")}</div>` : "");
 }
 async function loadSong() {
@@ -1192,6 +1196,7 @@ const VID_F = f => { f = Math.min(.85, Math.max(.1, f)); document.documentElemen
   tab.addEventListener("keydown", e => { if (e.key === "Enter" && !SIMPLE) { e.preventDefault(); VID.on = !VID.on; store.set("video", VID.on); showVideo(); } });
 }
 $("btnCmt").onclick = () => { audio.comments = !audio.comments; showVideo(); };
+$("songMeta").addEventListener("click", e => { if (e.target.id === "tagsMore" && cur) { store.set("tagsOpen", !store.get("tagsOpen", false)); renderMeta(cur); } });
 for (const ev of ["sourcechange", "emptied", "error", "loadedmetadata"]) on(audio, ev, showVideo);  // 중계 플레이어가 바뀜·뜸·못 틂
 cleanups.push(() => SHELL.placeVideo(null));  // 화면을 떠나면 영상 칸이 없어짐 → 접음 (소리는 그대로)
 

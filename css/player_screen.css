@@ -99,6 +99,11 @@ body.simple .item .thumb{display:none}  /* 간단 표시: 목록 썸네일 숨�
 #btnVideo.on:not(:disabled){cursor:ns-resize}
 #btnVideo.drag{color:var(--accent)}
 #btnVideo:disabled{opacity:.4;cursor:default}
+/* 니코니코 댓글 tab (user request 2026-11-15): left of the video tab — on (default) = white text, hangs lower · off = like the video tab folded */
+#btnCmt{position:absolute;top:-1px;right:84px;width:56px;height:30px;border-top:0;border-radius:0 0 9px 9px;z-index:3;transition:height .15s}
+#btnCmt[hidden]{display:none}
+#btnCmt svg{width:15px;height:13px}
+#btnCmt.on{height:36px;color:var(--text);background:var(--card);border-color:var(--line)}
 #videoBox{flex:none}
 /* 영상이 있을 때 가사 칸은 작으니 아래 여백(마지막 줄을 가운데로 올리는 자리)도 작게 — 여백이 칸보다 크면 칸 밖으로 넘침 */
 /* 영상 숨김(서버 없이 연 화면의 온라인 곡): 중계 플레이어는 소리를 내야 해서 지우지 않고 보이지 않게만 */
@@ -338,6 +343,8 @@ a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.
 .songmeta .b.inner.ko{--vc:rgb(235 235 240)}
 .songmeta .b.inner.ja{--vc:rgb(255 95 105)}
 .songmeta .b.inner.ko,.songmeta .b.inner.ja{color:var(--vc);background:color-mix(in srgb,var(--vc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vc) 55%,transparent)}
+.songmeta .b.more{height:auto;min-width:0;padding:0 7px;border:0;font-size:11px;font-weight:600;line-height:inherit;cursor:pointer}  /* +N: the folded plain tags */
+.songmeta .b.more:hover{color:var(--text)}
 .songmeta .fn{margin-top:4px;font-size:11.5px;color:var(--muted);line-height:1.5}
 .songmeta .fn div{overflow-wrap:anywhere}
 #vol{flex:none;width:93px}
@@ -560,3 +567,9 @@ body.m #miniBar.empty{display:none}
 #miniBar .minfo b,#miniBar .minfo span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #miniBar .minfo span{font-size:12px;color:var(--muted)}
 #miniBar .ib{flex:none;width:40px;height:40px;font-size:18px}
+/* 폰 재생 화면 (user request 2026-11-15): rows don't move with the width — buttons · 재생 막대 · 태그 · 링크 버튼.
+   Touch phones: no volume slider / mute (the device's volume keys only — mobile_view.js keeps the player at full volume) */
+body.m .seek{flex-basis:100%;order:1;min-width:0}
+body.m .songmeta{order:2}
+body.m .ctrl>.btn,body.m .ctrl>button:not(.ib){order:3}
+@media (pointer:coarse){body.m #btnMute,body.m #vol{display:none}}
