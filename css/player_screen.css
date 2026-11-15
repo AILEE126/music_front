@@ -60,9 +60,10 @@ body:not(.m) .side-head .top .onoff .lb{min-width:40px;padding:1px 6px 0;font-si
 /* 목록 정보 줄: 곡 수 | 재생 중인 곡 찾기 · 전체 작업 */
 /* 같이듣기 button: counts on their own small line, never split mid-word (user request 2026-11-15) */
 .plq{display:block;width:100%;box-sizing:border-box;margin-top:8px;height:32px}  /* 재생목록에서 찾기 */
-.libinfo{font-size:12px;color:var(--muted);margin-top:10px;display:flex;justify-content:space-between;gap:6px;align-items:center;flex-wrap:wrap}
+.libinfo{font-size:12px;color:var(--muted);margin-top:10px;display:flex;justify-content:space-between;gap:6px;align-items:center;flex-wrap:nowrap}  /* user request 2026-11-15: count left, controls at the right end — one row at every width */
 .libinfo b{color:var(--text);font-size:13px}
-.libinfo .acts{display:flex;gap:4px;flex-wrap:wrap}
+.libinfo .acts{display:flex;gap:4px;flex-wrap:nowrap;flex:none;margin-left:auto}
+#libInfo{min-width:0;overflow:hidden}
 .libinfo button{padding:2px 8px;font-size:12px}
 #btnFindCur{padding:2px 6px;font-size:14px;line-height:1.2}
 #btnPlayView{white-space:nowrap}
@@ -291,12 +292,6 @@ body.lt-guest #streamHost{pointer-events:none}
 .kmrow button{flex:1;padding:4px 10px;font-size:12.5px}.kmrow button b{margin-left:4px}
 .kmrow select{flex:none;font-size:12.5px;padding:3px 6px}
 .kmrow select[hidden]{display:none}
-body.m .libinfo{flex-wrap:nowrap}  /* one line: the song count gives way */
-body.m #libInfo{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-body.m .libinfo .acts{flex-wrap:nowrap;flex:none}
-body.m .libinfo .kmrow{margin:0 0 0 auto;flex:none}  /* phone: on the 처음부터 · ◎ row, right before them (mobile_view.js) */
-body.m .libinfo .kmrow button{flex:none;padding:2px 8px;font-size:12px}
-body.m .libinfo .kmrow select{padding:2px 4px;font-size:12px}
 .pct.kno{font-size:12px;font-weight:700;color:var(--accent)}
 /* 노래방 번호 in the machine's color (user request 2026-11-15) — same tint as the karaoke chips; 간단 mode keeps the plain look */
 body:not(.simple) .pct.kno,body:not(.simple) #karaNum:not(.ask){color:color-mix(in srgb,var(--bc) var(--tint-k),var(--tint-to))}
@@ -776,11 +771,9 @@ body.m .mnav{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;heig
 .earsnooze{display:flex;align-items:center;gap:6px;margin-top:12px;font-size:13px;color:var(--muted)}
 /* 폰 (user request 2026-11-15 — phone only): the side panel keeps just the playlist (곡 검색 · 같이듣기 · 노래방 모드 are in the
    bottom menu, the rest in 설정); 곡 검색 and 노래방 번호 추천 open as full pages, not popups */
-body.m .side>.side-head>.filters{display:none}  /* 곡 검색 · 같이듣기 · 노래방 모드 are in the bottom menu (온/오프라인 · 간단 moved to the title row) */
+body.m .side>.side-head>.filters{display:none}  /* 곡 검색 · 같이듣기 · 노래방 are in the bottom menu */
 body.m .side-head .top{gap:6px}
 body.m .side-head .top h1{margin-right:auto}
-.msetdlg .mset [data-slot]{display:flex}
-.msetdlg #btnTheme{width:40px;height:32px;border:1px solid var(--line);border-radius:6px}
 body.m .side-head .top .onoff{align-self:center}
 body.m #searchDlg,body.m #karaDlg,body.m #listenDlg,body.m #mSetDlg{position:fixed;inset:0 0 auto 0;z-index:25;width:100%;height:calc(100dvh / var(--ui-zoom) - var(--mbottom));max-width:none;max-height:none;margin:0;border:0;border-radius:0}  /* pages above the list, ending at the bottom menu (not modal — mobile_view.js) */
 body.m #karaDlg[open]{display:flex;flex-direction:column}

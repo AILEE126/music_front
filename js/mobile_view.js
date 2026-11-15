@@ -23,23 +23,10 @@
   window.appBack = () => { if (!isOpen()) return false; close(); return true; };
   // touch phone (user request 2026-11-15): volume only by the device's keys — the slider is hidden, so the player stays at full volume
   const touch = matchMedia("(pointer:coarse)").matches;
-  /* phone (user request 2026-11-15): 온/오프라인 sits in the title row (right end) · 간단 and the theme button live in 설정 —
-     all back in their own places on a wide screen */
-  const moved = [["onOff", null], ["btnSimple", "simple"], ["btnTheme", "theme"]]
-    .map(([id, slot]) => { const el = $(id); return {el, slot, parent: el.parentNode, next: el.nextSibling}; });
-  const place = phone => moved.forEach(m => {
-    if (!phone) m.parent.insertBefore(m.el, m.next);
-    else if (m.slot) document.querySelector(`#mSetDlg [data-slot="${m.slot}"]`).appendChild(m.el);
-    else document.querySelector(".side-head .top").appendChild(m.el);
-  });
-  // phone (user request 2026-11-15): 노래방 모드 ON/OFF + machine sit on the 처음부터 · ◎ row
-  const km = document.querySelector(".kmrow"), kmHome = {parent: km.parentNode, next: km.nextSibling};
-  const placeKm = phone => phone ? document.querySelector(".libinfo").insertBefore(km, document.querySelector(".libinfo .acts"))
-    : kmHome.parent.insertBefore(km, kmHome.next);
+  /* user request 2026-11-15: the playlist head looks the same at every width — 온/오프라인 · theme stay in the title row,
+     간단 + 노래방 모드 stay under the song count (no moving them into 설정 or the count row on a phone) */
   const apply = () => {
     body.classList.toggle("m", mq.matches); if (!mq.matches) close();
-    place(mq.matches);
-    placeKm(mq.matches);
     if (mq.matches && touch) { audio.muted = false; audio.volume = 1; }
   };
   mq.addEventListener("change", apply);

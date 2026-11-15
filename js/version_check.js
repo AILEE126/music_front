@@ -17,13 +17,26 @@ function vcFiles() {
     .map(u => ({url: u, path: u.slice(root.length)}));
 }
 const vcNorm = t => t.replace(/\r\n/g, "\n");
+/* what this page is running, read once right at load (this file loads last). Reading it later from the browser cache
+   missed updates (user report 2026-11-15): raw.githack sends no-store, so a 'cached' read actually downloaded the newest
+   file — it always matched GitHub and the notice never came. */
+const VC_MINE = location.protocol === "file:" ? Promise.resolve(new Map()) : Promise.all(vcFiles().map(f =>
+  fetch(f.url, {cache: "force-cache"}).then(x => x.ok ? x.text() : null).then(t => [f.url, t == null ? null : vcNorm(t)]).catch(() => [f.url, null])))
+  .then(a => new Map(a));
+/* the player's GitHub token (when one is saved) lifts the API limit — without it every tab on this network shares 60 calls an hour */
+function vcHead() {
+  const g = (typeof LOCAL !== "undefined" && LOCAL.gh) || store.get("gh", null);
+  return g && g.token ? {Authorization: `Bearer ${g.token}`} : {};
+}
 
 async function vcCheck(force) {
   if (VC.busy || VC.stale || location.protocol === "file:") return;
   if (!force && Date.now() - VC.lastAt < 2 * 60 * 1000) return;
   VC.busy = true; VC.lastAt = Date.now();
   try {
-    const r = await fetch(`https://api.github.com/repos/${VC_REPO}/commits/${VC_BRANCH}`, {headers: {Accept: "application/vnd.github.sha"}, cache: "no-store"});
+    const api = `https://api.github.com/repos/${VC_REPO}/commits/${VC_BRANCH}`, accept = {Accept: "application/vnd.github.sha"};
+    let r = await fetch(api, {headers: {...accept, ...vcHead()}, cache: "no-store"});
+    if (r.status === 401) r = await fetch(api, {headers: accept, cache: "no-store"});  // expired token: ask without it
     if (!r.ok) return;  // offline / rate limit → try next time
     const sha = (await r.text()).trim();
     if (!sha || sha === VC.sha) return;
@@ -33,14 +46,14 @@ async function vcCheck(force) {
       if (m && m.sha && m.sha !== sha) { VC.stale = true; vcShow(sha); }
       return;
     }
-    const files = vcFiles(), local = vcLocal();
+    const files = vcFiles(), local = vcLocal(), running = await VC_MINE;
     // Only ask for a refresh when the site already serves the new files: GitHub Pages / githack can lag a few minutes or
     // fail a deploy (Pages 502), and then a refresh brings back the same old file → the notice came back forever.
     // A local page (this PC's folder) still says "git pull" whenever it differs from GitHub.
     const res = await Promise.all(files.map(async f => {
       const get = (u, cache) => fetch(u, {cache}).then(x => x.ok ? x.text() : null).then(t => t == null ? null : vcNorm(t));
       const [mine, latest] = await Promise.all([
-        get(f.url, "force-cache"),  // what this page is running
+        running.has(f.url) ? running.get(f.url) : get(f.url, "force-cache"),  // what this page is running (read at load)
         get(`https://raw.githubusercontent.com/${VC_REPO}/${sha}/${f.path}`, "default"),
       ]);
       if (mine == null || latest == null || mine === latest) return "same";
@@ -71,7 +84,8 @@ function vcShow(sha) {
     <span class="vc-btns"><button class="primary" id="vcReload">👉 ${APP.on ? "업데이트" : "강력 새로고침"}</button><button id="vcLater">나중에</button></span>`;
   document.body.appendChild(box);
   try { box.showPopover(); } catch (e) { box.classList.add("vc-fallback"); }
-  $("vcLater").onclick = () => { try { box.hidePopover(); } catch (e) {} box.remove(); };  // asks again on the next newer version
+  // asks again on the next newer version (stale used to block every later check, so it never came back)
+  $("vcLater").onclick = () => { try { box.hidePopover(); } catch (e) {} box.remove(); VC.stale = false; };
   $("vcReload").onclick = async () => {
     $("vcReload").disabled = true; $("vcReload").textContent = "받는 중…";
     if (APP.on) return location.replace("/index.html?update=1");  // the app's loader downloads the new files and opens them

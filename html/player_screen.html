@@ -64,9 +64,9 @@
         </div>
       </dialog><!-- web: opens here under the row, not as a popup (user request 2026-11-15) · phone: a page -->
       <div class="ltcard" id="ltCard" role="button" tabindex="0" title="같이듣기 창 열기" hidden></div><!-- 지금 있는 같이듣기 방 (user request 2026-11-15: 방 · 몇 명만, 얇게 — listen_together.js) -->
-      <div class="kmrow"><button id="btnKaraMode" title="노래방 모드 — 켜면 재생목록에 고른 기기의 노래방 번호가 있는 곡만 보이고, 싱크율 자리에 그 번호가 보임 (2시간 지나면 저절로 꺼짐)">🎤<span class="kmt"> 노래방 모드 <b>OFF</b></span></button><select id="karaModeMachine" title="노래방 번호를 볼 기기" hidden></select><button id="btnSimple" title="간단 표시 — 목록의 썸네일 · 오른쪽 위 썸네일을 숨기고 영상도 접음 (소리는 그대로)">간단</button></div><!-- 간단 here: the title row has no room for it at the list's smallest width (2026-11-15) --><!-- user request 2026-11-15: 노래방 모드 on the playlist, apart from the draw window -->
       <div class="libinfo"><span id="libInfo"></span>
         <span class="acts"><button id="btnPlayView" title="처음부터 — 재생목록을 처음 곡부터 (무작위면 섞어서)" aria-label="처음부터">▶&#xFE0E;</button><button id="btnPlClear" title="비우기 — 재생목록 비우기" aria-label="비우기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg></button><!-- icons only, the words are in the tooltips (user request 2026-11-15) --><button id="btnFindCur" title="재생목록에서 지금 재생 중인 곡으로 이동">◎</button></span></div>
+      <div class="kmrow"><button id="btnKaraMode" title="노래방 모드 — 켜면 재생목록에 고른 기기의 노래방 번호가 있는 곡만 보이고, 싱크율 자리에 그 번호가 보임 (2시간 지나면 저절로 꺼짐)">🎤<span class="kmt"> 노래방 모드 <b>OFF</b></span></button><select id="karaModeMachine" title="노래방 번호를 볼 기기" hidden></select><button id="btnSimple" title="간단 표시 — 목록의 썸네일 · 오른쪽 위 썸네일을 숨기고 영상도 접음 (소리는 그대로)">간단</button></div><!-- user request 2026-11-15: 노래방 모드 on the playlist, apart from the draw window · under the song count at every width (간단 here: the title row has no room for it) -->
       <div class="plfilter" id="plFilter" hidden></div><!-- 재생목록의 필터 (user request 2026-11-15): 곡 검색 '재생목록 만들기' 때의 필터 · 노래방 모드의 필터 -->
       <input type="search" id="plQ" class="plq" placeholder="재생목록에서 찾기" autocomplete="off" spellcheck="false"><!-- user request 2026-11-15: search inside the playlist (only the view) -->
     </div>
@@ -154,9 +154,6 @@
   <div class="dlg-body">
     <button data-set="report">오류신고 · 기능제안 · 텍스트 대치 제안</button>
     <button data-set="overlay">가사 · 오버레이 설정</button>
-    <div class="msetsec">화면</div><!-- phone: the side panel's 간단 · theme buttons are moved in here (mobile_view.js, user request 2026-11-15) -->
-    <div class="mset"><span>간단 표시</span><span data-slot="simple"></span></div>
-    <div class="mset"><span>밝은 · 어두운 화면</span><span data-slot="theme"></span></div>
     <div class="msetsec">이어폰</div>
     <div class="mset"><span>이어폰 연결 시 바로 재생</span><button type="button" class="onoff" data-ear="connectPlay"><span class="lb off">OFF</span><span class="lb on">ON</span></button></div>
     <div class="mset"><span>이어폰 해제 시 재생 중지</span><button type="button" class="onoff" data-ear="unplugPause"><span class="lb off">OFF</span><span class="lb on">ON</span></button></div>

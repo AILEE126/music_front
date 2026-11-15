@@ -842,8 +842,8 @@ function plfHtml(groups) {
 }
 /* how many songs we have (the collected list) — counted without building VDB.all() (that is slow; the search builds it) */
 function vdbTotal() { return VDB._all ? VDB._all.length : VDB.rowById.size + VDB.curated.filter(it => !VDB.rowById.has(it.vocadb)).length; }
-/* 현재 설정된 필터 folds (user request 2026-11-15): open normally, folded while 간단 mode is on — the header toggles it */
-let plfFold = false;
+/* 현재 설정된 필터 folds (user request 2026-11-15): folded by default, folds again when 간단 mode is turned on — the header toggles it */
+let plfFold = true;
 function renderPlFilter() {
   // 같이듣기 손님: the list shown is the host's, so is the filter (user request 2026-11-15)
   const box = $("plFilter"), f = guestPl ? (typeof LT !== "undefined" && LT.hostPlf) || null : PLF;
@@ -1273,7 +1273,8 @@ function applySimple() {
   // 간단 (user request 2026-11-15): 노래방 · 노래방 모드 buttons off and icon only (CSS) — a mode left on is turned off · the filter folds
   for (const b of [$("btnKara"), $("btnKaraMode"), document.querySelector('#mNav [data-nav="kara"]')]) if (b) b.disabled = SIMPLE;
   if (SIMPLE && typeof KARA !== "undefined") { if (KARA.mode) KARA.setMode(false); if ($("karaDlg").open) $("karaDlg").close(); }
-  plfFold = SIMPLE; renderPlFilter();
+  if (SIMPLE) plfFold = true;  // 간단 on folds it; 간단 off leaves it as it is
+  renderPlFilter();
   $("btnVideo").title = SIMPLE ? "간단 표시 중에는 영상을 접습니다 (왼쪽 위 '간단'을 끄면 보임)" : "원곡 영상 보기 · 숨기기 (인터넷 필요) · 끌면 영상 높이 조절";
 }
 $("btnSimple").onclick = () => { SIMPLE = !SIMPLE; store.set("simple", SIMPLE); applySimple(); showVideo(); renderRows(true); SHELL.notify(); };  // 썸네일이 빠져 줄 높이가 바뀜 → 다시 잼 · 오버레이 글자색도 바로
