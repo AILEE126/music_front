@@ -2,7 +2,8 @@
    queue = 재생목록 (플레이어 왼쪽 칸 — 곡 검색에서 넣음) · upcoming = 앞으로 틀 순서 (무작위면 미리 섞어 둠 — 한 바퀴 동안 겹치지 않음)
    pinned = 우클릭 '대기열에 추가'로 넣은 곡 (upcoming 보다 먼저) · history = 지난 곡 10곡 (⏮ 는 무작위여도 바로 전에 틀었던 곡으로, 더 앞은 지금 곡 처음으로)
    재생기(S)가 갖춰야 할 것: audio · now · load(it, autoplay, how) — load 는 곡을 바꾸기 전에 this.queueOnLoad(it, how) 를 부름
-   고를 수 있는 것: S.canQueue(it) (재생 목록에 넣을 곡만) · S.onModes() (무작위·반복이 바뀌면) */
+   고를 수 있는 것: S.canQueue(it) (재생 목록에 넣을 곡만) · S.onModes() (무작위·반복이 바뀌면)
+   · S.playFilter(it) (앞으로 틀 곡만 — 노래방 모드의 기기 거르기, 재생목록은 그대로) */
 const QUEUE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h13M3 12h13M3 18h8"/><path d="m16 15 5 3-5 3z" fill="currentColor"/></svg>`;
 function addPlayQueue(S) {
   const key = it => it.site + "/" + it.name;
@@ -18,7 +19,7 @@ function addPlayQueue(S) {
     setQueue(list) { this.queue = this.canQueue ? list.filter(this.canQueue) : list.slice(); },
     /* 앞으로 틀 순서 다시 짜기: from 다음 곡부터 (순서대로) / from 을 뺀 나머지를 섞어서 (무작위) */
     plan(from) {
-      const q = this.queue, k = from ? key(from) : "";
+      const q = this.playFilter ? this.queue.filter(this.playFilter) : this.queue, k = from ? key(from) : "";
       if (this.shuffle) {
         const rest = q.filter(x => key(x) !== k);
         for (let i = rest.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [rest[i], rest[j]] = [rest[j], rest[i]]; }

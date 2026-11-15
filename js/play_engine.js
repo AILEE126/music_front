@@ -405,6 +405,8 @@ function makePlayer(el) {
     let r = null;
     // 폰 화면이 꺼짐: 영상 칸을 1px 로 접음 → 작은 플레이어라 유튜브·니코니코가 낮은 화질로 받음 (user request 2026-11-15, battery)
     if (APP.screenOff) { host.className = "folded"; host.style.cssText = ""; return; }
+    // the screen decides the video box is out of sight (phone: player screen slid down / a page over it — mobile_view.js)
+    if (P.videoHidden && P.videoHidden()) { host.className = "folded"; host.style.cssText = ""; return; }
     try {
       if (place && place.isConnected && audio.bridged) {
         const b = place.getBoundingClientRect(), w = place.ownerDocument.defaultView;

@@ -179,7 +179,8 @@ function ltSendQueue(to) {
 /* host: the side panel's playlist → guests see it as it is (user request 2026-11-14 — read-only there).
    Our DB songs go as their VocaDB id only (like the saved playlist), mp3 songs as name/title only (the guest can't play them) */
 function ltPlMsg() {
-  return {t: "pl", list: view.map(it => it.vocadb && VDB.rowById.has(String(it.vocadb)) ? +it.vocadb
+  // viewAll: not narrowed by 재생목록에서 찾기
+  return {t: "pl", plf: PLF, list: viewAll.map(it => it.vocadb && VDB.rowById.has(String(it.vocadb)) ? +it.vocadb
     : it.site === "local" ? {site: "local", name: it.name, title: it.title, artist: it.artist || ""} : ltStrip(it))};
 }
 let ltPlSig = "", ltPlT = 0;
@@ -187,7 +188,7 @@ function ltPlChanged() {  // called by renderList (player_screen.js) — sent on
   if (LT.role !== "host") return;
   clearTimeout(ltPlT);
   ltPlT = setTimeout(() => {
-    const sig = view.map(keyOf).join("\n");
+    const sig = viewAll.map(keyOf).join("\n") + "\n" + JSON.stringify(PLF);  // plf: the host's 재생목록 필터 (user request 2026-11-15) — may change alone
     if (sig === ltPlSig) return;
     ltPlSig = sig;
     const m = ltPlMsg();
@@ -345,7 +346,31 @@ function ltHostGot(c, m) {
     if (!it || !canPlay(it)) return;
     LT.reqs.push({id: Math.random().toString(36).slice(2, 8), key: m.key, item: ltStrip(it), title: it.title || "", artist: it.artist || "", by: v.name, state: "wait"});
     ltSendReqs();
+    ltReqNotify(LT.reqs[LT.reqs.length - 1]);
   }
+}
+/* a guest's request came in (user request 2026-11-15, host only): open the 같이듣기 window, a short chime (phone app:
+   a phone notification with its own sound instead — works in the background too; phone browser: + vibration),
+   and the 수락 buttons · 같이듣기 button blink while a request waits */
+let ltAudio = null;
+function ltReqNotify(r) {
+  if (!$("listenDlg").open) $("listenDlg").showModal();
+  ltRender();
+  if (APP.on && APP.notify) return APP.notify("같이듣기 신청곡", `${r.by}: ${r.title}${r.artist ? ` — ${shortName(r.artist)}` : ""}`);
+  try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) {}
+  try {
+    ltAudio = ltAudio || new (window.AudioContext || window.webkitAudioContext)();
+    if (ltAudio.state === "suspended") ltAudio.resume();
+    const t = ltAudio.currentTime, g = ltAudio.createGain();
+    g.connect(ltAudio.destination);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+    [[880, 0], [1320, 0.16]].forEach(([f, d]) => {  // two-note "딩동"
+      const o = ltAudio.createOscillator();
+      o.type = "sine"; o.frequency.value = f; o.connect(g); o.start(t + d); o.stop(t + 0.7);
+    });
+  } catch (e) {}
 }
 
 /* ---------- 손님 ---------- */
@@ -417,7 +442,7 @@ function ltGuestGot(m) {
   if (m.t === "go") return ltGuestGo(m.id);
   if (m.t === "pong") { const r = performance.now() - m.at; if (r >= 0 && r < 5000) LT.rtt = LT.rtt ? LT.rtt * 0.7 + r * 0.3 : r; return; }
   if (m.t === "queue") return ltApplyQueue(m);
-  if (m.t === "pl") return ltShowPl(m.list);
+  if (m.t === "pl") { LT.hostPlf = m.plf || null; ltShowPl(m.list); return ltRender(); }
   if (m.t === "reqs") { LT.reqs = m.list || []; ltRenderReqs(); }
 }
 /* host's queue → mine (songs I can't play here are left out) */
@@ -489,7 +514,7 @@ function ltLeave(quiet) {
   ltLobbyStop();
   const peer = LT.peer;
   ltPrepEnd(); LT.gprep = null;
-  LT.peer = null; LT.role = ""; LT.code = ""; LT.host = null; LT.members = []; LT.reqs = []; LT.reqPage = 0; LT.lead = 0; LT.conns = new Map(); LT.lostAt = 0; LT.retryAt = 0;
+  LT.peer = null; LT.role = ""; LT.code = ""; LT.host = null; LT.members = []; LT.hostPlf = null; LT.reqs = []; LT.reqPage = 0; LT.lead = 0; LT.conns = new Map(); LT.lostAt = 0; LT.retryAt = 0;
   SHELL.follow = false;
   ltPlSig = "";
   if (guestPl) { guestPl = null; renderList(); }  // back to my own playlist
@@ -573,11 +598,19 @@ function ltKeep() {
 /* miss: rooms that exist (their slot id is taken) but sent no card in time — couldn't connect · err: no list at all */
 const LTS = {peer: null, rooms: null, busy: false, at: 0, done: "", again: false, wait: null, miss: 0, err: "", unavail: null};
 const LT_SCAN_MAX = 12000;  // user report: a room missing from the list — the old fixed 4 s was too short on slow networks
+/* a failed look tries again by itself (user request 2026-11-15): up to 3 times, 4 s apart — the 새로고침 button starts over */
+const LT_SCAN_RETRY = 3;
+function ltScanRetry() {
+  if (!LTS.err && !LTS.miss) { LTS.retry = 0; return; }
+  if ((LTS.retry || 0) >= LT_SCAN_RETRY) return;
+  LTS.retry = (LTS.retry || 0) + 1;
+  clearTimeout(LTS.retryT); LTS.retryT = setTimeout(() => ltScan(), 4000);
+}
 function ltScan(again) {
   if (LTS.busy) { if (again) LTS.again = true; return LTS.wait; }  // a scan already running: one more right after (state changed meanwhile)
   LTS.busy = true; LTS.at = Date.now(); ltRenderRooms();
   return LTS.wait = new Promise(async res => {
-    try { await ltLoadPeerJs(); } catch (e) { LTS.busy = false; LTS.rooms = LTS.rooms || []; LTS.err = e.message; ltRenderRooms(); return res(); }
+    try { await ltLoadPeerJs(); } catch (e) { LTS.busy = false; LTS.rooms = LTS.rooms || []; LTS.err = e.message; ltRenderRooms(); ltScanRetry(); return res(); }
     const found = new Map(), open = new Set();  // open: slots not answered yet (no card, not reported empty)
     let fin = false;
     const finish = (err = "") => {
@@ -588,6 +621,7 @@ function ltScan(again) {
       if (open.size === LT_SLOTS) { ltScanPeerDrop(); LTS.miss = 0; LTS.err = "같이듣기 연결 서버에서 답이 없습니다 — 잠시 뒤 새로고침해 주세요"; }
       ltRender();
       if (LTS.again) { LTS.again = false; return ltScan().then(res); }
+      ltScanRetry();
       res();
     };
     const settle = i => { open.delete(i); if (!open.size) finish(); };  // everything answered → done at once
@@ -648,13 +682,21 @@ function ltScanPeerDrop() { const p = LTS.peer; LTS.peer = null; if (p) try { p.
 function ltRenderRooms() {
   const ul = $("ltRooms"), rooms = LTS.rooms;
   $("ltRefresh").disabled = LTS.busy;
-  $("ltScanAt").textContent = LTS.busy ? "찾는 중…" : LTS.done ? `마지막 갱신 ${LTS.done}` : "";
+  $("ltScanAt").textContent = LTS.busy ? "찾는 중…" : LTS.done ? `마지막 갱신 ${String(LTS.done).split(" ").pop()}` : "";  // time only — the row broke (user request 2026-11-15)
   // 'ltempty', not 'empty': the page's global .empty (main song list) is centred with a 60px top margin
   // user report: a failed look said "열린 방이 없습니다" — say what went wrong instead
   const note = LTS.busy ? "" : LTS.err ? `<li class="ltempty">${esc(LTS.err)}</li>`
     : LTS.miss ? `<li class="ltempty">방 ${LTS.miss}개에 연결하지 못했습니다 (네트워크 — 새로고침해 보세요)</li>` : "";
+  // 5 rooms at a time, more → pages (user request 2026-11-15, like the requests)
+  const per = ltRoomPage();
+  const pages = Math.max(1, Math.ceil((rooms ? rooms.length : 0) / per));
+  LTS.page = Math.min(LTS.page || 0, pages - 1);
+  $("ltRoomPager").innerHTML =  // always shown (user request 2026-11-15) — one page: both arrows disabled
+    `<button data-p="-1"${LTS.page ? "" : " disabled"}>‹</button>${LTS.page + 1} / ${pages}<button data-p="1"${LTS.page < pages - 1 ? "" : " disabled"}>›</button>`;
   if (!rooms || !rooms.length) { ul.innerHTML = !rooms || LTS.busy ? "" : note || `<li class="ltempty">열린 방이 없습니다</li>`; return; }  // while looking: the header says 찾는 중…
-  ul.innerHTML = note + rooms.map((r, i) => {
+  const from = LTS.page * per;
+  ul.innerHTML = note + rooms.slice(from, from + per).map((r, j) => {
+    const i = from + j;
     const here = LT.role && r.code === LT.code;
     return `<li class="ltroom${here ? " here" : ""}">
       <span class="who">${ltLockSvg(r.open)} ${esc(ltRoomName(r))}</span>
@@ -663,6 +705,19 @@ function ltRenderRooms() {
     </li>`;
   }).join("");
 }
+/* rooms a page (user request 2026-11-15): 3 on the web (the panel got too long) · the phone page shows as many as fit */
+const LT_ROOM_ROW = 52;  // a room row + its gap (css px) until a drawn row can be measured
+function ltRoomPage() {
+  const d = $("listenDlg");
+  if (!document.body.classList.contains("m") || !d.open) return 3;
+  const f = document.documentElement.getBoundingClientRect().width / document.documentElement.offsetWidth || 1;
+  const body = d.querySelector(".dlg-body"), pager = $("ltRoomPager");
+  const room = (body.getBoundingClientRect().bottom - $("ltRooms").getBoundingClientRect().top) / f - pager.offsetHeight - 24;
+  const row = $("ltRooms").querySelector(".ltroom"), rowH = row ? row.offsetHeight + 6 : LT_ROOM_ROW;
+  return Math.max(1, Math.floor(room / rowH));
+}
+addEventListener("resize", () => { if ($("listenDlg").open) ltRenderRooms(); });
+$("ltRoomPager").addEventListener("click", e => { const b = e.target.closest("button[data-p]"); if (!b) return; LTS.page = (LTS.page || 0) + +b.dataset.p; ltRenderRooms(); });
 const ltRoomName = r => r.title || `${r.name || "이름 없음"}님의 방`;  // older players send no title
 $("ltRooms").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
@@ -671,13 +726,19 @@ $("ltRooms").addEventListener("click", e => {
   if (ltNeedName()) return;
   LT.ask = r.code; LT.status = ""; ltRender(); $("ltPwIn").focus();  // secret room: password first
 });
-$("ltRefresh").onclick = () => ltScan();
+$("ltRefresh").onclick = () => { LTS.retry = 0; ltScan(); };
 
 /* ---------- 화면 ---------- */
 function ltRender() {
   const b = $("btnListen"), n = LT.members.length, rooms = LTS.rooms ? LTS.rooms.length : 0;
   b.classList.toggle("on", !!LT.role);
-  b.textContent = "🎧 같이듣기" + (rooms ? ` · 방 ${rooms}개` : "") + (LT.role ? ` · 내 방 ${n || 1}명` : "");
+  b.classList.toggle("live", rooms > 0);  // a room is open → a moving wave on the button (user request 2026-11-15)
+  b.classList.toggle("reqwait", LT.role === "host" && LT.reqs.some(r => r.state === "wait"));  // blinks (also the phone menu's 같이듣기)
+  // open rooms = a small count badge on the icon (user request 2026-11-15: icon + name like the phone menu); the tooltip says it in full
+  const cnt = [rooms ? `방 ${rooms}개` : "", LT.role ? `내 방 ${n || 1}명` : ""].filter(Boolean).join(" · ");
+  $("ltBadge").hidden = !rooms;
+  $("ltBadge").textContent = rooms > 99 ? "99+" : rooms;
+  b.title = "같이듣기 — 방을 만들면 나오는 번호를 넣은 사람과 같은 곡을 같은 위치로 같이 들음" + (cnt ? ` (${cnt})` : "");
   $("ltIdle").hidden = !!LT.role;
   $("ltRoom").hidden = !LT.role;
   $("ltStatus").textContent = LT.status;
@@ -698,9 +759,24 @@ function ltRender() {
   for (const id of ["btnPlay", "btnPrev", "btnNext", "seek", "btnPlayView", "btnShuffle", "btnRepeat", "btnEdit"]) $(id).disabled = guest;
   document.body.classList.toggle("lt-guest", guest);
   ltRenderRooms();
+  // web: the room card only while the 같이듣기 panel is folded (user request 2026-11-15 — the panel shows the room itself)
+  /* web (user request 2026-11-15): in a room, folding keeps the room card itself in place (only 방 만들기 · 열린 방 and the
+     panel's border fold away) — so the small playlist card is the phone's only */
+  const web = !document.body.classList.contains("m"), d = $("listenDlg");
+  if (web && LT.role && !ltRender.wasIn) d.classList.add("fold");  // just entered a room (joined or made one): fold to the room card (user request 2026-11-15)
+  ltRender.wasIn = !!LT.role;
+  if (web && LT.role && !d.open) { d.classList.add("fold"); d.show(); }  // joined while folded (e.g. by a link)
+  if (web && !LT.role && d.classList.contains("fold")) { d.classList.remove("fold"); d.close(); }  // left: nothing to keep
+  $("ltCard").hidden = !LT.role || web;
+  b.classList.toggle("open", web && d.open && !d.classList.contains("fold"));  // unfolded: the button looks selected (user request 2026-11-15)
+  if (typeof renderPlFilter === "function") renderPlFilter();  // guest: the playlist's filter = the host's
   if (!LT.role) return;
   const hostName = LT.members[0] || (LT.role === "host" ? LT.me : "");
   const title = LT.title || (hostName ? `${hostName}님의 방` : "");
+  // the room above the playlist (user request 2026-11-15): title · how many (no names) · guest hint — click = this window
+  $("ltCard").innerHTML = `<div class="lcr">${ltLockSvg(LT.open)}<b class="tt">${esc(title)}</b><span class="n">참여자 ${(LT.members.length || 1)}명</span>`
+    + `</div>`
+    + (LT.role === "guest" ? `<div class="lch">곡 재생 제어는 방장만 가능합니다.</div>` : "");
   if (!LT.titleEdit) $("ltRoomTitle").innerHTML = `${ltLockSvg(LT.open)}<span class="tt">${esc(title)}</span>${
     LT.role === "host" ? `<button type="button" class="ltpen" title="방 제목 바꾸기">${ltPenSvg()}</button>` : ""}`;  // user request: lock always before the title, big and centred · host: ✏ renames
   $("ltRoomHint").textContent = "곡 재생 제어는 방장만 가능합니다.";
@@ -708,6 +784,12 @@ function ltRender() {
   const mem = LT.members.length ? LT.members : [hostName];
   $("ltMemCount").textContent = `${mem.length}명`;
   $("ltMembers").innerHTML = mem.map((m, i) => `<li class="${ltKey(ltNick(m)) === ltKey(LT.me) ? "me" : ""}">${i === 0 ? ltCrownSvg() : ""}${esc(ltNick(m))}</li>`).join("");
+  // 방장의 재생목록 필터 (user request 2026-11-15) — host: mine · guest: what the host sent
+  const plf = LT.role === "host" ? PLF : LT.hostPlf;
+  // user request 2026-11-15: no filter → just '필터 없음' · a filter → the header with a thin 필터 저장하기 at its right end
+  $("ltPlf").innerHTML = plf && plf.length
+    ? `<div class="ltplfhead"><span>현재 재생중인 목록의 필터</span><button type="button" class="ltsmall ltplfsave" title="이 필터를 저장된 필터에 넣음 (곡 검색 › 저장된 필터)">필터 저장하기</button></div>` + plfHtml(plf)
+    : '<div class="ltplfnone">필터 없음</div>';
   $("ltLeave").textContent = LT.role === "host" ? "방 닫기" : "나가기";
   ltRenderReqs();
 }
@@ -736,10 +818,11 @@ function ltTitleEdit() {
 }
 $("ltRoomTitle").addEventListener("click", e => { if (e.target.closest(".ltpen")) ltTitleEdit(); });
 const LT_REQ_STATE = {wait: "요청중", queued: "재생대기", playing: "재생중"};
-const LT_REQ_PAGE = 5;  // user request: 5 at a time, more → pages
+const LT_REQ_PAGE = 3;  // 3 at a time, more → pages (user request 2026-11-15: the panel got too long — was 5)
 function ltRenderReqs() {
   if (!LT.role) return;
   const host = LT.role === "host", n = LT.reqs.length, pages = Math.max(1, Math.ceil(n / LT_REQ_PAGE));
+  $("btnListen").classList.toggle("reqwait", host && LT.reqs.some(r => r.state === "wait"));  // accepted / refused → stops blinking
   LT.reqPage = Math.min(LT.reqPage || 0, pages - 1);
   $("ltReqQ").hidden = host;  // user request: the host has no request search (adds to the queue directly)
   const shown = LT.reqs.slice(LT.reqPage * LT_REQ_PAGE, (LT.reqPage + 1) * LT_REQ_PAGE);
@@ -747,7 +830,7 @@ function ltRenderReqs() {
       <span class="t">${esc(r.title)}${r.artist ? ` <span class="a">${esc(shortName(r.artist))}</span>` : ""}</span>
       <span class="by">${esc(r.by)}</span>
       <span class="st ${r.state}">${LT_REQ_STATE[r.state] || r.state}</span>
-      ${host && r.state === "wait" ? `<button class="primary ok">수락</button><button class="no">거절</button>` : ""}
+      ${host && r.state === "wait" ? `<button class="primary ok blink">수락</button><button class="no">거절</button>` : ""}
     </li>`).join("") : host ? `<li class="ltempty">신청곡이 없습니다</li>` : "";  // guest: nothing (search box below) · host: no search, so say it
   $("ltReqPager").innerHTML = pages > 1
     ? `<button data-p="-1"${LT.reqPage ? "" : " disabled"}>‹</button>${LT.reqPage + 1} / ${pages}<button data-p="1"${LT.reqPage < pages - 1 ? "" : " disabled"}>›</button>` : "";
@@ -855,17 +938,32 @@ $("ltReqs").addEventListener("click", e => {
   if (e.target.closest(".ok")) ltReqAccept(li.dataset.id);
   else if (e.target.closest(".no")) ltReqDrop(li.dataset.id);
 });
+/* web (user request 2026-11-15): the 같이듣기 window opens in place under the 같이듣기 · 검색 · 노래방 row, not as a popup —
+   the 같이듣기 button opens / closes it. The phone keeps its page (mobile_view.js). */
+{
+  const d = $("listenDlg"), phoneOrModal = d.showModal.bind(d);
+  d.showModal = () => { d.classList.remove("fold"); return document.body.classList.contains("m") ? phoneOrModal() : d.open || d.show(); };
+}
+new MutationObserver(() => ltRender()).observe($("listenDlg"), {attributes: true, attributeFilter: ["open"]});  // fold / unfold → the room card
 function ltOpenDlg() {
   if (!$("listenDlg").open) $("listenDlg").showModal();
   ltRender();
 }
 $("btnListen").onclick = () => {
+  const d = $("listenDlg");
+  if (!document.body.classList.contains("m") && d.open) {  // web: the button folds it again
+    if (!LT.role) return d.close();
+    d.classList.toggle("fold"); return ltRender();  // in a room: fold to the room card / unfold
+  }
+  ltOpenFresh();
+};
+function ltOpenFresh() {
   if (!LT.role) {  // user request: the nickname field always starts empty
     $("ltName").value = ""; $("ltNameErr").hidden = true; $("ltName").closest(".ltfield").classList.remove("need");
   }
   ltOpenDlg();
   if (!LT.role) (ltName() ? $("ltTitle") : $("ltName")).focus();
-};
+}
 $("ltLock").onclick = () => { LT.lock = !LT.lock; ltRender(); if (LT.lock) $("ltNewPw").focus(); };
 $("ltName").addEventListener("input", () => {
   store.set("reportWho", ltName());
@@ -879,13 +977,23 @@ $("ltNewPw").addEventListener("keydown", e => { if (e.key === "Enter") $("ltMake
 $("ltPwGo").onclick = () => { const pw = $("ltPwIn").value; if (!pw) return $("ltPwIn").focus(); $("ltPwIn").value = ""; ltJoin(LT.ask, pw); };
 $("ltPwIn").addEventListener("keydown", e => { if (e.key === "Enter") $("ltPwGo").click(); });
 $("ltPwNo").onclick = () => { LT.ask = ""; $("ltPwIn").value = ""; LT.status = ""; ltRender(); };
-$("ltCopyLink").onclick = async () => {
-  await copyText(ltLink(LT.code));
-  LT.status = "방 바로가기가 복사되었습니다.";
-  ltRender();
-};
+/* 필터 저장하기 (user request 2026-11-15): the room's playlist filter → 저장된 필터 (the same list the search window saves to) */
+$("ltPlf").addEventListener("click", async e => {
+  if (!e.target.closest(".ltplfsave")) return;
+  const plf = LT.role === "host" ? PLF : LT.hostPlf;
+  const groups = (plf || []).filter(g => g.c && g.c.length).map(({x, c}) => ({x, c}));
+  if (!groups.length) return;
+  const name = await uiPrompt("저장할 필터 이름", fSummary(groups).slice(0, 40), "필터 이름");
+  if (!name) return;
+  store.set("f.saved", [...store.get("f.saved", []).filter(f => f.name !== name), {name, groups}]);  // 같은 이름이면 덮어씀
+  LT.status = `필터 '${name}' 을(를) 저장했습니다.`; ltRender();
+});
 $("ltLeave").onclick = () => { const code = LT.role === "host" ? LT.code : ""; $("ltName").value = ""; ltLeave(false); ltRescan(code, 800); };  // back to an empty nickname
 $("ltClose").onclick = () => $("listenDlg").close();
+$("ltCard").addEventListener("click", async e => {
+  ltOpenFresh();  // opens, never folds
+});
+$("ltCard").addEventListener("keydown", e => { if (e.key === "Enter") ltOpenFresh(); });
 
 /* 바로 들어오는 링크 (#lt=<번호>): 시작 창(토큰)·불러오기가 끝난 뒤 같이듣기 창을 열고 들어감 */
 function ltFromLink() {

@@ -15,7 +15,8 @@
    주소: ?yt=<유튜브 영상 번호> 또는 ?nico=<sm…> · &start=<초> · &mute=1 · &vol=<0~100> · &id=<부모가 구분하는 번호>
    · &cmt=0: 니코니코 댓글 끄기 (기본 켬) · 유튜브 자막은 늘 끄고 시작
    · &info=1: 니코니코 영상 정보만 알리고 재생하지 않음 (플레이어 곡 정보 줄의 재생수)
-   · cmd load {yt|nico, start, play}: next song in the same player (reused so playback goes on in a hidden tab) */
+   · cmd load {yt|nico, start, play}: next song in the same player (reused so playback goes on in a hidden tab)
+   · ?ytlist=<재생목록 번호>: 재생 없이 그 재생목록의 영상 번호만 {ev: "list", ids} */
 const q = new URLSearchParams(location.search), id = q.get("id") || "";
 const up = m => parent.postMessage({bridge: 1, ver: 3, id, ...m}, "*");  // ver 2: cmd "load" (YouTube) · ver 3: also Niconico  // 부모는 파일로 연 화면 (origin 이 없음) → "*"
 const start = +q.get("start") || 0, startMuted = q.get("mute") === "1", startVol = q.has("vol") ? +q.get("vol") : 100;
@@ -121,6 +122,23 @@ if (q.get("yt")) {
        volume: v => { vol = v; send("volumeChange", {volume: v / 100}); }, mute: on => { muted = on; send("mute", {mute: on}); },
        comments: on => { cmt = on; send("commentVisibilityChange", {commentVisibility: on}); },
        load: v => { if (!v.nico) return; cur = {nico: v.nico, start: +v.start || 0, play: !!v.play}; dur = 0; f.contentWindow.location.replace(url(cur)); }};  // replace: no history entry per song (phone app's back button stepped the video back — user report)
+} else if (q.get("ytlist")) {
+  // ?ytlist=<유튜브 재생목록 번호>: 그 재생목록의 영상 번호만 알림 {ev: "list", ids} — 재생 안 함
+  // (플레이어 오프라인 모드의 유튜브 재생목록 — user request 2026-11-15; 플레이어 화면은 youtube.com 을 직접 못 읽음)
+  const s = document.createElement("script");
+  s.src = "https://www.youtube.com/iframe_api";
+  s.onerror = () => up({ev: "error", code: "api"});
+  document.head.appendChild(s);
+  window.onYouTubeIframeAPIReady = () => {
+    new YT.Player("p", {host: "https://www.youtube-nocookie.com", playerVars: {listType: "playlist", list: q.get("ytlist"), autoplay: 0, controls: 0},
+      events: {onReady: e => {
+        let n = 0;
+        const t = setInterval(() => {
+          const l = e.target.getPlaylist();
+          if ((l && l.length) || ++n > 40) { clearInterval(t); up(l && l.length ? {ev: "list", ids: l} : {ev: "error", code: "empty"}); }
+        }, 250);
+      }}});
+  };
 } else {
   up({ev: "error", code: "no-video"});
 }

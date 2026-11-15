@@ -2,7 +2,9 @@
 button{padding:6px 12px}
 select,input[type=text],input[type=search]{padding:6px 8px}
 html,body{height:100%}
-.app{display:grid;grid-template-columns:340px minmax(0,1fr);height:calc(100vh / var(--ui-zoom))}  /* 화면을 줄여도(--ui-zoom) 창 높이에 꽉 차게 */
+.app{display:grid;grid-template-columns:clamp(340px,var(--side-w,340px),70%) minmax(0,1fr);height:calc(100vh / var(--ui-zoom))}  /* 화면을 줄여도(--ui-zoom) 창 높이에 꽉 차게 */
+/* list width (user request 2026-11-15, web): 340px is the smallest, dragging the list tab sideways widens/narrows it
+   (--side-w, remembered; at most 70% of the window) — like the video tab */
 .app.nolist{grid-template-columns:minmax(0,1fr)}
 .app.nolist .side{display:none}
 .now{position:relative}
@@ -11,19 +13,32 @@ html,body{height:100%}
 #btnList::before{content:"";position:absolute;top:0;bottom:0;left:-2px;width:3px;background:var(--card)}  /* covers the list's border line next to the tab — left:-1px alone left a thin line at zoomed sizes / after re-layout (user request) */
 #btnList svg{transform:rotate(90deg)}  /* list fold tab on the left edge, same grip turned (user request) */
 #btnList.on{color:var(--text)}
+#btnList{touch-action:none}
+#btnList:not(.on){cursor:ew-resize}  /* list shown: drag sets its width */
+#btnList.drag{color:var(--accent)}
 /* 좁은 창: 목록 위·재생 아래 한 칸 배치. 기준 너비는 화면 축소(--ui-zoom .8)에 맞춘 값 (860px × .8 — 미디어 쿼리는 줄이기 전 창 너비로 잼) */
-@media (max-width:688px){.app{grid-template-columns:minmax(0,1fr);height:auto}.side{max-height:45vh;border-right:none}.now,.toolbar{padding-left:16px;padding-right:16px}#lyrics{padding:16px 16px 40vh;max-height:70vh}}
+@media (max-width:688px){.app{grid-template-columns:minmax(0,1fr);height:auto}.side{max-height:45vh;border-right:none}.now,.toolbar{padding-left:16px;padding-right:16px}#lyrics{padding:16px 16px 40vh;max-height:70vh}.seek{min-width:0;flex-basis:100%;order:5}}
 /* 곡 목록 */
 .side{display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--card);min-height:0}
 .side-head{padding:14px 14px 10px;border-bottom:1px solid var(--line)}
 .side-head h1{font-size:18px;margin:0}
-.side-head h1.rainbow{display:inline-block;font-size:22px;font-weight:900;letter-spacing:1px;color:transparent;-webkit-background-clip:text;background-clip:text;
+.side-head h1.rainbow{display:inline-block;font-size:22px;font-weight:900;letter-spacing:1px}
+.side-head h1 .t-rb{position:relative;color:transparent;-webkit-background-clip:text;background-clip:text;
   background-image:linear-gradient(135deg,#ff0000 0%,#ff8000 17%,#ffff00 33%,#00c000 50%,#0080ff 67%,#4000ff 83%,#c000ff 100%)}
+/* black outline (not pure black — user request 2026-11-15): a copy of the text with a thick stroke right under the rainbow
+   one, so only its outer half shows and the rainbow letters stay fully bright (a stroke on the rainbow text itself dimmed it) */
+.side-head h1 .t-full{position:relative;display:inline-block}
+.side-head h1 .t-ol{position:absolute;left:0;top:0;color:#141414;-webkit-text-stroke:4px #141414;pointer-events:none}
 /* title swap: t-simple carries [hidden] in the html, so an old cached css still shows one title only */
 body.simple .side-head h1 .t-full{display:none}
 body.simple .side-head h1 .t-simple{display:inline}
-body.simple .side-head h1.rainbow{background:none;color:var(--text);-webkit-text-fill-color:currentColor}  /* 간단: plain text color */
-.side-head .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+body.simple .side-head h1.rainbow{color:var(--text)}  /* 간단: plain text color */
+.side-head .top{display:flex;justify-content:space-between;align-items:center;gap:4px;margin-bottom:10px}
+.side-head .top h1{margin-right:auto;flex:none;white-space:nowrap}
+/* 온/오프라인 in the title row (user request 2026-11-15, like the phone) — compact so the row fits the list's smallest width */
+body:not(.m) .side-head .top .onoff{align-self:center;flex:none;min-height:26px}
+body:not(.m) .side-head .top .onoff .lb{min-width:40px;padding:1px 6px 0;font-size:11.5px}
+.kmrow #btnSimple{flex:none}
 .filters{display:flex;gap:6px;margin-top:8px}
 .filters select{flex:1}
 /* 정렬 줄 (필터 아래): 정렬 순서 + 노래방 번호 보이기 */
@@ -43,12 +58,17 @@ body.simple .side-head h1.rainbow{background:none;color:var(--text);-webkit-text
 #btnFilter .chev{transition:transform .15s}
 #btnFilter.open .chev{transform:rotate(180deg)}
 /* 목록 정보 줄: 곡 수 | 재생 중인 곡 찾기 · 전체 작업 */
+/* 같이듣기 button: counts on their own small line, never split mid-word (user request 2026-11-15) */
+.plq{display:block;width:100%;box-sizing:border-box;margin-top:8px;height:32px}  /* 재생목록에서 찾기 */
 .libinfo{font-size:12px;color:var(--muted);margin-top:10px;display:flex;justify-content:space-between;gap:6px;align-items:center;flex-wrap:wrap}
 .libinfo b{color:var(--text);font-size:13px}
 .libinfo .acts{display:flex;gap:4px;flex-wrap:wrap}
 .libinfo button{padding:2px 8px;font-size:12px}
 #btnFindCur{padding:2px 6px;font-size:14px;line-height:1.2}
 #btnPlayView{white-space:nowrap}
+#btnPlClear,#btnPlayView{display:inline-flex;align-items:center;justify-content:center;min-width:30px}  /* icons only (user request 2026-11-15) */
+#btnPlClear svg{width:13px;height:13px}
+#btnPlClear[hidden],#btnPlayView[hidden]{display:none}
 #list{overflow-y:auto;flex:1;min-height:0}
 .item{padding:8px 14px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:10px;align-items:center}  /* 줄 높이가 모두 같아야 함 (곡 목록은 보이는 줄만 그림 — player_screen.js renderRows) */
 .item:hover{background:var(--chip)}
@@ -84,9 +104,7 @@ body.simple .item .thumb{display:none}  /* 간단 표시: 목록 썸네일 숨�
 .detail span+span::before{content:"·";margin:0 6px}
 .now h2{flex:0 1 auto;font-size:20px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .now .artist{color:var(--muted)}
-.now .dateline{display:flex;align-items:center;gap:8px;margin-bottom:8px;min-height:6px}
-.now .reldate{flex:1;min-width:0;font-size:12px;color:var(--muted)}
-.volbox{flex:none;display:flex;align-items:center;gap:4px}
+.now .reldate{font-size:12px;color:var(--muted);margin-bottom:8px;min-height:6px}
 /* 원곡 영상 (영상 보기를 켜면 맨 위, 곡 정보는 그 아래) */
 #videoBox{background:#000;border-bottom:1px solid var(--line);display:flex;justify-content:center}
 #videoBox[hidden]{display:none}
@@ -114,8 +132,7 @@ body.simple .item .thumb{display:none}  /* 간단 표시: 목록 썸네일 숨�
 /* 영상 숨김(서버 없이 연 화면의 온라인 곡): 중계 플레이어는 소리를 내야 해서 지우지 않고 보이지 않게만 */
 .main:has(#videoBox:not([hidden])){overflow-x:visible;overflow-y:clip}  /* clip only up/down: hidden also cut the list tab poking 1px left over the list border, so the line came back with the video (user request) */
 .main:has(#videoBox:not([hidden])) #lyrics{padding-top:8px;padding-bottom:40px}
-#videoBox iframe,#videoBox .frame>div{width:100%;height:100%;border:0;display:block}a.btn{display:inline-block;padding:6px 12px;border-radius:6px;border:1px solid var(--line);background:var(--card);text-decoration:none;color:var(--text);white-space:nowrap}
-a.btn[hidden]{display:none}
+#videoBox iframe,#videoBox .frame>div{width:100%;height:100%;border:0;display:block}
 /* 영상이 없거나 막힌 곡: mp3 썸네일을 꽉 차게 + 맨 위 가운데에 안내 */
 .vfallback{position:relative;width:100%;height:100%;background:#000 center/cover no-repeat}
 .vfallback .vmsg{position:absolute;left:50%;top:10px;transform:translateX(-50%);max-width:92%;padding:6px 12px;border-radius:8px;
@@ -145,7 +162,11 @@ html[data-theme=light] .rimgs{border-color:rgba(0,0,0,.4)}
 .rimg-list .ri button{position:absolute;top:-6px;right:-6px;width:20px;height:20px;padding:0;border-radius:50%;font-size:11px;line-height:1}
 /* 같이듣기 창 */
 #listenDlg{width:min(460px,94vw)}
-#listenDlg .dlg-body{text-align:left}
+#listenDlg .dlg-body{text-align:left;display:flex;flex-direction:column}
+body.m #listenDlg .dlg-body>.ltsec:last-child{flex:1;display:flex;flex-direction:column}  /* phone page: rooms fill it, pager at the bottom */
+.ltpager.ltroompager{margin:0;padding-top:4px;justify-content:center}  /* right under the rooms (web) · bottom of the page (phone) */
+body.m .ltpager.ltroompager{margin-top:auto}
+.ltpager.ltroompager button:disabled{opacity:.35}
 #listenDlg button{white-space:nowrap;flex:none}
 #listenDlg input[type=text],#listenDlg input[type=password]{height:32px;box-sizing:border-box;text-align:left}
 .ltfield{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
@@ -156,7 +177,9 @@ html[data-theme=light] .rimgs{border-color:rgba(0,0,0,.4)}
 .ltfield.need input{border-color:#ff5a5a;box-shadow:0 0 0 1px #ff5a5a}
 .ltsec{border-top:1px solid var(--line);padding:10px 0 4px}
 .ltsec-head{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:6px}
-.ltsec-head .ltscanat{margin-left:auto;font-size:11.5px;font-weight:400;color:var(--muted)}
+.ltsec-head .ltscanat{margin-left:auto;font-size:11.5px;font-weight:400;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ltsec-head .ltsh{flex:none;white-space:nowrap}
+.ltsec-head .ltref{flex:none;width:26px;height:24px;padding:0;font-size:14px}  /* ↻ only (user request 2026-11-15) */
 .ltsmall{padding:2px 8px;font-size:12px;font-weight:400}
 #listenDlg .ltrow{display:flex;align-items:center;gap:6px;margin:6px 0}
 #listenDlg .ltrow button{height:32px}
@@ -166,7 +189,7 @@ html[data-theme=light] .rimgs{border-color:rgba(0,0,0,.4)}
 #ltTitle{flex:1;min-width:0}
 #ltNewPw{width:7.5em}
 #ltPwIn{width:10em}
-.ltrooms{list-style:none;margin:0;padding:0;max-height:220px;overflow:auto}
+.ltrooms{list-style:none;margin:0;padding:0}  /* 5 a page — no inner scroll (user request 2026-11-15) */
 .ltrooms .ltempty{color:var(--muted);font-size:12.5px;padding:4px 2px}
 .ltrooms:empty{display:none}
 .ltroom{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px}
@@ -176,21 +199,29 @@ html[data-theme=light] .rimgs{border-color:rgba(0,0,0,.4)}
 .ltroom .here{font-size:12px;color:var(--accent);font-weight:600}
 .ltroom.here{border-color:var(--accent);background:var(--accent-soft)}
 /* my room: a card that stands apart from the room list (user request) */
-#ltRoom{position:relative;padding:16px 14px 14px;margin-bottom:16px;border:1px solid var(--accent);border-radius:10px;background:var(--accent-soft)}
-#ltRoom .ltcopy{position:absolute;top:8px;right:8px}
-.ltmemhead{margin-top:12px;font-size:12px;color:var(--muted);text-align:center}
-#ltRoom .hint{text-align:center;margin-top:10px}
-.ltroomtitle{display:flex;align-items:center;justify-content:center;gap:8px;padding:4px 64px 0;font-size:21px;font-weight:700;min-width:0}  /* centred, big (user request) */
-.ltroomtitle .ltico{width:19px;height:19px}
-.ltroomtitle .tt{min-width:0;overflow-wrap:anywhere;text-align:center}  /* long title wraps, never '…' (user request) */
+/* my room (user request 2026-11-15): the playlist's room card look — green border, title · 참여자 on one line, 복사 at the
+   right, the 같이듣기 wave along the bottom; the same information as before */
+#ltRoom{position:relative;overflow:hidden;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:8px 10px 18px;margin-bottom:12px;
+  border:1px solid var(--ok);border-radius:6px;background:var(--accent-soft);font-size:12.5px}
+#ltRoom[hidden]{display:none}
+#ltRoom>*{flex-basis:100%;min-width:0}  /* never wider than the card — a long request pushed it out (user report 2026-11-15) */
+/* requests in the narrow card: title on its own line, requester · state · buttons under it */
+#ltRoom .ltreqlist li{flex-wrap:wrap;gap:4px 6px}
+#ltRoom .ltreqlist .t{flex:1 1 100%}
+#ltRoom .ltleave{position:absolute;top:7px;right:8px;height:22px;padding:0 9px;font-size:11.5px}  /* 나가기 / 방 닫기 (user request 2026-11-15) */
+.ltroomtitle{flex:0 1 auto!important;display:flex;align-items:center;gap:6px;font-size:14.5px;font-weight:700;color:var(--accent);min-width:0}
+.ltroomtitle .ltico{width:15px;height:15px}
+.ltroomtitle .tt{min-width:0;overflow-wrap:anywhere}  /* long title wraps, never '…' (user request) */
+.ltmemhead{flex:1 1 0!important;min-width:0;padding-right:64px;font-size:12.5px;color:var(--muted);white-space:nowrap}
+#ltRoom .hint{margin:2px 0 0;font-size:12.5px;color:var(--muted)}
 .ltpen{flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border:0;border-radius:6px;background:none;color:var(--muted);cursor:pointer}
 .ltpen:hover{color:var(--text);background:var(--chip)}
 #ltTitleIn{width:100%;max-width:340px;height:32px;font-size:17px;font-weight:700;text-align:center}
 .ltpwask{margin-top:10px;padding:10px;border:1px solid var(--accent);border-radius:8px;font-size:13px}
-.ltmembers{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
-.ltmembers li{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;background:var(--chip);font-size:13px}
+.ltmembers{list-style:none;margin:2px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:4px}
+.ltmembers li{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:var(--chip);font-size:12px}
 /* 곡 요청 */
-.ltrq{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.ltrq{margin-top:6px;padding-top:8px;border-top:1px solid var(--line)}
 .ltpager{display:flex;justify-content:flex-end;align-items:center;gap:4px;margin:2px 0 6px;font-size:12px;color:var(--muted)}
 .ltpager:empty{display:none}
 .ltpager button{height:22px;padding:0 7px;font-size:12px}
@@ -227,6 +258,10 @@ html[data-theme=light] .rimgs{border-color:rgba(0,0,0,.4)}
 .ltreqlist .st.queued{color:var(--ok);box-shadow:inset 0 0 0 1px var(--ok)}
 .ltreqlist .st.playing{color:var(--accent-text);background:var(--accent)}
 .ltreqlist button{height:26px;padding:0 10px;font-size:12px}
+/* 신청곡이 기다리는 동안 (방장 — user request 2026-11-15): 수락 · 같이듣기 버튼 · 폰 아래 메뉴 같이듣기가 깜빡임 */
+@keyframes ltblink{50%{box-shadow:0 0 0 3px var(--warn);background:color-mix(in srgb,var(--warn) 35%,transparent)}}
+.ltreqlist .ok.blink,#btnListen.reqwait,.mnav button.blink{animation:ltblink 1s ease-in-out infinite}
+.mnav button.blink{color:var(--warn)}
 .ltmembers li.me{box-shadow:inset 0 0 0 1px var(--accent);font-weight:600}
 .ltcrown{color:#facc15;flex:none;vertical-align:-2px}  /* host: yellow crown (user request) */
 .ltstatus{margin:10px 0 0;color:var(--warn)}
@@ -237,30 +272,96 @@ body.lt-guest #streamHost{pointer-events:none}
 /* 썸네일 크게 보기 */
 #coverDlg{width:auto;max-width:94vw;background:transparent;border:0}
 /* 노래방 번호 랜덤 추천 (user request 2026-11-15): info off → only the number, big in the middle */
-#karaDlg{width:min(640px,94vw)}
-.side-tools{margin-top:6px}.side-tools button{flex:1}
+#karaDlg{width:min(720px,94vw)}
+.side-tools{margin-top:6px}.side-tools button{flex:1 1 0;min-width:0;white-space:nowrap}
+/* 같이듣기 · 검색 · 노래방 (user request 2026-11-15): like the phone's bottom menu — the same icons, bigger, centred, name below */
+.side-tools .tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:9px 4px 8px;font-size:12.5px;color:var(--muted)}
+.side-tools .tile:hover{color:var(--text)}
+.side-tools .tile.on{color:var(--accent)}
+.side-tools .tile.open{color:var(--text);font-weight:700;border-color:var(--accent);background:color-mix(in srgb,var(--accent) 22%,transparent)}  /* 같이듣기 panel unfolded (user request 2026-11-15) — the phone menu's 'cur' look */
+.side-tools .tile .ico{position:relative;display:inline-flex}
+.side-tools .tile svg{width:24px;height:24px}
+/* open rooms: a count badge on the 같이듣기 icon */
+.nbadge{position:absolute;top:-5px;right:-10px;min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;
+  background:var(--ok);color:#0b2414;font-size:10.5px;font-weight:800;line-height:16px;text-align:center}
+.nbadge[hidden]{display:none}
 .khead{display:flex;align-items:center;justify-content:space-between;gap:8px}
 #karaMode{font-weight:400;font-size:13px}#karaMode b{margin-left:4px}
+.kmrow{display:flex;gap:6px;margin-top:8px}  /* 노래방 모드 on the playlist (user request 2026-11-15) */
+.kmrow button{flex:1;padding:4px 10px;font-size:12.5px}.kmrow button b{margin-left:4px}
+.kmrow select{flex:none;font-size:12.5px;padding:3px 6px}
+.kmrow select[hidden]{display:none}
+body.m .libinfo{flex-wrap:nowrap}  /* one line: the song count gives way */
+body.m #libInfo{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+body.m .libinfo .acts{flex-wrap:nowrap;flex:none}
+body.m .libinfo .kmrow{margin:0 0 0 auto;flex:none}  /* phone: on the 처음부터 · ◎ row, right before them (mobile_view.js) */
+body.m .libinfo .kmrow button{flex:none;padding:2px 8px;font-size:12px}
+body.m .libinfo .kmrow select{padding:2px 4px;font-size:12px}
 .pct.kno{font-size:12px;font-weight:700;color:var(--accent)}
+/* 노래방 번호 in the machine's color (user request 2026-11-15) — same tint as the karaoke chips; 간단 mode keeps the plain look */
+body:not(.simple) .pct.kno,body:not(.simple) #karaNum:not(.ask){color:color-mix(in srgb,var(--bc) var(--tint-k),var(--tint-to))}
 .kmach{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+/* draw options (user request 2026-11-15): under the machines — the app's OFF | ON switch (like 온/오프라인 and the phone
+   settings) with its name, 추첨 기록 a normal button with a history icon */
+.kopts{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:8px 14px;margin-top:12px}
+.kopt{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer}
+.kopt .onoff{min-height:26px}
+.kopt .onoff .lb{min-width:36px;padding:1px 8px 0;font-size:11.5px}
+.khist{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;font-size:13px}
+.khist svg{width:15px;height:15px}
+body.m .kopts{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px}
+body.m .kopt{justify-content:space-between}
+body.m .khist{justify-content:center}
 .kmach button{min-width:84px;font-weight:600}
 .kmach .kc{margin-left:6px;font-size:11px;font-weight:400;color:var(--muted)}
-.kshow{min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:12px 0}
-.knum{font-size:clamp(72px,16vw,150px);font-weight:800;line-height:1.05;letter-spacing:.02em;font-variant-numeric:tabular-nums;cursor:pointer;user-select:text}
+.kshow{min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:safe center;gap:10px;text-align:center;padding:12px 0}
+.knum{font-size:clamp(72px,16vw,150px);font-weight:800;line-height:1.05;letter-spacing:.02em;font-variant-numeric:tabular-nums;user-select:text}
+.kcover{width:min(520px,90%);aspect-ratio:16/9;object-fit:cover;border-radius:10px;background:var(--chip)}  /* 곡 정보 on: thumbnail above the number (user request 2026-11-15) */
+.kcover[hidden]{display:none}
+.kshow.redraw{cursor:pointer}  /* a number shown: a tap anywhere in the middle draws again */
+.kshow .kdraw{min-width:140px;padding:10px 28px;font-size:17px;font-weight:700;margin-top:6px;
+  color:var(--accent);background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}  /* light, not the full primary look (user request 2026-11-15) */
+.kshow .kdraw[hidden],.kagain[hidden]{display:none}
+.kagain{font-size:12px;color:var(--muted)}
+/* 지난 추첨 기록 (중복 방지 button) */
+#karaHistDlg{width:min(420px,94vw)}
+/* web popups keep one height — the tallest their content gets (measured 2026-11-15), so buttons that add or remove parts
+   never resize the window (user request); more than that scrolls inside. Phone pages are full-height anyway. */
+body:not(.m) #karaDlg[open],body:not(.m) #listenDlg[open],body:not(.m) #reportDlg[open]{display:flex;flex-direction:column;max-height:calc(100vh / var(--ui-zoom) - 40px)}
+body:not(.m) #karaDlg .dlg-body,body:not(.m) #listenDlg .dlg-body,body:not(.m) #reportDlg .dlg-body{flex:1;min-height:0;overflow-y:auto}
+body:not(.m) #karaDlg{height:830px}  /* thumbnail + a 2-line title + 작곡 · 노래, options under the machines (measured 2026-11-15) */
+body:not(.m) #karaDlg .dlg-body{display:flex;flex-direction:column}
+body:not(.m) #karaDlg .kshow{flex:1}
+/* web: 같이듣기 opens in place under the 같이듣기 · 검색 · 노래방 row (user request 2026-11-15) — one height, the rest scrolls inside */
+body:not(.m) #listenDlg{position:static;width:auto;height:auto;margin:8px 0 0;border-radius:8px;box-shadow:none}
+body:not(.m) #listenDlg[open]:not(.fold){border-color:var(--accent)}
+/* folded in a room (web): only the room card stays — no panel border, no 방 만들기 · 열린 방 (user request 2026-11-15) */
+body:not(.m) #listenDlg.fold{border:0;background:none;box-shadow:none}
+body:not(.m) #listenDlg.fold .dlg-body{padding:0;overflow:visible}
+body:not(.m) #listenDlg.fold .dlg-body>:not(#ltRoom){display:none}
+body:not(.m) #listenDlg.fold #ltRoom{margin-bottom:0}  /* unfolded: the same focused border as the 같이듣기 button (user request 2026-11-15) */  /* as tall as its content (user request 2026-11-15: no empty space) */
+/* web: the room list is always exactly 3 rooms tall (3 a page — 0 to 3 rooms never resize it; user request 2026-11-15) */
+body:not(.m) .ltrooms{height:calc(3 * 51px);overflow:hidden}
+body:not(.m) .ltrooms:empty{display:block}
+body:not(.m) #listenDlg .dlg-head{display:none}  /* no title / ✕ on the web: the 같이듣기 button folds it (user request 2026-11-15) */
+body:not(.m) #listenDlg .dlg-body{padding:10px 12px}
+body:not(.m) #listenDlg .dlg-foot{padding:8px 12px}
+body:not(.m) #reportDlg{height:774px}  /* 텍스트 대치 제안 + 5 images */
+.khlist{height:calc(15 * 32px + 2px);box-sizing:border-box;overflow-y:auto;border:1px solid var(--line);border-radius:8px}
+.khrow{height:32px;box-sizing:border-box;display:flex;gap:10px;align-items:baseline;padding:6px 10px;border-bottom:1px solid var(--line);font-size:13px}
+.khrow:last-child{border-bottom:0}
+.kht,.khm{flex:none;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.khm{min-width:56px}
+.khn{flex:none;min-width:52px;font-variant-numeric:tabular-nums}
+body:not(.simple) .khn{color:color-mix(in srgb,var(--bc) var(--tint-k),var(--tint-to))}
+.khs{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.khempty{padding:16px;text-align:center;color:var(--muted);font-size:13px}
 .knum.ask{font-size:18px;font-weight:400;color:var(--muted);cursor:default}
 .ksong .kt{font-size:22px;font-weight:700}
 .ksong .ko{color:var(--muted)}
 .ksong .kp{font-size:13px;color:var(--muted);margin-top:4px}
 #karaNote{text-align:center;min-height:1.5em;margin:0}
 /* 곡 전체 정보 (user request 2026-11-15) */
-#infoDlg{width:min(720px,94vw)}
-#infoBody{max-height:66vh;overflow:auto}
-#infoBody h4{margin:10px 0 4px;font-size:13px;color:var(--muted)}#infoBody h4:first-child{margin-top:0}
-.infotbl{width:100%;border-collapse:collapse;font-size:12.5px}
-.infotbl th,.infotbl td{padding:3px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-.infotbl th{width:150px;color:var(--muted);font-weight:600;font-family:ui-monospace,Consolas,monospace;white-space:nowrap}
-.infotbl td{overflow-wrap:anywhere;white-space:pre-wrap;user-select:text}
-.infotbl td.empty{color:var(--muted)}
 #coverDlg img{display:block;max-width:94vw;max-height:88vh;border-radius:10px;cursor:zoom-out}
 /* 필터 패널: 조건 고르기 (그룹 만들기 · 가나다 · 칸별 선택) */
 .fpanel{margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
@@ -300,7 +401,11 @@ body.lt-guest #streamHost{pointer-events:none}
 .fdd-none{padding:8px;font-size:12px;color:var(--muted)}
 .fdd-all{display:flex;align-items:center;gap:6px;padding:5px 8px;margin-bottom:3px;border-bottom:1px solid var(--line);font-size:12.5px;cursor:pointer}.fdd-all .n{color:var(--muted);font-size:11px;margin-left:auto}
 /* 목록 곡 수 (user request: filter result count stands out) */
-#libInfo>b:first-child{font-size:17px;font-weight:800;color:var(--accent)}
+#libInfo .cnt>b{font-size:17px;font-weight:800;color:var(--accent)}
+#libInfo{display:flex;flex-direction:column;line-height:1.25}
+#libInfo .cnt{white-space:nowrap}
+#libInfo .tot{font-size:12px;color:var(--muted)}  /* all our songs + '/', not highlighted */
+.libinfo:has(#libInfo .lbl){align-items:flex-end}  /* buttons line up with the count line */
 .fgrid .solo{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);white-space:nowrap;cursor:pointer}
 .fgrid .solo.off{opacity:.45;cursor:default}
 /* 필터 그룹 (위 목록): 그룹 = 한 줄 상자. 상자 안 조건은 모두 맞아야(교집합), 상자끼리는 하나라도(합집합), 빨간 상자(−)는 빼기.
@@ -318,10 +423,10 @@ body.lt-guest #streamHost{pointer-events:none}
 .fgroup:hover .gx{opacity:1}
 .fsep{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--muted);letter-spacing:.05em}
 .fsep::before,.fsep::after{content:"";flex:1;height:1px;background:var(--line)}
-.fchip{display:inline-flex;align-items:center;font-size:12px;border-radius:999px;padding:1px 1px 1px 8px;max-width:100%;
+.fchip{display:inline-flex;align-items:center;font-size:12px;border-radius:12px;padding:1px 1px 1px 8px;max-width:100%;min-width:0;
   color:var(--text);background:var(--chip);box-shadow:inset 0 0 0 1px var(--line)}
-.fchip .k{color:var(--muted);font-size:10.5px;margin-right:4px}
-.fchip .v{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fchip .k{flex:none;white-space:nowrap;color:var(--muted);font-size:10.5px;margin-right:4px}
+.fchip .v{min-width:0;overflow-wrap:anywhere;padding:1px 0}  /* long values wrap, never cut (user request 2026-11-15) */
 .fgroup.exc .fchip .v{text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--err) 70%,transparent)}
 .fchip button,.fgroup .gx,.fgroup .gh{cursor:pointer}
 .fchip button{border:0;background:transparent;color:var(--muted);padding:0 6px;font-size:12px;line-height:1.3;border-radius:999px}
@@ -329,20 +434,20 @@ body.lt-guest #streamHost{pointer-events:none}
 /* 오프라인 */
 .offnote{margin:10px 14px 0;padding:10px;border-radius:8px;background:var(--chip);font-size:13px;line-height:1.6}
 .offnote .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.offnote .offsrc{margin:0 0 8px}
+.offnote .offsrc button{flex:1}
+.offnote .offyt input{flex:1;min-width:0}
 a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.6}
 .ctrl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 #btnReport{order:99;margin-left:auto}
 #btnReport,#sReport{padding:0;border:0;background:none;color:var(--muted);font-size:11px;font-weight:400;text-decoration:underline;text-underline-offset:2px;cursor:pointer}  /* user request: small underlined text, right end (곡 검색 창에도 같은 모양 — 2026-11-15) */
 #btnReport:hover,#sReport:hover{color:var(--text)}
 .ctrl .play{font-size:30px;color:var(--text);min-width:40px}  /* 재생/일시정지: 동그라미 없이 아이콘만 (조금 크게) */
-#btnOverlaySet{font-size:22px}
-/* rows are the same at every width (user request 2026-11-15): 재생 막대 (a whole row) / 버튼 가운데 (🔀 ⏮ ▶ ⏭ 🔁 ≡) / 태그 / 링크 버튼 */
-.seek{display:flex;align-items:center;gap:8px;flex:1 0 100%;min-width:0}
-.transport{flex:1 0 100%;display:flex;align-items:center;justify-content:center;gap:14px}
-.transport .ib{flex:none;width:40px;height:40px;padding:0}  /* same-size boxes on one center line, so ▶ sits exactly in the middle */
-.transport .ib.play{width:48px;height:48px}
-.transport .ib.mode.on::after{bottom:7px}
-.volbox #btnPlayQueue{margin-right:6px}
+#btnOverlaySet{display:inline-flex;align-items:center;gap:5px}
+#btnOverlaySet .gear{font-size:16px;line-height:1}
+.seek{display:flex;align-items:center;gap:8px;flex:1;min-width:220px}
+/* 음량 (user request 2026-11-15): speaker (mute toggle) + slider always shown right of it — hidden on touch phones */
+.volpop{display:inline-flex;align-items:center;gap:6px}
 .time{font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted);white-space:nowrap;min-width:34px;text-align:center}
 /* 곡 정보: 나무위키 곡 문서의 분류(칩) · 각주(작게) — 재생 막대와 영상 버튼 사이 한 줄 */
 .songmeta{flex:1 0 100%;min-width:0}
@@ -354,6 +459,46 @@ a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.
 .songmeta .b.inner.ko{--vc:rgb(235 235 240)}
 .songmeta .b.inner.ja{--vc:rgb(255 95 105)}
 .songmeta .b.inner.ko,.songmeta .b.inner.ja{color:var(--vc);background:color-mix(in srgb,var(--vc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vc) 55%,transparent)}
+/* 불러오는 중 (곡 검색 · 노래방 창 — the window shows at once, this spins until its list is ready) */
+@keyframes spin{to{transform:rotate(360deg)}}
+dialog.busy::after{content:"";position:absolute;inset:0;z-index:50;background:color-mix(in srgb,var(--card) 55%,transparent)}
+dialog.busy::before{content:"";position:absolute;left:50%;top:45%;z-index:51;width:38px;height:38px;margin:-19px 0 0 -19px;border:4px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+/* 같이듣기: a room is open → a soft music waveform (equalizer bars, half see-through) along the bottom — user request 2026-11-15
+   (the SVG animates its own bars; it repeats across the button) */
+#btnListen.live,.mnav button.live,.ltcard,#ltRoom{position:relative;overflow:hidden}
+#btnListen.live::after,.mnav button.live::after,.ltcard::after,#ltRoom::after{content:"";position:absolute;left:0;right:0;bottom:0;height:14px;pointer-events:none;opacity:.32;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='14' fill='%234ade80'%3E%3Crect x='1.2' width='3.6' rx='1' y='8.1' height='5.9'%3E%3Canimate attributeName='height' values='5.9;3.8;9.8;2.9;5.9' dur='1.23s' repeatCount='indefinite'/%3E%3Canimate attributeName='y' values='8.1;10.2;4.2;11.1;8.1' dur='1.23s' repeatCount='indefinite'/%3E%3C/rect%3E%3Crect x='7.2' width='3.6' rx='1' y='7.6' height='6.4'%3E%3Canimate attributeName='height' values='6.4;2.7;8.1;2.4;6.4' dur='1.15s' repeatCount='indefinite'/%3E%3Canimate attributeName='y' values='7.6;11.3;5.9;11.6;7.6' dur='1.15s' repeatCount='indefinite'/%3E%3C/rect%3E%3Crect x='13.2' width='3.6' rx='1' y='11.2' height='2.8'%3E%3Canimate attributeName='height' values='2.8;3.1;7.1;11.9;2.8' dur='0.9s' repeatCount='indefinite'/%3E%3Canimate attributeName='y' values='11.2;10.9;6.9;2.1;11.2' dur='0.9s' repeatCount='indefinite'/%3E%3C/rect%3E%3Crect x='19.2' width='3.6' rx='1' y='9.3' height='4.7'%3E%3Canimate attributeName='height' values='4.7;9.5;13.4;8.9;4.7' dur='1.12s' repeatCount='indefinite'/%3E%3Canimate attributeName='y' values='9.3;4.5;0.6;5.1;9.3' dur='1.12s' repeatCount='indefinite'/%3E%3C/rect%3E%3Crect x='25.2' width='3.6' rx='1' y='0.3000000000000007' height='13.7'%3E%3Canimate attributeName='height' values='13.7;2.6;12.3;5.5;13.7' dur='0.92s' repeatCount='indefinite'/%3E%3Canimate attributeName='y' values='0.3;11.4;1.7;8.5;0.3' dur='0.92s' repeatCount='indefinite'/%3E%3C/rect%3E%3Crect x='31.2' width='3.6' rx='1' y='10.6' height='3.4'%3E%3Canimate attributeName='height' values='3.4;5.7;11.8;4.2;3.4' dur='1.27s' repeatCount='indefinite'/%3E%3Canimate attributeName='y' values='10.6;8.3;2.2;9.8;10.6' dur='1.27s' repeatCount='indefinite'/%3E%3C/rect%3E%3Crect x='37.2' width='3.6' rx='1' y='4.300000000000001' height='9.7'%3E%3Canimate attributeName='height' values='9.7;6.5;8.6;2.8;9.7' dur='0.85s' repeatCount='indefinite'/%3E%3Canimate attributeName='y' values='4.3;7.5;5.4;11.2;4.3' dur='0.85s' repeatCount='indefinite'/%3E%3C/rect%3E%3Crect x='43.2' width='3.6' rx='1' y='9.5' height='4.5'%3E%3Canimate attributeName='height' values='4.5;10.2;7.1;5.8;4.5' dur='1.27s' repeatCount='indefinite'/%3E%3Canimate attributeName='y' values='9.5;3.8;6.9;8.2;9.5' dur='1.27s' repeatCount='indefinite'/%3E%3C/rect%3E%3Crect x='49.2' width='3.6' rx='1' y='6.6' height='7.4'%3E%3Canimate attributeName='height' values='7.4;5.6;11.5;10.4;7.4' dur='1.0s' repeatCount='indefinite'/%3E%3Canimate attributeName='y' values='6.6;8.4;2.5;3.6;6.6' dur='1.0s' repeatCount='indefinite'/%3E%3C/rect%3E%3Crect x='55.2' width='3.6' rx='1' y='5.1' height='8.9'%3E%3Canimate attributeName='height' values='8.9;8.3;12.5;10.8;8.9' dur='1.03s' repeatCount='indefinite'/%3E%3Canimate attributeName='y' values='5.1;5.7;1.5;3.2;5.1' dur='1.03s' repeatCount='indefinite'/%3E%3C/rect%3E%3Crect x='61.2' width='3.6' rx='1' y='0.1999999999999993' height='13.8'%3E%3Canimate attributeName='height' values='13.8;3.4;7.0;11.1;13.8' dur='0.92s' repeatCount='indefinite'/%3E%3Canimate attributeName='y' values='0.2;10.6;7.0;2.9;0.2' dur='0.92s' repeatCount='indefinite'/%3E%3C/rect%3E%3Crect x='67.2' width='3.6' rx='1' y='6.1' height='7.9'%3E%3Canimate attributeName='height' values='7.9;2.5;10.0;11.2;7.9' dur='1.26s' repeatCount='indefinite'/%3E%3Canimate attributeName='y' values='6.1;11.5;4.0;2.8;6.1' dur='1.26s' repeatCount='indefinite'/%3E%3C/rect%3E%3Crect x='73.2' width='3.6' rx='1' y='1.5' height='12.5'%3E%3Canimate attributeName='height' values='12.5;5.8;10.3;9.1;12.5' dur='1.26s' repeatCount='indefinite'/%3E%3Canimate attributeName='y' values='1.5;8.2;3.7;4.9;1.5' dur='1.26s' repeatCount='indefinite'/%3E%3C/rect%3E%3Crect x='79.2' width='3.6' rx='1' y='6.5' height='7.5'%3E%3Canimate attributeName='height' values='7.5;12.1;13.3;7.7;7.5' dur='1.33s' repeatCount='indefinite'/%3E%3Canimate attributeName='y' values='6.5;1.9;0.7;6.3;6.5' dur='1.33s' repeatCount='indefinite'/%3E%3C/rect%3E%3Crect x='85.2' width='3.6' rx='1' y='11.3' height='2.7'%3E%3Canimate attributeName='height' values='2.7;10.4;9.8;13.9;2.7' dur='1.46s' repeatCount='indefinite'/%3E%3Canimate attributeName='y' values='11.3;3.6;4.2;0.1;11.3' dur='1.46s' repeatCount='indefinite'/%3E%3C/rect%3E%3Crect x='91.2' width='3.6' rx='1' y='8.6' height='5.4'%3E%3Canimate attributeName='height' values='5.4;6.6;10.0;2.3;5.4' dur='1.17s' repeatCount='indefinite'/%3E%3Canimate attributeName='y' values='8.6;7.4;4.0;11.7;8.6' dur='1.17s' repeatCount='indefinite'/%3E%3C/rect%3E%3C/svg%3E") repeat-x 0 100%/96px 14px}
+#btnListen.live.on::after,.mnav button.live.on::after{content:none}  /* in a room (.on): no wave on 같이듣기 — the room card has it (user request 2026-11-15) */
+/* 지금 있는 같이듣기 방 (재생목록 위 — thin) */
+.ltcard{margin-top:10px;padding:5px 8px 9px;border:1px solid var(--ok);border-radius:6px;background:var(--accent-soft);color:var(--accent);cursor:pointer;font-size:12.5px}  /* green border + the 같이듣기 wave along the bottom (user request 2026-11-15) */
+.ltcard[hidden]{display:none}
+.ltcard:hover{background:color-mix(in srgb,var(--accent) 22%,transparent)}
+.ltcard .lcr{display:flex;align-items:center;gap:6px;min-width:0}
+.ltcard .tt{min-width:0;overflow-wrap:anywhere}
+.ltcard .n{color:var(--muted);white-space:nowrap}
+.ltcard .lch{font-size:11.5px;color:var(--muted);margin-top:2px}
+/* 재생목록의 필터 (read-only — 곡 검색의 필터 상자 모양) */
+.plfilter{display:flex;flex-direction:column;gap:3px;margin-top:10px}
+.plfilter[hidden]{display:none}
+.plfhead{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer;user-select:none}
+.plfhead:hover{color:var(--text)}
+.plfhead .chev{font-size:10px;transition:transform .15s}
+.plfilter.fold .plfhead .chev{transform:rotate(-90deg)}
+.plfilter.fold>:not(.plfhead){display:none}  /* folded: just the header (user request 2026-11-15) */
+/* 간단 mode: 노래방 · 노래방 모드 buttons are off and show only their icon (user request 2026-11-15) */
+body.simple .side-tools #btnKara .tl,body.simple #btnKaraMode .kmt{display:none}
+body.simple .kmrow #btnKaraMode{flex:none}
+body.simple .mnav [data-nav="kara"]{font-size:0}
+.side-tools .tile:disabled,.mnav button:disabled,#btnKaraMode:disabled{opacity:.4;cursor:default}
+.plfilter .fgroup{cursor:default}
+.plfilter .fchip,.ltplf .fchip{padding-right:8px}  /* no × button here — room on the right like on the left */
+/* 같이듣기: 방장의 재생목록 필터 (between the members and the requests) */
+.ltplf{display:flex;flex-direction:column;gap:3px;margin-top:4px;text-align:left}
+.ltplfhead{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.ltplfhead .ltplfsave{margin-left:auto;height:20px;padding:0 8px;font-size:11px}  /* thin (user request 2026-11-15) */
+.ltplfnone{font-size:12.5px;color:var(--muted)}
+.ltplf .fgroup{cursor:default}
+.songmeta .b.sync.ok{color:var(--ok)}.songmeta .b.sync.warn{color:var(--warn)}  /* 싱크 표시: a tag-look chip, no border */
 .songmeta .b.more{height:auto;min-width:0;padding:0 7px;border:0;font-size:11px;font-weight:600;line-height:inherit;cursor:pointer}  /* +N: the folded plain tags */
 .songmeta .b.more:hover{color:var(--text)}
 .songmeta .fn{margin-top:4px;font-size:11.5px;color:var(--muted);line-height:1.5}
@@ -405,15 +550,13 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
 .g .t{font-size:15px}
 .g .x{display:none;font-size:13px;color:var(--muted);font-style:italic}  /* VocaDB other-language translation — shown for the language picked in #xLang (#xlStyle) */
 .hide-r .g .r,.hide-t .g .t,.hide-p .g .part{display:none}
-#xLang{height:28px;font-size:12px;max-width:130px}
+#xLang{max-width:150px;align-self:stretch}  /* same height · font as the toolbar buttons (user request 2026-11-15) */
 /* 재생목록 (user request 2026-11-14): ✕ to take a song out, drag to reorder */
 .item .plx{flex:none;border:0;background:none;color:var(--muted);padding:2px 4px;opacity:0;cursor:pointer}
 .item:hover .plx{opacity:1}
 .item .plx:hover{color:var(--text)}
 .item.dropto{box-shadow:inset 0 2px 0 var(--accent)}
 #list .empty button{margin-top:10px}
-#btnSearch{display:inline-flex;align-items:center;gap:6px;flex:1;justify-content:center}
-#btnSearch svg{width:15px;height:15px}
 /* 곡 검색 창 */
 #searchDlg{width:min(980px,96vw);height:min(86vh,900px);padding:0}
 #searchDlg[open]{display:flex;flex-direction:column}
@@ -438,8 +581,41 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
 .b.kara.gone{text-decoration:line-through;text-decoration-thickness:2px;opacity:.6}
 /* 하위 태그 색 (user request 2026-11-15 — 음원 관리 › 필터): the karaoke-number look in the tag's color */
 .b.tc,.songmeta .b.tc,.songmeta .b.inner.tc{color:var(--tc);background:none;box-shadow:inset 0 0 0 1px var(--tc)}
-.sitem .sacts{display:flex;gap:4px;flex:none}
-.sitem .sacts button{min-width:32px}
+/* ⋯ song options (user request 2026-11-15, like Spotify): web = shows on hover (and while its menu is open) · phone = always */
+.sitem .sacts{display:flex;gap:6px;flex:none;align-items:center}
+.sitem .sin{color:var(--ok);font-weight:700;font-size:14px}  /* in the playlist / in the filter */
+.sitem .sin.f{display:inline-flex}.sitem .sin.f svg{width:15px;height:15px}
+.sitem .smore{width:32px;height:32px;padding:0;border:0;background:none;color:var(--muted);opacity:0}
+.sitem .smore svg{width:18px;height:18px}
+.sitem:hover .smore,.sitem.menu .smore,.sitem .smore:focus-visible,body.m .sitem .smore,.sitem:has(.smore:focus-visible) .smore{opacity:1}
+@media (pointer:coarse){.sitem .smore{opacity:1}}
+.sitem .smore:hover{color:var(--text)}
+.smenu{margin:0;padding:4px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);box-shadow:0 8px 28px rgba(0,0,0,.45);width:300px;inset:auto;position:fixed}
+.smenu::backdrop{background:transparent}
+.smenu .smgrip,.smenu .smhead{display:none}
+.smenu button{display:flex;align-items:center;gap:12px;width:100%;padding:8px 10px;border:0;border-radius:6px;background:none;color:inherit;text-align:left;font-size:14px}
+.smenu button:hover:not(:disabled){background:var(--chip)}
+.smenu button:disabled{opacity:.55;cursor:default}
+.smenu .si{flex:none;width:20px;text-align:center;font-size:16px;color:var(--muted);display:inline-flex;justify-content:center}
+.smenu .si svg{width:18px;height:18px}
+.smenu .sl{display:flex;flex-direction:column;min-width:0}
+.smenu .sl b{font-weight:600}
+.smenu .sl small{font-size:11.5px;color:var(--muted);line-height:1.35;margin-top:1px}  /* the old hover text, now always shown */
+.smenu .smnote{padding:8px 10px;font-size:12.5px;color:var(--muted)}
+/* phone: a sheet sliding up from the bottom, song on top */
+.smenu.sheet{left:0;right:0;bottom:0;top:auto;width:auto;max-height:80vh;overflow-y:auto;padding:6px 8px calc(10px + env(safe-area-inset-bottom));border:0;border-top:1px solid var(--line);border-radius:16px 16px 0 0;
+  transform:translateY(0);transition:transform .22s ease,display .22s allow-discrete,overlay .22s allow-discrete}
+@starting-style{.smenu.sheet:popover-open{transform:translateY(100%)}}
+.smenu.sheet:not(:popover-open){transform:translateY(100%)}
+.smenu.sheet::backdrop{background:rgba(0,0,0,.45)}
+.smenu.sheet .smgrip{display:block;width:40px;height:4px;border-radius:2px;background:var(--line);margin:4px auto 10px}
+.smenu.sheet .smhead{display:flex;gap:12px;align-items:center;padding:4px 8px 12px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+.smenu.sheet .smhead .thumb{width:64px;height:36px}
+.smenu.sheet .smhead .meta{min-width:0}
+.smenu.sheet .smhead .t{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.smenu.sheet .smhead .a{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.smenu.sheet button{padding:12px 10px;font-size:15px}
+.smenu.sheet .si{width:24px;font-size:18px}
 #searchDlg .slist .empty,#searchDlg .slist .hint{padding:16px;text-align:center;color:var(--muted)}
 /* 간단 표시: 가사는 보컬 색·지금 묶음 강조색 없이 일반 글자색 (파트 표시의 색 점은 그대로) */
 body.simple #lyrics .g.cur .o,body.simple #lyrics .o.vc,body.simple #lyrics .t.vc{color:var(--text)!important}
@@ -463,8 +639,6 @@ body.simple #lyrics .vcm{background:none;-webkit-text-fill-color:currentColor}
 .stamp .tv{font-variant-numeric:tabular-nums;color:var(--muted);min-width:46px;text-align:center}
 /* 대화상자 */
 .dlg-body{padding:14px 16px}
-#lyrViewText{margin:0;height:56vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 ui-monospace,Consolas,"Malgun Gothic",monospace;
-  padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);user-select:text;-webkit-user-select:text;cursor:text}
 .dlg-body textarea{width:100%;height:52vh;font:13px/1.55 ui-monospace,Consolas,"Malgun Gothic",monospace;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);resize:vertical}
 .hint{color:var(--muted);font-size:12px;margin:0 0 8px}
 
@@ -515,13 +689,12 @@ html[data-theme=light] .vcm{filter:brightness(.62) saturate(1.2)}
 html[data-theme=light] .songmeta .b.vocal,html[data-theme=light] .songmeta .b.inner.ko,html[data-theme=light] .songmeta .b.inner.ja{color:color-mix(in srgb,var(--vc) 62%,#000)}
 html[data-theme=light] .songmeta .b.inner.ko{--vc:rgb(120 120 132)}
 html[data-theme=light] .g .part i{box-shadow:0 0 0 1px rgba(0,0,0,.25)}
-html[data-theme=light] .side-head h1.rainbow{background-image:linear-gradient(135deg,#e00000 0%,#e06a00 17%,#c9a400 33%,#009a00 50%,#0068d6 67%,#3a00d6 83%,#a000d6 100%)}  /* deeper rainbow: pure yellow vanishes on white */
+html[data-theme=light] .side-head h1 .t-rb{background-image:linear-gradient(135deg,#e00000 0%,#e06a00 17%,#c9a400 33%,#009a00 50%,#0068d6 67%,#3a00d6 83%,#a000d6 100%)}  /* deeper rainbow: pure yellow vanishes on white */
 html[data-theme=light] .ctxm,html[data-theme=light] .fddpop,html[data-theme=light] .qp{box-shadow:0 8px 24px rgba(0,0,0,.14)}
 /* simple mode overrides must win over the light vocal-color rule above */
 html[data-theme=light] body.simple #lyrics .g.cur .o,html[data-theme=light] body.simple #lyrics .o.vc,html[data-theme=light] body.simple #lyrics .t.vc{color:var(--text)!important}
 html[data-theme=light] body.simple #lyrics .r.vc{color:var(--muted)!important}
 html[data-theme=light] body.simple #lyrics .vcm{filter:none}
-html[data-theme=light] body.simple .side-head h1.rainbow{background:none}
 /* 테마 버튼: 제목 줄 오른쪽 끝, 단색 달(어두운 화면) / 해(밝은 화면) */
 #btnTheme{flex:none;padding:4px}
 #btnTheme svg{width:18px;height:18px}
@@ -568,8 +741,59 @@ body.m #lyrics{max-height:none;padding-bottom:40%}
 body.m .mhead{display:flex;align-items:center;gap:8px;flex:none;padding:6px 10px;background:var(--card);border-bottom:1px solid var(--line);font-weight:600;color:var(--muted)}
 .mhead #mClose{width:36px;height:36px;padding:6px}
 .mhead #mClose svg{width:22px;height:22px}
-body.m #miniBar{position:relative;display:flex;align-items:center;gap:10px;flex:none;padding:8px 10px;border-top:1px solid var(--line);background:var(--card);cursor:pointer}
+body.m #miniBar{display:flex;align-items:center;gap:10px;flex:none;padding:8px 10px;border-top:1px solid var(--line);background:var(--card);cursor:pointer}
 body.m #miniBar.empty{display:none}
+/* 아래 메뉴 (user request 2026-11-15): fixed under everything — the list screen and the player screen end above it */
+.mnav{display:none}
+body.m{--mnav:56px;--mbar:56px;--mbarh:0px;--mroomh:0px;--mbottom:calc(var(--mnav) + var(--mbarh) + var(--mroomh))}
+body.m.mbar:not(.mplay){--mbarh:var(--mbar)}  /* the mini bar sits right above the menu (not on the player screen) */
+/* phone (user request 2026-11-15): the room card is a bar right above the bottom menu, the mini bar above it; on the player
+   screen too (--mroom = its height, mobile_view.js) */
+body.m.mroom{--mroomh:var(--mroom,0px)}
+body.m .ltcard{position:fixed;left:0;right:0;bottom:var(--mnav);z-index:28;margin:0;border-radius:0;border-width:1px 0}
+body.m .app{height:calc(100dvh / var(--ui-zoom) - var(--mbottom))}
+body.m .main{height:calc(100dvh / var(--ui-zoom) - var(--mnav) - var(--mroomh))}
+body.m #miniBar{position:fixed;left:0;right:0;bottom:calc(var(--mnav) + var(--mroomh));height:var(--mbar);box-sizing:border-box;z-index:28}  /* always in view, also over the 곡 검색 · 노래방 pages (user request) */
+body.m.mplay #miniBar{display:none}
+body.m .mnav{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;height:var(--mnav);background:var(--card);border-top:1px solid var(--line)}
+.mnav button{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0;border:0;border-radius:0;background:none;color:var(--muted);font-size:11px;white-space:nowrap}
+.mnav button svg{width:22px;height:22px}
+.mnav button .ico{position:relative;display:inline-flex}
+.mnav button{position:relative}
+.mnav button.on{color:var(--accent)}
+/* the screen in front: filled + bar on top + bold (user request 2026-11-15: must stand out more than the green 같이듣기) */
+.mnav button.cur{color:var(--text);font-weight:700;background:color-mix(in srgb,var(--accent) 22%,transparent)}
+.mnav button.cur::before{content:"";position:absolute;left:18%;right:18%;top:0;height:3px;border-radius:0 0 3px 3px;background:var(--accent)}
+.mnav button.live{color:var(--ok)}  /* 같이듣기: a room is open */
+.msetdlg{width:min(420px,94vw)}
+.msetdlg .dlg-body{display:flex;flex-direction:column;gap:12px;text-align:left}
+.msetdlg .dlg-body [data-set]{align-self:flex-start}
+.msetdlg .msetsec{margin-top:6px;padding-top:10px;border-top:1px solid var(--line);font-size:13px;font-weight:600;color:var(--muted)}
+.msetdlg .mset{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:14px}
+.msetdlg .mset .onoff{flex:none}
+.msetdlg .mset .onoff .lb{min-width:44px}
+.msetdlg .hint{margin:0}
+.earsnooze{display:flex;align-items:center;gap:6px;margin-top:12px;font-size:13px;color:var(--muted)}
+/* 폰 (user request 2026-11-15 — phone only): the side panel keeps just the playlist (곡 검색 · 같이듣기 · 노래방 모드 are in the
+   bottom menu, the rest in 설정); 곡 검색 and 노래방 번호 추천 open as full pages, not popups */
+body.m .side>.side-head>.filters{display:none}  /* 곡 검색 · 같이듣기 · 노래방 모드 are in the bottom menu (온/오프라인 · 간단 moved to the title row) */
+body.m .side-head .top{gap:6px}
+body.m .side-head .top h1{margin-right:auto}
+.msetdlg .mset [data-slot]{display:flex}
+.msetdlg #btnTheme{width:40px;height:32px;border:1px solid var(--line);border-radius:6px}
+body.m .side-head .top .onoff{align-self:center}
+body.m #searchDlg,body.m #karaDlg,body.m #listenDlg,body.m #mSetDlg{position:fixed;inset:0 0 auto 0;z-index:25;width:100%;height:calc(100dvh / var(--ui-zoom) - var(--mbottom));max-width:none;max-height:none;margin:0;border:0;border-radius:0}  /* pages above the list, ending at the bottom menu (not modal — mobile_view.js) */
+body.m #karaDlg[open]{display:flex;flex-direction:column}
+body.m #karaDlg .dlg-body{flex:1;min-height:0;display:flex;flex-direction:column;padding:10px 12px}
+body.m #karaDlg .kshow{flex:1;min-height:0;padding:0;gap:6px}
+body.m #karaDlg .knum{font-size:calc(22vw / var(--ui-zoom));line-height:1}
+body.m #karaDlg .kcover{width:auto;max-width:100%;height:min(calc(28vh / var(--ui-zoom)),calc(90vw / var(--ui-zoom) * 9 / 16));flex:none}
+body.m #karaDlg .knum.ask{font-size:18px;line-height:1.4}  /* '추첨을 누르세요' — plain size, only the number is big (user report) */
+body.m #karaDlg .dlgx{display:none}
+/* 같이듣기 · 설정 are pages too on the phone (user request 2026-11-15): body scrolls, no 닫기 — the bottom menu leaves them */
+body.m #listenDlg[open],body.m #mSetDlg[open]{display:flex;flex-direction:column}
+body.m #listenDlg .dlg-body,body.m #mSetDlg .dlg-body{flex:1;min-height:0;overflow-y:auto}
+body.m #listenDlg .dlgx,body.m #mSetDlg .dlgx{display:none}  /* a page: the bottom menu leaves it (user request) */
 #miniBar .mprog{position:absolute;left:0;right:0;top:-1px;height:2px;background:var(--line)}
 #miniBar .mprog i{display:block;height:100%;width:0;background:var(--accent)}
 #miniCover{flex:none;width:48px;height:36px;border-radius:5px;object-fit:cover;background:var(--chip)}
@@ -578,5 +802,8 @@ body.m #miniBar.empty{display:none}
 #miniBar .minfo b,#miniBar .minfo span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #miniBar .minfo span{font-size:12px;color:var(--muted)}
 #miniBar .ib{flex:none;width:40px;height:40px;font-size:18px}
-/* Touch phones (user request 2026-11-15): no volume slider / mute — the device's volume keys only (mobile_view.js keeps full volume) */
-@media (pointer:coarse){body.m #btnMute,body.m #vol{display:none}}
+/* 폰 재생 화면 (user request 2026-11-15): rows don't move with the width — buttons · 재생 막대 · 태그 · 오류신고.
+   Touch phones: no volume button (the device's volume keys only — mobile_view.js keeps the player at full volume) */
+body.m .seek{flex-basis:100%;order:1;min-width:0}
+body.m .songmeta{order:2}
+@media (pointer:coarse){body.m .volpop{display:none}}

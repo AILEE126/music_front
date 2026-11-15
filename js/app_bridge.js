@@ -71,6 +71,16 @@ var APP = (() => {
   };
   M.overlaySet(ovset()).catch(() => {});
 
+  /* ---- phone notification (user request 2026-11-15: 같이듣기 신청곡 → the host's phone rings even with the app in the
+     background) — older app builds have no 'alert': nothing happens there ---- */
+  A.notify = (title, body) => M.alert({title, body}).catch(() => {});
+
+  /* ---- earphones (user request 2026-11-15, 설정 on the phone): APP.ear true/false (null = this app build can't tell) ·
+     window event "appheadset" {on} when they are plugged / unplugged ---- */
+  A.ear = null;
+  M.headset().then(s => { A.ear = !!s.on; }).catch(() => {});
+  M.addListener("headset", ({on}) => { A.ear = !!on; dispatchEvent(new CustomEvent("appheadset", {detail: {on: !!on}})); });
+
   /* ---- screen off (user request 2026-11-15, battery): APP.screenOff · window event "appscreen" when it changes.
      The page is kept "visible" for background play, so document.hidden can't tell; older app builds never send it. ---- */
   A.screenOff = false;

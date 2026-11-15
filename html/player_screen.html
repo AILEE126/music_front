@@ -13,19 +13,62 @@
 <div class="app">
   <aside class="side">
     <div class="side-head">
-      <div class="top"><h1 class="rainbow"><span class="t-full">사이버첨단노인정</span><span class="t-simple" hidden>음악플레이어</span></h1><button class="ib" id="btnTheme" title="밝은 화면 / 어두운 화면" aria-label="밝은 화면 / 어두운 화면 바꾸기"><svg class="moon" viewBox="0 0 24 24" fill="currentColor"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg><svg class="sun" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4.6"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"/></g></svg></button></div>  <!-- user request: theme toggle at the right end of the title row — moon in dark mode, sun in light mode (single color) -->  <!-- user request: name + diagonal rainbow text (old PPT style); 간단 mode: "음악플레이어" in plain text color -->
+      <div class="top"><h1 class="rainbow"><span class="t-full"><span class="t-ol" aria-hidden="true">사이버노인정</span><span class="t-rb">사이버노인정</span></span><span class="t-simple" hidden>CSC</span></h1><button type="button" class="onoff" id="onOff" title="누르면 온라인 ↔ 오프라인 — 온라인: 재생목록의 곡을 원곡 영상으로 재생 / 오프라인: 고른 mp3 폴더의 mp3 를 그대로 (같은 이름의 json 이 있으면 그 가사·싱크)"><span class="lb off">OFFLINE</span><span class="lb on">ONLINE</span></button><button class="ib" id="btnTheme" title="밝은 화면 / 어두운 화면" aria-label="밝은 화면 / 어두운 화면 바꾸기"><svg class="moon" viewBox="0 0 24 24" fill="currentColor"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg><svg class="sun" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4.6"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"/></g></svg></button></div>  <!-- user request: theme toggle at the right end of the title row — moon in dark mode, sun in light mode (single color) -->  <!-- user request: name + diagonal rainbow text (old PPT style); 간단 mode: "CSC" in plain text color (names changed 2026-11-15, user request) -->
       <!-- user request 2026-11-14: no full song list — the side panel is the playlist; songs are found in the search popup (VocaDB API) -->
-      <div class="filters">
-        <button class="primary" id="btnSearch" title="곡 검색 창 열기 (전체 곡 · 노래방 곡 · 가사·싱크 있는 곡 — 우리 DB) — 찾은 곡을 바로 틀거나 재생목록에 넣음"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>곡 검색</button>
-        <button type="button" class="onoff" id="onOff" title="누르면 온라인 ↔ 오프라인 — 온라인: 재생목록의 곡을 원곡 영상으로 재생 / 오프라인: 고른 mp3 폴더의 mp3 를 그대로 (같은 이름의 json 이 있으면 그 가사·싱크)"><span class="lb off">OFFLINE</span><span class="lb on">ONLINE</span></button>
-        <button id="btnSimple" title="간단 표시 — 목록의 썸네일 · 오른쪽 위 썸네일을 숨기고 영상도 접음 (소리는 그대로)">간단</button>
+      <!-- user request 2026-11-15 (like the phone): 온/오프라인 in the title row, then 같이듣기 · 검색 · 노래방 in one row — icon on top, name below, the phone menu's icons -->
+      <div class="filters side-tools">
+        <button id="btnListen" class="tile" title="같이듣기 — 방을 만들면 나오는 번호를 넣은 사람과 같은 곡을 같은 위치로 같이 들음"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/></svg><b class="nbadge" id="ltBadge" hidden></b></span><span class="tl">같이듣기</span></button>
+        <button id="btnSearch" class="tile" title="곡 검색 창 열기 (전체 곡 · 노래방 곡 · 가사·싱크 있는 곡 — 우리 DB) — 찾은 곡을 바로 틀거나 재생목록에 넣음"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span><span class="tl">검색</span></button><!-- user request 2026-11-15: '곡 검색' → '검색' -->
+        <button id="btnKara" class="tile" title="노래방 번호 랜덤 추천 창 열기"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4"/></svg></span><span class="tl">노래방</span></button><!-- opens the draw window only — 노래방 모드 is on the playlist -->
       </div>
-      <div class="filters side-tools"><!-- user request 2026-11-15: 같이듣기 (was in the player bar) · 노래방 추천 under the 곡 검색 row -->
-        <button id="btnListen" title="같이듣기 — 방을 만들면 나오는 번호를 넣은 사람과 같은 곡을 같은 위치로 같이 들음">🎧 같이듣기</button>
-        <button id="btnKara" title="노래방 번호 랜덤 추천 — 기기를 고르고 추첨을 누르면 노래방 곡 번호를 무작위로 하나 · 노래방 모드">🎤 노래방 추천</button>
-      </div>
+      <dialog id="listenDlg"><!-- 같이듣기 (listen_together.js) -->
+        <div class="dlg-head hx">🎧 같이듣기<button class="ib dlgx" id="ltClose" title="닫기 (Esc)" aria-label="닫기">✕</button></div>
+        <div class="dlg-body">
+          <label class="ltfield"><span class="ltlabel"><span class="ltreq">*</span>닉네임</span>
+            <input type="text" id="ltName" autocomplete="off" spellcheck="false" maxlength="40">
+            <span class="lterr" id="ltNameErr" hidden>필수값입니다.</span></label>
+          <div id="ltIdle">
+            <div class="ltsec">
+              <div class="ltsec-head">방 만들기</div>
+              <div class="ltrow">
+                <button id="ltLock" class="ltlock" title="공개방 (누르면 비밀방)"></button>
+                <input type="text" id="ltTitle" placeholder="방 제목" autocomplete="off" spellcheck="false" maxlength="40">
+                <input type="text" id="ltNewPw" placeholder="비밀번호" autocomplete="off" spellcheck="false" maxlength="20" hidden>
+                <button class="primary" id="ltMake">방 만들기</button>
+              </div>
+            </div>
+          </div>
+          <div id="ltRoom" hidden>
+            <button id="ltLeave" class="ltsmall ltleave" hidden></button><!-- 나가기 / 방 닫기 on the room card (user request 2026-11-15; the link copy button was removed) -->
+            <div class="ltroomtitle" id="ltRoomTitle"></div>
+            <div class="ltmemhead">참여자 <span id="ltMemCount"></span></div>
+            <ul class="ltmembers" id="ltMembers"></ul>
+            <p class="hint" id="ltRoomHint"></p>
+            <div class="ltplf" id="ltPlf"></div><!-- 방장의 재생목록 필터 (user request 2026-11-15) -->
+            <div class="ltrq" id="ltRq">
+              <ul class="ltreqlist" id="ltReqs"></ul>
+              <div class="ltpager" id="ltReqPager"></div>
+              <input type="search" id="ltReqQ" placeholder="신청곡 검색" autocomplete="off" spellcheck="false">
+            </div>
+          </div>
+          <div class="ltpwask" id="ltPwAsk" hidden>
+            <span><b id="ltPwFor"></b> 비밀번호를 넣어 주세요</span>
+            <div class="ltrow"><input type="password" id="ltPwIn" placeholder="비밀번호" autocomplete="off" maxlength="20"><button class="primary" id="ltPwGo">들어가기</button><button id="ltPwNo">그만두기</button></div>
+          </div>
+          <p class="ltstatus" id="ltStatus" hidden></p>
+          <div class="ltsec">
+            <div class="ltsec-head"><span class="ltsh">열린 방</span><span class="ltscanat" id="ltScanAt"></span><button id="ltRefresh" class="ltsmall ltref" title="방 목록 다시 찾기 (새로고침)" aria-label="새로고침">↻</button></div><!-- icon only: the row broke (user request 2026-11-15) -->
+            <ul class="ltrooms" id="ltRooms"></ul>
+            <div class="ltpager ltroompager" id="ltRoomPager"></div><!-- 5 rooms a page, always shown at the bottom — one page = disabled (user request 2026-11-15) -->
+          </div>
+        </div>
+      </dialog><!-- web: opens here under the row, not as a popup (user request 2026-11-15) · phone: a page -->
+      <div class="ltcard" id="ltCard" role="button" tabindex="0" title="같이듣기 창 열기" hidden></div><!-- 지금 있는 같이듣기 방 (user request 2026-11-15: 방 · 몇 명만, 얇게 — listen_together.js) -->
+      <div class="kmrow"><button id="btnKaraMode" title="노래방 모드 — 켜면 재생목록에 고른 기기의 노래방 번호가 있는 곡만 보이고, 싱크율 자리에 그 번호가 보임 (2시간 지나면 저절로 꺼짐)">🎤<span class="kmt"> 노래방 모드 <b>OFF</b></span></button><select id="karaModeMachine" title="노래방 번호를 볼 기기" hidden></select><button id="btnSimple" title="간단 표시 — 목록의 썸네일 · 오른쪽 위 썸네일을 숨기고 영상도 접음 (소리는 그대로)">간단</button></div><!-- 간단 here: the title row has no room for it at the list's smallest width (2026-11-15) --><!-- user request 2026-11-15: 노래방 모드 on the playlist, apart from the draw window -->
       <div class="libinfo"><span id="libInfo"></span>
-        <span class="acts"><button id="btnPlayView" title="재생목록을 처음 곡부터 (무작위면 섞어서)">▶ 처음부터</button><button id="btnPlClear" title="재생목록 비우기">비우기</button><button id="btnFindCur" title="재생목록에서 지금 재생 중인 곡으로 이동">◎</button></span></div>
+        <span class="acts"><button id="btnPlayView" title="처음부터 — 재생목록을 처음 곡부터 (무작위면 섞어서)" aria-label="처음부터">▶&#xFE0E;</button><button id="btnPlClear" title="비우기 — 재생목록 비우기" aria-label="비우기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg></button><!-- icons only, the words are in the tooltips (user request 2026-11-15) --><button id="btnFindCur" title="재생목록에서 지금 재생 중인 곡으로 이동">◎</button></span></div>
+      <div class="plfilter" id="plFilter" hidden></div><!-- 재생목록의 필터 (user request 2026-11-15): 곡 검색 '재생목록 만들기' 때의 필터 · 노래방 모드의 필터 -->
+      <input type="search" id="plQ" class="plq" placeholder="재생목록에서 찾기" autocomplete="off" spellcheck="false"><!-- user request 2026-11-15: search inside the playlist (only the view) -->
     </div>
     <div id="notice"></div>
     <div id="offBar"></div>
@@ -53,40 +96,32 @@
         <div class="info">
           <div class="titleline"><h2 id="nowTitle">곡을 선택하세요</h2><span class="detail" id="nowDetail"></span></div>
           <div class="artist" id="nowArtist">'곡 검색'에서 곡을 찾아 틀거나, 왼쪽 재생목록의 곡을 누르세요.</div>
-          <div class="dateline"><div class="reldate" id="nowDate" title="원곡 투고(업로드) 날짜"></div><span class="volbox"><button class="ib mode" id="btnPlayQueue" title="재생 대기열 (다음에 틀 곡 · 지난 곡)" hidden></button><button class="ib vol" id="btnMute" title="음소거 / 해제"></button><input type="range" class="bar-range" id="vol" min="0" max="1" step="0.01" value="0.8" title="음량"></span></div><!-- user request 2026-11-15: 재생 대기열 + volume at the right end of the 투고 · 재생수 line -->
+          <div class="reldate" id="nowDate" title="원곡 투고(업로드) 날짜"></div>
         </div>
       </div>
       <div class="ctrl">
+        <button class="ib" id="btnPrev" title="이전 곡">⏮&#xFE0E;</button>
+        <button class="ib play" id="btnPlay" title="재생 / 일시정지 (Space)">▶&#xFE0E;</button>
+        <button class="ib" id="btnNext" title="다음 곡">⏭&#xFE0E;</button>
         <div class="seek"><span class="time" id="tCur">0:00</span><input type="range" class="bar-range" id="seek" min="0" max="1000" value="0"><span class="time" id="tDur">0:00</span></div>
-        <div class="transport"><!-- user request 2026-11-15: seek bar as its own row, buttons gathered in the middle below it (same at every width) — play exactly in the middle -->
-          <button class="ib mode" id="btnShuffle" title="무작위 재생"></button>
-          <button class="ib" id="btnPrev" title="이전 곡">⏮&#xFE0E;</button>
-          <button class="ib play" id="btnPlay" title="재생 / 일시정지 (Space)">▶&#xFE0E;</button>
-          <button class="ib" id="btnNext" title="다음 곡">⏭&#xFE0E;</button>
-          <button class="ib mode" id="btnRepeat" title="반복"></button>
-        </div>
-        <div class="songmeta" id="songMeta" hidden></div>
-        <a class="btn" id="btnSrc" target="_blank" rel="noopener" title="원곡 영상 페이지를 새 탭으로" hidden>원곡 ↗</a>
-        <a class="btn" id="btnWiki" target="_blank" rel="noopener" title="나무위키 곡 문서를 새 탭으로" hidden>위키 ↗</a>
-        <button id="btnInfo" title="곡 전체 정보 — 이 곡을 불러오는 데 쓴 칸과 값 (곡 표 · 노래방 표)" hidden>곡 정보</button><!-- user request 2026-11-15 -->
+        <button class="ib mode" id="btnShuffle" title="무작위 재생"></button>
+        <button class="ib mode" id="btnRepeat" title="반복"></button>
+        <button class="ib mode" id="btnPlayQueue" title="재생 대기열 (다음에 틀 곡 · 지난 곡)" hidden></button>
+        <span class="volpop"><button class="ib vol" id="btnMute" title="음소거 / 해제"></button><input type="range" class="bar-range" id="vol" min="0" max="1" step="0.01" value="0.8" title="음량"></span><!-- user request 2026-11-15: slider always shown right of the speaker · speaker = mute toggle -->
+        <div class="songmeta" id="songMeta" hidden><div class="cats"><span class="b sync" id="syncChip">싱크 없음</span></div></div><!-- 싱크 표시 = first tag chip (user request 2026-11-15, was in the lyrics toolbar) -->
         <button id="btnReport" title="곡의 문제 알리기 (싱크·가사·곡 정보·재생 등) · 기능제안 · 텍스트 대치 제안 — 음원 관리 › 오류 신고에 남음">오류신고 · 기능제안 · 텍스트 대치 제안</button><!-- user request: small underlined text at the right end · 기능제안 · 텍스트 대치 제안 2026-11-15 -->
       </div>
     </div>
 
     <div class="toolbar">
-      <span class="chip" id="syncChip">싱크 없음</span>
       <span class="chip err" id="failChip" hidden></span>
-      <span class="sep"></span>
-      <button id="btnEdit" title="가사 줄마다 시간을 직접 찍어 싱크 맞추기">직접 맞추기</button>
-      <span class="sep"></span>
-      <button id="btnLyrics" title="가사 txt 미리보기 · 끌어서 복사 · txt로 받기">가사 보기</button>
+      <button id="btnEdit" title="가사 줄마다 시간을 직접 찍어 싱크 맞추기">싱크</button>
       <span class="grow"></span>
       <select id="xLang" title="VocaDB 의 다른 언어 번역 (영어·중국어 등) 줄 — 곡에 있는 언어만 고를 수 있음"><option value="">다른 언어 끔</option></select><!-- user request 2026-11-14: a select left of the toggles, not a 4th toggle -->
       <div class="seg" title="가사 줄 보이기 · 숨기기"><!-- user request: three joined on/off buttons instead of checkboxes -->
         <label><input type="checkbox" id="showR" checked hidden>발음</label><label><input type="checkbox" id="showT" checked hidden>번역</label><label title="이 줄을 부르는 보컬 (나무위키 가사에 보컬별 색 구분이 있는 곡)"><input type="checkbox" id="showP" checked hidden>파트</label>
       </div>
-      <button class="ovpow" id="btnOverlayPower">오버레이 켜기</button>
-      <button class="ib" id="btnOverlaySet" title="설정: 가사 먼저 보이기 · 가사 오버레이 (tools\lyrics_overlay.bat 로 켜는 바탕 투명 가사 창)">⚙&#xFE0E;</button>
+      <button id="btnOverlaySet" title="오버레이 켜기·끄기 · 설정: 가사 먼저 보이기 · 가사 오버레이 (tools\lyrics_overlay.bat 로 켜는 바탕 투명 가사 창)">오버레이 <span class="gear">⚙&#xFE0E;</span></button><!-- user request 2026-11-15: one button; 켜기·끄기 moved into the settings window -->
     </div>
 
     <div class="bartab"><button class="tab" id="btnBar" title="가사 도구 접기 · 펴기" aria-label="가사 도구 접기 · 펴기"><svg viewBox="0 0 14 10" aria-hidden="true"><path d="M3 1.5v7M7 1.5v7M11 1.5v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></div><!-- user request: a tab hanging under the lyrics-tool bar folds / unfolds it · stays on the bar, not the sync guide -->
@@ -106,6 +141,34 @@
     <div id="lyrics"><div class="empty">곡을 선택하면 가사가 여기에 표시됩니다.</div></div>
   </main>
 </div>
+<!-- 폰 아래 메뉴 (user request 2026-11-15, mobile_view.js): 재생목록 · 같이듣기 · 곡 검색 · 노래방 모드 · 설정 -->
+<nav class="mnav" id="mNav">
+  <button data-nav="list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>재생목록</button>
+  <button data-nav="listen"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/></svg><b class="nbadge" id="mLtBadge" hidden></b></span>같이듣기</button><!-- open rooms badge, like the web (user request 2026-11-15) -->
+  <button data-nav="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>검색</button>
+  <button data-nav="kara"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4"/></svg>노래방</button>
+  <button data-nav="set"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>설정</button>
+</nav>
+<dialog id="mSetDlg" class="msetdlg"><!-- 폰 설정 (아래 메뉴 '설정', user request 2026-11-15) — mobile_view.js -->
+  <div class="dlg-head hx">설정<button class="ib dlgx" data-set="close" title="닫기 (Esc)" aria-label="닫기">✕</button></div>
+  <div class="dlg-body">
+    <button data-set="report">오류신고 · 기능제안 · 텍스트 대치 제안</button>
+    <button data-set="overlay">가사 · 오버레이 설정</button>
+    <div class="msetsec">화면</div><!-- phone: the side panel's 간단 · theme buttons are moved in here (mobile_view.js, user request 2026-11-15) -->
+    <div class="mset"><span>간단 표시</span><span data-slot="simple"></span></div>
+    <div class="mset"><span>밝은 · 어두운 화면</span><span data-slot="theme"></span></div>
+    <div class="msetsec">이어폰</div>
+    <div class="mset"><span>이어폰 연결 시 바로 재생</span><button type="button" class="onoff" data-ear="connectPlay"><span class="lb off">OFF</span><span class="lb on">ON</span></button></div>
+    <div class="mset"><span>이어폰 해제 시 재생 중지</span><button type="button" class="onoff" data-ear="unplugPause"><span class="lb off">OFF</span><span class="lb on">ON</span></button></div>
+    <div class="mset"><span>이어폰이 없으면 재생 전에 물어보기</span><button type="button" class="onoff" data-ear="ask"><span class="lb off">OFF</span><span class="lb on">ON</span></button></div>
+    <p class="hint" id="mSetEarNote" hidden>이어폰 연결은 폰 앱(새 버전)에서만 알 수 있습니다.</p>
+  </div>
+</dialog>
+<dialog id="earAskDlg" class="uidlg"><!-- 이어폰 없이 재생하기 전에 묻기 (user request 2026-11-15) — mobile_view.js -->
+  <div class="dlg-body">이어폰이 연결되어 있지 않습니다.<br>스피커로 재생할까요?
+    <label class="earsnooze"><input type="checkbox" id="earSnooze"> 1시간 동안 다시 묻지 않기</label></div>
+  <div class="dlg-foot"><span style="flex:1"></span><button id="earNo">취소</button><button class="primary" id="earYes">재생</button></div>
+</dialog>
 
 
 
@@ -175,72 +238,28 @@
   </div>
   <div class="dlg-foot"><span style="flex:1"></span><button id="reportCancel">취소</button><button class="primary" id="reportSend">전송</button></div>
 </dialog>
-<dialog id="infoDlg"><!-- 곡 전체 정보 (user request 2026-11-15): the rows the song was made from, column | value -->
-  <div class="dlg-head" id="infoTitle">곡 정보</div>
-  <div class="dlg-body"><div id="infoBody"></div></div>
-  <div class="dlg-foot"><button id="infoCopy" title="표를 글자로 복사 (칸 이름 · 값, 탭으로 나눔)">복사</button><span style="flex:1"></span><button class="primary" id="infoClose">닫기</button></div>
-</dialog>
 <dialog id="karaDlg"><!-- 노래방 번호 랜덤 추천 (user request 2026-11-15, karaoke_random.js) -->
-  <div class="dlg-head khead">🎤 노래방 번호 랜덤 추천<button id="karaMode" title="노래방 모드 — 켜면 필터 프리셋 '노래방' 에 맞는 곡을 재생목록에 넣고, 재생목록의 싱크율 자리에 고른 기기의 노래방 번호를 보여 줌">노래방 모드 <b>OFF</b></button></div>
+  <div class="dlg-head khead hx">🎤 노래방 번호 랜덤 추천<button class="ib dlgx" id="karaClose" title="닫기 (Esc)" aria-label="닫기">✕</button></div>
   <div class="dlg-body">
     <div class="kmach" id="karaMachines"></div>
-    <div class="kshow"><div class="knum" id="karaNum" title="누르면 다시 추첨"></div><div class="ksong" id="karaSong" hidden></div></div>
+    <!-- options under the machines (user request 2026-11-15): on/off ones use the app's OFF | ON switch · 추첨 기록 is a button with a history icon -->
+    <div class="kopts"><label class="kopt" title="곡 정보(썸네일 · 제목 · 작곡 · 노래) 보이기 / 숨기기 — 숨기면 번호만 크게"><span>곡 정보 보이기</span><button type="button" class="onoff" id="karaInfo"><span class="lb off">OFF</span><span class="lb on">ON</span></button></label><label class="kopt" title="켜면 2시간 동안 이미 나온 번호는 다시 안 나옴 (기기별)"><span>중복 방지 (2시간)</span><button type="button" class="onoff" id="karaNodup"><span class="lb off">OFF</span><span class="lb on">ON</span></button></label><label class="kopt" title="켜면 특정 기기에서만 선곡 가능한 곡(나무위키 ⓗ · ⓢ — 예: TJ 60시리즈부터 선곡 가능)은 추첨에서 빠짐"><span>구형 기기</span><button type="button" class="onoff" id="karaOld"><span class="lb off">OFF</span><span class="lb on">ON</span></button></label><button class="khist" id="karaHist" title="지난 추첨 기록 보기 · 초기화"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>추첨 기록</button></div>
+    <div class="kshow" id="karaShow"><img class="kcover" id="karaCover" alt="" hidden><div class="knum" id="karaNum"></div><div class="ksong" id="karaSong" hidden></div><button class="kdraw" id="karaDraw">추첨</button><div class="kagain" id="karaAgain" hidden>가운데를 누르면 다시 추첨</div></div><!-- user request 2026-11-15: 추첨 button only for the first draw · after that a tap anywhere here draws again -->
     <p class="hint" id="karaNote"></p>
   </div>
-  <div class="dlg-foot"><button id="karaInfo" title="곡 정보(제목 · 작곡 · 노래) 보이기 / 숨기기 — 숨기면 번호만 크게">곡 정보</button><button id="karaNodup" title="켜면 2시간 동안 이미 나온 번호는 다시 안 나옴 (기기별)">중복 방지 (2시간)</button><button id="karaOld" title="켜면 특정 기기에서만 선곡 가능한 곡(나무위키 ⓗ · ⓢ — 예: TJ 60시리즈부터 선곡 가능)은 추첨에서 빠짐">구형 기기</button><button id="karaReset" title="2시간 중복 방지 기록 지우기 — 이미 나온 번호도 다시 나올 수 있게 (모든 기기)">중복 초기화</button><span style="flex:1"></span><button class="primary" id="karaDraw">추첨</button><button id="karaClose">닫기</button></div>
 </dialog>
-<dialog id="lyrView"><!-- 온라인 스트리밍 곡: 가사 txt 미리보기 (끌어서 복사 · txt 로 받기) -->
-  <div class="dlg-head" id="lyrViewTitle">가사</div>
+<dialog id="karaHistDlg"><!-- 추첨 기록 (user request 2026-11-15): past draws (15 rows, then scroll) · reset at the bottom (karaoke_random.js) -->
+  <div class="dlg-head hx">지난 추첨 기록<button class="ib dlgx" id="karaHistClose" title="닫기 (Esc)" aria-label="닫기">✕</button></div>
   <div class="dlg-body">
-    <p class="hint" id="lyrViewHint"></p>
-    <pre id="lyrViewText"></pre>
+    <div class="khlist" id="karaHistList"></div>
   </div>
-  <div class="dlg-foot"><button id="lyrViewDown" title="이 가사를 txt 파일로 내려받기">txt로 받기</button><span style="flex:1"></span><button class="primary" id="lyrViewClose">닫기</button></div>
+  <div class="dlg-foot"><button id="karaReset" title="지난 추첨 기록 지우기 — 이미 나온 번호도 다시 나올 수 있게 (모든 기기)">지난 기록 초기화</button></div>
 </dialog>
-<dialog id="listenDlg"><!-- 같이듣기 (listen_together.js) -->
-  <div class="dlg-head">🎧 같이듣기</div>
-  <div class="dlg-body">
-    <label class="ltfield"><span class="ltlabel"><span class="ltreq">*</span>닉네임</span>
-      <input type="text" id="ltName" autocomplete="off" spellcheck="false" maxlength="40">
-      <span class="lterr" id="ltNameErr" hidden>필수값입니다.</span></label>
-    <div id="ltIdle">
-      <div class="ltsec">
-        <div class="ltsec-head">방 만들기</div>
-        <div class="ltrow">
-          <button id="ltLock" class="ltlock" title="공개방 (누르면 비밀방)"></button>
-          <input type="text" id="ltTitle" placeholder="방 제목" autocomplete="off" spellcheck="false" maxlength="40">
-          <input type="text" id="ltNewPw" placeholder="비밀번호" autocomplete="off" spellcheck="false" maxlength="20" hidden>
-          <button class="primary" id="ltMake">방 만들기</button>
-        </div>
-      </div>
-    </div>
-    <div id="ltRoom" hidden>
-      <button id="ltCopyLink" class="ltsmall ltcopy" title="방 바로가기 링크 복사">🔗 복사</button>
-      <div class="ltroomtitle" id="ltRoomTitle"></div>
-      <div class="ltmemhead">참여자 <span id="ltMemCount"></span></div>
-      <ul class="ltmembers" id="ltMembers"></ul>
-      <p class="hint" id="ltRoomHint"></p>
-      <div class="ltrq" id="ltRq">
-        <ul class="ltreqlist" id="ltReqs"></ul>
-        <div class="ltpager" id="ltReqPager"></div>
-        <input type="search" id="ltReqQ" placeholder="신청곡 검색" autocomplete="off" spellcheck="false">
-      </div>
-    </div>
-    <div class="ltpwask" id="ltPwAsk" hidden>
-      <span><b id="ltPwFor"></b> 비밀번호를 넣어 주세요</span>
-      <div class="ltrow"><input type="password" id="ltPwIn" placeholder="비밀번호" autocomplete="off" maxlength="20"><button class="primary" id="ltPwGo">들어가기</button><button id="ltPwNo">그만두기</button></div>
-    </div>
-    <p class="ltstatus" id="ltStatus" hidden></p>
-    <div class="ltsec">
-      <div class="ltsec-head">열린 방 <span class="ltscanat" id="ltScanAt"></span><button id="ltRefresh" class="ltsmall" title="방 목록 다시 찾기">↻ 새로고침</button></div>
-      <ul class="ltrooms" id="ltRooms"></ul>
-    </div>
-  </div>
-  <div class="dlg-foot"><button id="ltLeave" hidden></button><span style="flex:1"></span><button class="primary" id="ltClose">닫기</button></div>
-</dialog>
+
 <script>
 const STORE_PREFIX = "player.";  // 브라우저 저장값 이름 앞머리
 </script>
+<div id="sMenu" class="smenu" popover></div><!-- 곡 검색 결과의 ⋯ 곡 옵션 (user request 2026-11-15): web = menu by the button · phone = sheet from the bottom (player_screen.js) -->
 <script src="../js/shared_screen_helpers.js"></script>
 <script src="../js/app_bridge.js"></script>
 <script src="../js/offline_folder.js"></script>
