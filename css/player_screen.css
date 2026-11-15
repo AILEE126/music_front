@@ -94,14 +94,14 @@ body.simple .item .thumb{display:none}  /* 간단 표시: 목록 썸네일 숨�
 #videoBox .frame{width:100%;max-width:calc(100vh / var(--ui-zoom) * var(--vid-f, .7) * 16 / 9);aspect-ratio:16/9}
 /* video tab (user request): hangs from the player box's top edge at the right — click folds/unfolds the video,
    drag sets its height (--vid-f = share of the window height, remembered; 16:9 kept) */
-/* 영상 · 댓글 tabs (user request 2026-11-15): on = 30px, off = clearly smaller + a slash over the icon (no color change) */
-#btnVideo,#btnCmt{position:absolute;top:-1px;width:56px;height:30px;border-top:0;border-radius:0 0 9px 9px;z-index:3;transition:height .15s,width .15s,right .15s}
+/* 영상 · 댓글 tabs (user request 2026-11-15): same size on and off — off slides up into the edge (only the lower part shows)
+   with a slash over the icon; no color change. Icon sits low so it still shows while slid in */
+#btnVideo,#btnCmt{position:absolute;top:-1px;width:56px;height:30px;border-top:0;border-radius:0 0 9px 9px;z-index:3;align-items:flex-end;padding-bottom:7px;transition:transform .18s,clip-path .18s}
 #btnVideo{right:20px;touch-action:none}
 #btnCmt{right:84px}
 #btnVideo.on,#btnCmt.on{color:var(--muted);background:var(--card);border-color:var(--line)}  /* not the common "on" button look */
-#btnVideo:not(.on),#btnCmt:not(.on){width:42px;height:17px}
-#btnVideo:not(.on)+#btnCmt{right:70px}
-#btnVideo:not(.on)::after,#btnCmt:not(.on)::after{content:"";position:absolute;left:50%;top:50%;width:20px;height:1.6px;margin:-.8px 0 0 -10px;border-radius:1px;background:currentColor;transform:rotate(-35deg)}
+#btnVideo:not(.on),#btnCmt:not(.on){transform:translateY(-10px);clip-path:inset(10px 0 0 0)}
+#btnVideo:not(.on)::after,#btnCmt:not(.on)::after{content:"";position:absolute;left:50%;top:17px;width:20px;height:1.6px;margin-left:-10px;border-radius:1px;background:currentColor;transform:rotate(-35deg)}
 #btnVideo::before{content:"";position:absolute;left:0;right:0;top:-1px;height:2px;background:var(--card)}  /* covers the video's bottom line inside the tab */
 #btnVideo svg{width:16px;height:10px}
 #btnVideo.on:not(:disabled){cursor:ns-resize}
@@ -109,7 +109,6 @@ body.simple .item .thumb{display:none}  /* 간단 표시: 목록 썸네일 숨�
 #btnVideo:disabled{opacity:.4;cursor:default}
 #btnCmt[hidden]{display:none}
 #btnCmt svg{width:14px;height:12px}
-#btnVideo:not(.on) svg,#btnCmt:not(.on) svg{transform:scale(.85)}
 #videoBox{flex:none}
 /* 영상이 있을 때 가사 칸은 작으니 아래 여백(마지막 줄을 가운데로 올리는 자리)도 작게 — 여백이 칸보다 크면 칸 밖으로 넘침 */
 /* 영상 숨김(서버 없이 연 화면의 온라인 곡): 중계 플레이어는 소리를 내야 해서 지우지 않고 보이지 않게만 */
