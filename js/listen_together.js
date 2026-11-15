@@ -505,7 +505,9 @@ function ltKeep() {
     ltBroadcast();
     ltSendQueue();
     let gone = false;
-    LT.conns.forEach((v, c) => { if (now - v.seen > 20000 && !c.open) { LT.conns.delete(c); gone = true; } });
+    // closed link, or silent longer than a guest in a background tab can be (a phone app killed outright left its link "open"
+    // and stayed in the member list for minutes)
+    LT.conns.forEach((v, c) => { if (now - v.seen > 20000 && (!c.open || now - v.seen > LT_SILENT)) { LT.conns.delete(c); try { c.close(); } catch (e) {} gone = true; } });
     if (gone) ltMembers();
     const p = LT.peer;
     if (!LT.lobby && p && p.open && now >= LT.lobbyAt) { LT.lobbyAt = now + 30000; ltLobby(0); }  // lost / full slots: try again now and then
