@@ -12,7 +12,7 @@ html,body{height:100%}
 #btnList svg{transform:rotate(90deg)}  /* list fold tab on the left edge, same grip turned (user request) */
 #btnList.on{color:var(--text)}
 /* 좁은 창: 목록 위·재생 아래 한 칸 배치. 기준 너비는 화면 축소(--ui-zoom .8)에 맞춘 값 (860px × .8 — 미디어 쿼리는 줄이기 전 창 너비로 잼) */
-@media (max-width:688px){.app{grid-template-columns:minmax(0,1fr);height:auto}.side{max-height:45vh;border-right:none}.now,.toolbar{padding-left:16px;padding-right:16px}#lyrics{padding:16px 16px 40vh;max-height:70vh}.seek{min-width:0;flex-basis:100%;order:5}}
+@media (max-width:688px){.app{grid-template-columns:minmax(0,1fr);height:auto}.side{max-height:45vh;border-right:none}.now,.toolbar{padding-left:16px;padding-right:16px}#lyrics{padding:16px 16px 40vh;max-height:70vh}}
 /* 곡 목록 */
 .side{display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--card);min-height:0}
 .side-head{padding:14px 14px 10px;border-bottom:1px solid var(--line)}
@@ -84,7 +84,9 @@ body.simple .item .thumb{display:none}  /* 간단 표시: 목록 썸네일 숨�
 .detail span+span::before{content:"·";margin:0 6px}
 .now h2{flex:0 1 auto;font-size:20px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .now .artist{color:var(--muted)}
-.now .reldate{font-size:12px;color:var(--muted);margin-bottom:8px;min-height:6px}
+.now .dateline{display:flex;align-items:center;gap:8px;margin-bottom:8px;min-height:6px}
+.now .reldate{flex:1;min-width:0;font-size:12px;color:var(--muted)}
+.volbox{flex:none;display:flex;align-items:center;gap:4px}
 /* 원곡 영상 (영상 보기를 켜면 맨 위, 곡 정보는 그 아래) */
 #videoBox{background:#000;border-bottom:1px solid var(--line);display:flex;justify-content:center}
 #videoBox[hidden]{display:none}
@@ -92,18 +94,22 @@ body.simple .item .thumb{display:none}  /* 간단 표시: 목록 썸네일 숨�
 #videoBox .frame{width:100%;max-width:calc(100vh / var(--ui-zoom) * var(--vid-f, .7) * 16 / 9);aspect-ratio:16/9}
 /* video tab (user request): hangs from the player box's top edge at the right — click folds/unfolds the video,
    drag sets its height (--vid-f = share of the window height, remembered; 16:9 kept) */
-#btnVideo{position:absolute;top:-1px;right:20px;width:56px;height:30px;border-top:0;border-radius:0 0 9px 9px;z-index:3;touch-action:none}
+/* 영상 · 댓글 tabs (user request 2026-11-15): on = 30px, off = clearly smaller + a slash over the icon (no color change) */
+#btnVideo,#btnCmt{position:absolute;top:-1px;width:56px;height:30px;border-top:0;border-radius:0 0 9px 9px;z-index:3;transition:height .15s,width .15s,right .15s}
+#btnVideo{right:20px;touch-action:none}
+#btnCmt{right:84px}
+#btnVideo.on,#btnCmt.on{color:var(--muted);background:var(--card);border-color:var(--line)}  /* not the common "on" button look */
+#btnVideo:not(.on),#btnCmt:not(.on){width:42px;height:17px}
+#btnVideo:not(.on)+#btnCmt{right:70px}
+#btnVideo:not(.on)::after,#btnCmt:not(.on)::after{content:"";position:absolute;left:50%;top:50%;width:20px;height:1.6px;margin:-.8px 0 0 -10px;border-radius:1px;background:currentColor;transform:rotate(-35deg)}
 #btnVideo::before{content:"";position:absolute;left:0;right:0;top:-1px;height:2px;background:var(--card)}  /* covers the video's bottom line inside the tab */
 #btnVideo svg{width:16px;height:10px}
-#btnVideo.on{color:var(--text);background:var(--card);border-color:var(--line)}  /* not the common "on" button look */
 #btnVideo.on:not(:disabled){cursor:ns-resize}
 #btnVideo.drag{color:var(--accent)}
 #btnVideo:disabled{opacity:.4;cursor:default}
-/* 니코니코 댓글 tab (user request 2026-11-15): left of the video tab — on (default) = white text, hangs lower · off = like the video tab folded */
-#btnCmt{position:absolute;top:-1px;right:84px;width:56px;height:30px;border-top:0;border-radius:0 0 9px 9px;z-index:3;transition:height .15s}
 #btnCmt[hidden]{display:none}
-#btnCmt svg{width:15px;height:13px}
-#btnCmt.on{height:36px;color:var(--text);background:var(--card);border-color:var(--line)}
+#btnCmt svg{width:14px;height:12px}
+#btnVideo:not(.on) svg,#btnCmt:not(.on) svg{transform:scale(.85)}
 #videoBox{flex:none}
 /* 영상이 있을 때 가사 칸은 작으니 아래 여백(마지막 줄을 가운데로 올리는 자리)도 작게 — 여백이 칸보다 크면 칸 밖으로 넘침 */
 /* 영상 숨김(서버 없이 연 화면의 온라인 곡): 중계 플레이어는 소리를 내야 해서 지우지 않고 보이지 않게만 */
@@ -331,10 +337,13 @@ a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.
 #btnReport:hover,#sReport:hover{color:var(--text)}
 .ctrl .play{font-size:30px;color:var(--text);min-width:40px}  /* 재생/일시정지: 동그라미 없이 아이콘만 (조금 크게) */
 #btnOverlaySet{font-size:22px}
-.seek{display:flex;align-items:center;gap:8px;flex:1;min-width:220px}
+/* rows are the same at every width (user request 2026-11-15): ⏮ ▶ ⏭ … 셔플 · 반복 · 대기열 / 재생 막대 (a whole row) / 태그 / 링크 버튼 */
+.seek{display:flex;align-items:center;gap:8px;flex:1 0 100%;min-width:0;order:1}
+#btnShuffle{margin-left:auto}
+.ctrl>.btn,.ctrl>button:not(.ib){order:3}
 .time{font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted);white-space:nowrap;min-width:34px;text-align:center}
 /* 곡 정보: 나무위키 곡 문서의 분류(칩) · 각주(작게) — 재생 막대와 영상 버튼 사이 한 줄 */
-.songmeta{flex:1 0 100%;min-width:0}
+.songmeta{flex:1 0 100%;min-width:0;order:2}
 .songmeta .cats{display:flex;flex-wrap:wrap;gap:4px}
 .songmeta .b.vocal{color:var(--vc);background:color-mix(in srgb,var(--vc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vc) 55%,transparent)}
 .songmeta .b.kara{--bc:var(--muted);font-weight:600;color:color-mix(in srgb,var(--bc) 78%,#fff);background:color-mix(in srgb,var(--bc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--bc) 55%,transparent)}
@@ -567,9 +576,5 @@ body.m #miniBar.empty{display:none}
 #miniBar .minfo b,#miniBar .minfo span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #miniBar .minfo span{font-size:12px;color:var(--muted)}
 #miniBar .ib{flex:none;width:40px;height:40px;font-size:18px}
-/* 폰 재생 화면 (user request 2026-11-15): rows don't move with the width — buttons · 재생 막대 · 태그 · 링크 버튼.
-   Touch phones: no volume slider / mute (the device's volume keys only — mobile_view.js keeps the player at full volume) */
-body.m .seek{flex-basis:100%;order:1;min-width:0}
-body.m .songmeta{order:2}
-body.m .ctrl>.btn,body.m .ctrl>button:not(.ib){order:3}
-@media (pointer:coarse){body.m #btnMute,body.m #vol{display:none}}
+/* Touch phones (user request 2026-11-15): no volume slider / mute — the device's volume keys only (mobile_view.js keeps full volume) */
+@media (pointer:coarse){body.m .volbox{display:none}}
