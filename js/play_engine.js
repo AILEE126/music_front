@@ -138,8 +138,11 @@ function bridgeReason(code) {
   if (code === "no-video") return "원곡 영상 주소가 없습니다";
   return `니코니코 플레이어 오류 (${code}) — 삭제·비공개이거나 잠시 재생이 막힘`;
 }
-/* 곡마다 잰 소리 크기(서버가 WEB\data\stream_loudness.json 에 저장) → 줄일 비율 (키우기는 못 함 — 플레이어 소리 크기는 100 이 최대).
-   서버의 youtube_stream_mode._gain_db 와 같은 계산 */
+/* 소리 크기 (user request 2026-11-17): Niconico videos the server measured (export/db/loudness.json.gz {id: [LUFS, peak]},
+   music_backend vocadb/loudness.py — read by VDB.load) → turned down to -14 LUFS (can't turn up — the player's volume is at most 100).
+   YouTube levels itself to -14 (its stats: 'cont.-5.9dB tgt.-14.0dB') → nothing here. A Niconico video without a value is
+   asked for (LOCAL.loudAsk), so the server measures it next time its 소리 크기 job runs. */
+const LOUD = {map: {}};
 const LOUDNESS = -14, GAIN_PEAK = -1;
 function gainFactor(v) {
   if (!v || !isFinite(v[0])) return 1;
@@ -214,7 +217,6 @@ class LocalMedia extends EventTarget {
     this.priming = !autoplay;
     this.el.pause(); this.el.removeAttribute("src"); this.el.load();
     this.fire("emptied");
-    if (!this.gains) this.gains = {};  // old stream_loudness.json no longer read (user request 2026-11-14: tables only) — no per-song volume until it has a table
     if (this.refs !== refs) { if (pre) pre.br.destroy(); return; }  // 그사이 다른 곡
     this.tryRef(0, pre && pre.br);
   }
@@ -223,7 +225,8 @@ class LocalMedia extends EventTarget {
     this.release(this.br); this.br = null;
     const ref = this.refs[i], refs = this.refs;
     if (!ref) { this.brErr = {code: 4, reason: this.reason()}; this.brPaused = true; return this.fire("error"); }  // 출처가 모두 안 됨
-    this.ri = i; this.gain = gainFactor((this.gains || {})[ref.url]);
+    this.ri = i; this.gain = ref.kind === "nico" ? gainFactor(LOUD.map[ref.id]) : 1;
+    if (ref.kind === "nico" && !LOUD.map[ref.id] && typeof LOCAL !== "undefined") LOCAL.loudAsk(ref);
     const on = m => {
       if (this.br !== br) return;
       if (m.ev === "ready") { if (!this.priming) { if (!this.autoplay) br.pause(); this.fire("loadedmetadata"); } }
@@ -431,6 +434,7 @@ function makePlayer(el) {
     /* 영상 칸: 화면이 영상을 보일 자리(el, 다른 문서 — 플레이어 iframe 안이어도 됨)를 알려 주면 중계 플레이어를 그 위에 겹쳐 보임.
        null 이면 1px 로 접음 (영상은 안 보여도 소리는 그대로). 화면을 떠나거나 영상을 숨길 때 null */
     placeVideo(target) { place = target || null; placeNow(); },
+    refitVideo() { placeNow(); },  // the screen moved the video box (phone player screen done sliding) — follow it now, not on the next 250ms round
     notify() { sendNow(); },  // 오버레이에 바로 다시 알림 (플레이어의 발음·번역 체크가 바뀜)
   };
   addPlayQueue(P);  // 재생 목록·대기열·대기열 창
@@ -476,7 +480,7 @@ function makePlayer(el) {
   function sendNow(beat = false) {
     if (!LOCAL.ready || APP.screenOff) return;  // 폰 화면이 꺼짐: 가사 위치를 안 봄 (켜지면 appscreen 에서 바로 보냄)
     const it = P.now, L = P.lyr, i = P.lyrIndex(), g = L && L.times && i >= 0 ? L.groups[i] : null;
-    const d = {title: it ? it.title : "", artist: it ? shortName(it.artist || "") : "", playing: !audio.paused,
+    const d = {title: it ? titleOf(it) : "", artist: it ? shortName(it.artist || "") : "", playing: !audio.paused,
       show_r: store.get("showR", true), show_t: store.get("showT", true), colors: g && !store.get("simple", false) ? (g.vc || []) : [],  // 간단 표시: 보컬 색 없이 흰색
       // other-language lines (VocaDB): only the language picked in the player's 다른 언어 select (none by default)
       lines: g ? g.lines.filter(l => l.role !== "x" || (l.lang && l.lang === store.get("xLang", ""))).map(l => ({role: l.role, text: l.text})) : []};
@@ -617,7 +621,7 @@ function failDialog() {
   d.addEventListener("cancel", e => e.preventDefault());
   F.add = (it, reason, skipped) => {
     const t = new Date(), hm = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
-    list.insertAdjacentHTML("beforeend", `<li><span class="w">${hm}</span><span class="m"><b>${esc(it.title)}</b>${it.artist ? ` <span class="r">${esc(shortName(it.artist))}</span>` : ""}
+    list.insertAdjacentHTML("beforeend", `<li><span class="w">${hm}</span><span class="m">${titleHtml(it)}${it.artist ? ` <span class="r">${esc(shortName(it.artist))}</span>` : ""}
       <div class="r">${esc(reason)}${skipped ? " → 다음 곡으로 넘어감" : ""}</div></span></li>`);
     if (!d.open) d.showModal();
   };

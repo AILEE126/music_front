@@ -34,11 +34,14 @@ body.simple .side-head h1 .t-full{display:none}
 body.simple .side-head h1 .t-simple{display:inline}
 body.simple .side-head h1.rainbow{color:var(--text)}  /* 간단: plain text color */
 .side-head .top{display:flex;justify-content:space-between;align-items:center;gap:4px;margin-bottom:10px}
+.side-head .top{flex-wrap:wrap}
 .side-head .top h1{margin-right:auto;flex:none;white-space:nowrap}
+/* 온/오프라인 · 간단 · 노래방 모드 under the name (user request 2026-11-16): one row of switches, 온/오프라인 its old size */
+.side-head .top .modes{flex:1 0 100%;display:flex;gap:6px;margin-top:6px}
+body.m .side-head .top .modes .onoff:not(#onOff) .lb{min-width:0}  /* phone: the new two fit next to it */
 /* 온/오프라인 in the title row (user request 2026-11-15, like the phone) — compact so the row fits the list's smallest width */
 body:not(.m) .side-head .top .onoff{align-self:center;flex:none;min-height:26px}
 body:not(.m) .side-head .top .onoff .lb{min-width:40px;padding:1px 6px 0;font-size:11.5px}
-.kmrow #btnSimple{flex:none}
 .filters{display:flex;gap:6px;margin-top:8px}
 .filters select{flex:1}
 /* 정렬 줄 (필터 아래): 정렬 순서 + 노래방 번호 보이기 */
@@ -103,6 +106,10 @@ body.simple .item .thumb{display:none}  /* 간단 표시: 목록 썸네일 숨�
 .titleline{display:flex;align-items:baseline;gap:12px;min-width:0}
 .detail{flex:1;min-width:0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .detail span+span::before{content:"·";margin:0 6px}
+/* 곡 제목 (titleHtml, user request 2026-11-17): 기본 이름 조금 굵게 + 다른 이름들 흐리게 ' · ' — 재생 화면 제목줄처럼 */
+.t>b,.m>b,.ri>b{font-weight:700}
+.tsub{margin-left:8px;font-weight:400;font-size:.85em;color:var(--muted)}
+.tsub span+span::before{content:"·";margin:0 5px}
 .now h2{flex:0 1 auto;font-size:20px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .now .artist{color:var(--muted)}
 .now .reldate{font-size:12px;color:var(--muted);margin-bottom:8px;min-height:6px}
@@ -181,7 +188,30 @@ body.m .ltpager.ltroompager{margin-top:auto}
 .ltsec-head .ltscanat{margin-left:auto;font-size:11.5px;font-weight:400;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ltsec-head .ltsh{flex:none;white-space:nowrap}
 .ltsec-head .ltref{flex:none;width:26px;height:24px;padding:0;font-size:14px}  /* ↻ only (user request 2026-11-15) */
+/* phone pull-to-refresh (user request 2026-11-16, listen_together.js): only the room list slides down, a round arrow
+   comes down above it; the list goes under the pager and is clipped at the section's bottom */
+.ltptr{display:none}
+body.m .ltptr{display:block;position:absolute;left:0;right:0;height:130px;overflow:hidden;pointer-events:none;z-index:3}
+.ltptr-i{position:absolute;left:50%;top:0;width:36px;height:36px;margin-left:-18px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:var(--card);color:var(--muted);border:1px solid var(--line);box-shadow:0 2px 8px rgb(0 0 0 / .35);opacity:0;transform:translateY(-42px)}
+.ltptr-i svg{width:20px;height:20px}
+.ltptr-i.go{color:var(--accent)}
+.ltptr-i.spin svg{animation:ltptrspin .8s linear infinite}
+@keyframes ltptrspin{to{transform:rotate(360deg)}}
+body.m #listenDlg{overflow:hidden}
+body.m #listenDlg .dlg-body>.ltsec:last-child{position:relative;overflow:hidden}
+body.m .ltpager.ltroompager{position:relative;z-index:4;background:var(--card)}
+body.m #listenDlg .dlg-body{overscroll-behavior-y:contain}
 .ltsmall{padding:2px 8px;font-size:12px;font-weight:400}
+/* names used before, under a name field (user request 2026-11-16, player_screen.js nameField) */
+.ltfield,.rlabel{position:relative}
+.namehist{position:absolute;left:0;right:0;z-index:20;margin:0;padding:4px 0;list-style:none;max-height:220px;overflow-y:auto;
+  background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 18px rgb(0 0 0 / .35)}
+.namehist[hidden]{display:none}
+.namehist li{display:flex;align-items:center;gap:6px;padding:7px 6px 7px 12px;font-size:14px;font-weight:400;color:var(--text);cursor:pointer}
+.namehist li:hover{background:var(--chip)}
+.namehist li span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.namehist .nhx{flex:none;width:26px;height:26px;padding:0;border:0;background:none;color:var(--muted);font-size:12px}
 #listenDlg .ltrow{display:flex;align-items:center;gap:6px;margin:6px 0}
 #listenDlg .ltrow button{height:32px}
 #listenDlg .hint{margin:4px 0 0}
@@ -288,9 +318,9 @@ body.lt-guest #streamHost{pointer-events:none}
 .nbadge[hidden]{display:none}
 .khead{display:flex;align-items:center;justify-content:space-between;gap:8px}
 #karaMode{font-weight:400;font-size:13px}#karaMode b{margin-left:4px}
-.kmrow{display:flex;gap:6px;margin-top:8px}  /* 노래방 모드 on the playlist (user request 2026-11-15) */
-.kmrow button{flex:1;padding:4px 10px;font-size:12.5px}.kmrow button b{margin-left:4px}
-.kmrow select{flex:none;font-size:12.5px;padding:3px 6px}
+.kmrow{display:flex;gap:6px;margin-top:8px}  /* 노래방 모드's machine, shown while it is on (the switch is under the name since 2026-11-16) */
+.kmrow[hidden]{display:none}
+.kmrow select{flex:1;font-size:12.5px;padding:3px 6px}
 .kmrow select[hidden]{display:none}
 .pct.kno{font-size:12px;font-weight:700;color:var(--accent)}
 /* 노래방 번호 in the machine's color (user request 2026-11-15) — same tint as the karaoke chips; 간단 mode keeps the plain look */
@@ -481,8 +511,7 @@ dialog.busy::before{content:"";position:absolute;left:50%;top:45%;z-index:51;wid
 .plfilter.fold .plfhead .chev{transform:rotate(-90deg)}
 .plfilter.fold>:not(.plfhead){display:none}  /* folded: just the header (user request 2026-11-15) */
 /* 간단 mode: 노래방 · 노래방 모드 buttons are off and show only their icon (user request 2026-11-15) */
-body.simple .side-tools #btnKara .tl,body.simple #btnKaraMode .kmt{display:none}
-body.simple .kmrow #btnKaraMode{flex:none}
+body.simple .side-tools #btnKara .tl{display:none}
 body.simple .mnav [data-nav="kara"]{font-size:0}
 .side-tools .tile:disabled,.mnav button:disabled,#btnKaraMode:disabled{opacity:.4;cursor:default}
 .plfilter .fgroup{cursor:default}
@@ -496,6 +525,12 @@ body.simple .mnav [data-nav="kara"]{font-size:0}
 .songmeta .b.sync.ok{color:var(--ok)}.songmeta .b.sync.warn{color:var(--warn)}  /* 싱크 표시: a tag-look chip, no border */
 .songmeta .b.more{height:auto;min-width:0;padding:0 7px;border:0;font-size:11px;font-weight:600;line-height:inherit;cursor:pointer}  /* +N: the folded plain tags */
 .songmeta .b.more:hover{color:var(--text)}
+/* 보컬 15명 넘음 (user request 2026-11-16): '+N' chip (flag tag color when set) → the whole vocal list in a small scrolling popup */
+.b.vmore{border:0;font:inherit;font-size:11px;font-weight:600;line-height:inherit;cursor:pointer;vertical-align:baseline}
+.b.vmore:not(.tc):hover{color:var(--text)}
+.vpop{position:fixed;z-index:1000;display:flex;flex-wrap:wrap;align-content:flex-start;gap:4px;width:max-content;max-width:min(340px,calc(100vw - 8px));max-height:min(220px,40vh);overflow:auto;overscroll-behavior:contain;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.5);line-height:1.6}
+.vpop .h{flex:1 0 100%;font-size:11px;color:var(--muted)}
+.vpop .b.vocal{color:var(--vc);background:color-mix(in srgb,var(--vc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vc) 55%,transparent)}
 .songmeta .fn{margin-top:4px;font-size:11.5px;color:var(--muted);line-height:1.5}
 .songmeta .fn div{overflow-wrap:anywhere}
 #vol{flex:none;width:93px}
@@ -529,6 +564,18 @@ label.inline{display:flex;align-items:center;gap:4px;font-size:13px;cursor:point
 .editbar.show{display:flex}
 .editbar>span{flex-basis:100%}
 .editrow{display:flex;align-items:center;gap:8px;width:100%}  /* +/− at the bottom-left, save · cancel at the right */
+/* 폰 싱크 맞추기 (user request 2026-11-16): no guide text, only +/− and 저장 · 취소; ↑ ↓ float over the lyrics' bottom-right */
+body.m .editbar>span{display:none}
+body.m .editbar{padding:20px 16px 8px}
+.editkeys{display:none}
+/* one card-colored pill split in two (like the player's other cards / context menu), not two loud circles — user request 2026-11-16 */
+body.m .main:has(#editbar.show) .editkeys{display:flex;flex-direction:column;position:absolute;right:16px;bottom:24px;z-index:5;
+  background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.45)}
+.editkeys button{display:flex;align-items:center;justify-content:center;width:60px;height:60px;padding:0;border:0;border-radius:0;background:transparent;color:var(--text);
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:background .12s,color .12s}
+.editkeys button+button{border-top:1px solid var(--line)}
+.editkeys button svg{width:28px;height:28px}
+.editkeys button:active{background:var(--accent-soft);color:var(--accent)}
 kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:12px;background:var(--card)}
 /* 가사 */
 #lyrics{position:relative;flex:1;overflow-y:auto;padding:24px 20px 45vh;min-height:0;scroll-behavior:smooth}
@@ -573,7 +620,6 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
 .sitem .thumb{width:64px;height:36px}
 .sitem .meta{flex:1;min-width:0}
 .sitem .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sitem .t .o{font-weight:400;font-size:12px;color:var(--muted);margin-left:4px}
 .sitem .a{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sitem .tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px;font-size:11px;align-items:center}
 .sitem .tags .d{color:var(--muted)}
@@ -690,7 +736,7 @@ html[data-theme=light]{color-scheme:light;--accent-rgb:58 58 62;--accent-text:rg
 /* vocal colors come from Namu (made for dark pages): darken them on a light page so yellow/cyan stay readable */
 html[data-theme=light] .vc:not(.vcm){color:color-mix(in srgb,var(--vc) 62%,#000)!important}
 html[data-theme=light] .vcm{filter:brightness(.62) saturate(1.2)}
-html[data-theme=light] .songmeta .b.vocal,html[data-theme=light] .songmeta .b.inner.ko,html[data-theme=light] .songmeta .b.inner.ja{color:color-mix(in srgb,var(--vc) 62%,#000)}
+html[data-theme=light] .songmeta .b.vocal,html[data-theme=light] .vpop .b.vocal,html[data-theme=light] .songmeta .b.inner.ko,html[data-theme=light] .songmeta .b.inner.ja{color:color-mix(in srgb,var(--vc) 62%,#000)}
 html[data-theme=light] .songmeta .b.inner.ko{--vc:rgb(120 120 132)}
 html[data-theme=light] .g .part i{box-shadow:0 0 0 1px rgba(0,0,0,.25)}
 html[data-theme=light] .side-head h1 .t-rb{background-image:linear-gradient(135deg,#e00000 0%,#e06a00 17%,#c9a400 33%,#009a00 50%,#0068d6 67%,#3a00d6 83%,#a000d6 100%)}  /* deeper rainbow: pure yellow vanishes on white */
@@ -739,11 +785,13 @@ body.m .app{height:calc(100dvh / var(--ui-zoom));grid-template-columns:minmax(0,
 body.m .side{max-height:none;height:100%;border-right:none}
 body.m #btnList{display:none}
 body.m .nowtop{padding-left:0}
-body.m .main{position:fixed;left:0;top:0;width:100%;height:calc(100dvh / var(--ui-zoom));z-index:20;background:var(--bg);transform:translateY(100%);transition:transform .25s ease;overflow:hidden}
+body.m .main{position:fixed;left:0;top:0;width:100%;height:calc(100dvh / var(--ui-zoom));z-index:20;background:var(--bg);transform:translateY(calc(100dvh / var(--ui-zoom)));transition:transform .25s ease;overflow:hidden}
 body.m.mplay .main{transform:none}
+body.m #miniBar,body.m .mhead,body.m .now{touch-action:none}  /* swiped to open / close the player screen (mobile_view.js) — not a page scroll */
+body.m.mmove #miniBar:not(.empty){display:flex}  /* while sliding open the mini bar stays under it, not a gap that blinks away */
 body.m #lyrics{max-height:none;padding-bottom:40%}
 body.m .mhead{display:flex;align-items:center;gap:8px;flex:none;padding:6px 10px;background:var(--card);border-bottom:1px solid var(--line);font-weight:600;color:var(--muted)}
-.mhead #mClose{width:36px;height:36px;padding:6px}
+.mhead #mClose{width:36px;height:36px;padding:6px;order:1;margin-left:auto}  /* ⌄ at the right end (user request 2026-11-16) */
 .mhead #mClose svg{width:22px;height:22px}
 body.m #miniBar{display:flex;align-items:center;gap:10px;flex:none;padding:8px 10px;border-top:1px solid var(--line);background:var(--card);cursor:pointer}
 body.m #miniBar.empty{display:none}
@@ -755,7 +803,10 @@ body.m.mbar:not(.mplay){--mbarh:var(--mbar)}  /* the mini bar sits right above t
    screen too (--mroom = its height, mobile_view.js) */
 body.m.mroom{--mroomh:var(--mroom,0px)}
 body.m .ltcard{position:fixed;left:0;right:0;bottom:var(--mnav);z-index:28;margin:0;border-radius:0;border-width:1px 0}
-body.m .app{height:calc(100dvh / var(--ui-zoom) - var(--mbottom))}
+/* user report 2026-11-16: the folded player screen peeked through the (see-through) room card — the card is opaque on the phone
+   and the folded screen sits wholly below the bottom menu, so it rises from behind the mini bar */
+body.m .ltcard{background:linear-gradient(var(--accent-soft),var(--accent-soft)),var(--card)}
+body.m .ltcard:hover{background:linear-gradient(color-mix(in srgb,var(--accent) 22%,transparent),color-mix(in srgb,var(--accent) 22%,transparent)),var(--card)}body.m .app{height:calc(100dvh / var(--ui-zoom) - var(--mbottom))}
 body.m .main{height:calc(100dvh / var(--ui-zoom) - var(--mnav) - var(--mroomh))}
 body.m #miniBar{position:fixed;left:0;right:0;bottom:calc(var(--mnav) + var(--mroomh));height:var(--mbar);box-sizing:border-box;z-index:28}  /* always in view, also over the 곡 검색 · 노래방 pages (user request) */
 body.m.mplay #miniBar{display:none}
@@ -784,9 +835,12 @@ body.m .mnav{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;heig
    bottom menu, the rest in 설정); 곡 검색 and 노래방 번호 추천 open as full pages, not popups */
 body.m .side>.side-head>.filters{display:none}  /* 곡 검색 · 같이듣기 · 노래방 are in the bottom menu */
 body.m .side-head .top{gap:6px}
-body.m .side-head .top h1{margin-right:auto}
 body.m .side-head .top .onoff{align-self:center}
 body.m #searchDlg,body.m #karaDlg,body.m #listenDlg,body.m #mSetDlg{position:fixed;inset:0 0 auto 0;z-index:25;width:100%;height:calc(100dvh / var(--ui-zoom) - var(--mbottom));max-width:none;max-height:none;margin:0;border:0;border-radius:0}  /* pages above the list, ending at the bottom menu (not modal — mobile_view.js) */
+/* 좌우로 밀어 메뉴 옮기기 (user request 2026-11-16, mobile_view.js): sideways moves are ours (the list still scrolls up/down);
+   the page coming in sits over the one leaving */
+body.m .side,body.m #searchDlg,body.m #karaDlg,body.m #listenDlg,body.m #mSetDlg{touch-action:pan-y}
+body.m .mswtop{z-index:26}
 body.m #karaDlg[open]{display:flex;flex-direction:column}
 body.m #karaDlg .dlg-body{flex:1;min-height:0;display:flex;flex-direction:column;padding:10px 12px}
 body.m #karaDlg .kshow{flex:1;min-height:0;padding:0;gap:6px}

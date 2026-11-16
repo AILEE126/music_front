@@ -94,7 +94,7 @@ var APP = (() => {
     const audio = SHELL.audio;
     let last = "";
     const send = () => {
-      const it = SHELL.now, s = {playing: !!it && !audio.paused, title: it ? it.title || "" : "", artist: it ? shortName(it.artist || "") : ""};
+      const it = SHELL.now, s = {playing: !!it && !audio.paused, title: it ? titleOf(it) : "", artist: it ? shortName(it.artist || "") : ""};
       const k = JSON.stringify(s);
       if (k !== last) { last = k; M.state(s).catch(() => {}); }
     };

@@ -74,8 +74,8 @@ function queuePanel(S) {
   const render = () => {
     if (p.hidden) return;
     p.querySelector(".qmode").textContent = `${S.shuffle ? "무작위" : "순서대로"} · ${{off: "반복 안 함", all: "전체 반복", one: "한 곡 반복"}[S.repeat]}`;
-    const row = (it, list, i, cls = "") => `<div class="qi ${cls}" data-l="${list}" data-i="${i}" title="${esc(it.title)}${it.artist ? " — " + esc(shortName(it.artist)) : ""}">
-      <span class="t">${esc(it.title)} <span class="a">${esc(shortName(it.artist || ""))}</span></span>
+    const row = (it, list, i, cls = "") => `<div class="qi ${cls}" data-l="${list}" data-i="${i}" title="${esc(titleNames(it).join(" · "))}${it.artist ? " — " + esc(shortName(it.artist)) : ""}">
+      <span class="t">${titleHtml(it)} <span class="a">${esc(shortName(it.artist || ""))}</span></span>
       ${list === "pinned" || list === "upcoming" ? `<button class="x" title="대기열에서 빼기">✕</button>` : ""}</div>`;
     const H = S.history.slice(-10), sec = t => `<div class="qsec">${t}</div>`, U = S.upcoming;
     let h = "";

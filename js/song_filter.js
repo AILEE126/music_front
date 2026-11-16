@@ -27,11 +27,15 @@ function prepItem(it) {
 }
 /* 곡 상태 (user request 2026-11-15: 싱크 · 가사 유무 · 번역명도 태그처럼 필터에) — 코드가 정하는 태그. 순서 = 목록 순서.
    규칙은 음원 관리 › 필터 › 하위 태그에 보임 (vocadb/filter_settings.py FLAGS 와 같음) */
-const FLAGS = ["싱크 있음", "싱크 없음", "우리 가사 있음", "VocaDB 가사 있음", "가사 없음", "한글 제목 있음", "한글 제목 없음"];
+const FLAGS = ["싱크 있음", "싱크 없음", "우리 가사 있음", "VocaDB 가사 있음", "가사 없음", "한글 제목 있음", "한글 제목 없음", "보컬 15명 넘음"];
+/* 보컬이 너무 많은 곡 (user request 2026-11-16, e.g. 合音声大決闘戦): 보컬은 앞 VOCAL_SHOW 명만 보이고 나머지는 '+N' 칩 —
+   그 칩은 곡 상태 태그 MANY_VOCALS 의 색 (필터 › 하위 태그에서 색 지정) */
+const VOCAL_SHOW = 15, MANY_VOCALS = "보컬 15명 넘음";
 /* vdbLyrics: VocaDB 에 원문 가사 (data.lyrics = Y) · koTitle: 한글 제목이 있고 원제와 다름 */
 function songFlags(it, vdbLyrics, koTitle) {
   return [it.sync === "ok" ? "싱크 있음" : "싱크 없음", ...(it.lyrics ? ["우리 가사 있음"] : []), ...(vdbLyrics ? ["VocaDB 가사 있음"] : []),
-          ...(!it.lyrics && !vdbLyrics ? ["가사 없음"] : []), koTitle ? "한글 제목 있음" : "한글 제목 없음"];
+          ...(!it.lyrics && !vdbLyrics ? ["가사 없음"] : []), koTitle ? "한글 제목 있음" : "한글 제목 없음",
+          ...(people(it.singer).length > VOCAL_SHOW ? [MANY_VOCALS] : [])];
 }
 /* 보컬 종류 (user request 2026-11-16): data.vocal_kind (VocaDB 보컬의 artistType) — 엔진 · 섞임(엔진 + 사람) · 사람 · 정보 없음 (빈칸).
    사람 원곡을 엔진으로 부른 커버와 가르려고 (예: 튜링러브 원곡은 사람, 커버는 엔진). 순서 = 목록 순서 */
@@ -42,13 +46,17 @@ const vkindOf = it => it.vkind || "정보 없음";
    순서로 세우고 '같은 곡 자르기' n 곡만 남김 (예: 사람이 부른 원곡은 보컬 종류 조건에서 빠지고 그 엔진 커버 중 재생되고
    인기 있는 한 곡만). 정렬 값은 고른 순서가 우선순위 · 정렬만 고르면 1곡 · 자르기만 고르면 SAME_SORTS 순서.
    그룹마다 따로 (그룹끼리 합치고 빼는 건 그 뒤) — filterGroups. 끝까지 같으면 VocaDB 번호가 작은(먼저 등록된) 곡 */
-const SAME_SORTS = ["재생 가능", "원곡 먼저", "인기순", "먼저 나온 순"];
+/* 긴 버전 먼저 (user request 2026-11-17): VocaDB 'short version' 태그 곡(광고·TV 사이즈 …)은 같은 곡 중 맨 뒤 —
+   Tell Your World 는 원곡이 61초 광고판이고 풀버전은 그 리믹스('extended version') */
+const SAME_SORTS = ["재생 가능", "긴 버전 먼저", "원곡 먼저", "인기순", "먼저 나온 순"];
+const isShortVer = it => (it.tags || []).includes("short version");
 const SAME_CUTS = ["1", "2", "3", "5", "10"];
 var samePlayable = it => (it.sources || []).length > 0;  // 플레이어는 canPlay 로 바꿈
 const SAME_KEYS = ["same_sort", "same_cut"];
 const dateKey = it => it.date || "9999";
 const SAME_CMP = {
   "재생 가능": (a, b) => (samePlayable(b) ? 1 : 0) - (samePlayable(a) ? 1 : 0),
+  "긴 버전 먼저": (a, b) => (isShortVer(a) ? 1 : 0) - (isShortVer(b) ? 1 : 0),
   "원곡 먼저": (a, b) => (a.origId ? 1 : 0) - (b.origId ? 1 : 0),
   "인기순": (a, b) => (b.rating || 0) - (a.rating || 0),
   "먼저 나온 순": (a, b) => dateKey(a) < dateKey(b) ? -1 : dateKey(a) > dateKey(b) ? 1 : 0,
@@ -134,7 +142,7 @@ const STATES = {lyrics: "가사 있음", nolyrics: "가사 없음", ok: "싱크�
                 "src:namu": "나무위키 가사", "src:vocaro": "VL 가사", "src:own": "직접 넣은 가사", "src:link": "연결 가사"};
 const FKIND = {
   // fold drops spaces (user request: no-space query matches) — fields joined by "" so a match never spans two fields
-  text: ["검색", (it, v) => [...Object.values(it.nums || {}), it.title, it.kara_title, it.orig, it.reading, it.artist, it.singer, it.name].map(fold).join("").includes(fold(v))],
+  text: ["검색", (it, v) => [...Object.values(it.nums || {}), it.title, it.kara_title, it.orig, it.ja, it.reading, it.en, it.alt, it.artist, it.singer, it.name].map(fold).join("").includes(fold(v))],
   ini: ["가나다", (it, v) => it._ini === v],
   singer: ["보컬", (it, v) => it._singers.includes(v)],
   solo: ["솔로", (it, v) => it._singers.length === 1 && it._singers[0] === v],

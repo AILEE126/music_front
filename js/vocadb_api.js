@@ -40,7 +40,11 @@ function vocalColor(name) {
 function vdbDerive(it) {
   it.video = it.sources[0] || "";
   it.videos = it.sources.filter(u => /youtu/.test(u)).slice(0, 1);
-  it.artist = [it.composer, it.singer].filter(Boolean).join(" feat. ");
+  // 보컬이 VOCAL_SHOW 명 넘으면 앞 VOCAL_SHOW 명 + ' [+N]' (user request 2026-11-16) — 화면의 제목 옆은 artistBase + '+N' 칩
+  const v = String(it.singer || "").split(",").map(x => x.trim()).filter(Boolean);
+  it.vocalMore = v.length > VOCAL_SHOW ? v.length - VOCAL_SHOW : 0;
+  it.artistBase = [it.composer, it.vocalMore ? v.slice(0, VOCAL_SHOW).join(", ") : it.singer].filter(Boolean).join(" feat. ");
+  it.artist = it.artistBase + (it.vocalMore ? ` [+${it.vocalMore}]` : "");
   it.score = it.score ?? null;
 }
 
@@ -75,6 +79,10 @@ const VDB = {
   async load() {
     const rd = f => LOCAL.readJson(`${LOCAL.out}/db/${f}`, null);
     const [mst, kara, songs, flt] = await Promise.all([rd("master.json"), rd("karaoke.json"), this.loadSongs(), rd("filter.json")]);
+    // 소리 크기 (user request 2026-11-17): measured Niconico videos {id: [LUFS, peak]} → play_engine.js LOUD (missing → no levelling)
+    LOCAL.readBytes(`${LOCAL.out}/db/loudness.json.gz`)
+      .then(gz => new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).json())
+      .then(m => { LOUD.map = m || {}; }).catch(() => {});
     this.filter = flt;  // 음원 관리 › 필터 (user request 2026-11-14): category order · symbols · 필터 프리셋 추천 — missing → built-in defaults
     const miss = [!mst && "master.json", !kara && "karaoke.json", !songs && "songs/index.json"].filter(Boolean);
     if (miss.length) throw new Error(`${LOCAL.out}/db 에 ${miss.join(", ")} 이 없습니다. 서버에서 내보내기·올리기를 하세요.`);
@@ -114,16 +122,21 @@ const VDB = {
   },
   /* data table row (+ karaoke row) → player item */
   fromRow(r, k) {
-    const id = String(r.vocadb_id), title = r.title_ko || r.title_ja, ki = this.karaInfo(k), ours = r.ours || {};
+    // 원제 = VocaDB 기본 이름 (title_default, e.g. English 'Cutie Mew Mew Magic'), else the Japanese name (user request 2026-11-16)
+    const id = String(r.vocadb_id), orig = r.title_default || r.title_ja || "", title = r.title_ko || orig, ki = this.karaInfo(k), ours = r.ours || {};
     const people = s => String(s || "").split(",").map(x => x.trim()).filter(Boolean);
     const d = String(r.upload_date || "");
-    const it = {site: "stream", name: `vocadb_${id}`, vocadb: id, title, orig: r.title_ja !== title ? r.title_ja : "", reading: r.title_reading || "",
+    const it = {site: "stream", name: `vocadb_${id}`, vocadb: id, title, orig: orig !== title ? orig : "", reading: r.title_reading || "",
+      def: orig, defJa: !r.title_default || r.title_default === r.title_ja,  // VocaDB 기본 이름 · 그게 일본어인지 (titleNames, 2026-11-17)
+      ja: r.title_ja && r.title_ja !== orig ? r.title_ja : "",  // 일본어 이름이 원제가 아닐 때 — 검색 · '*일본어 제목' 표시용
+      en: r.title_en || "", alt: r.alt_names || "",  // 검색용 영어 이름 · 다른 이름 (user request 2026-11-16)
       singer: r.singer || "", composer: r.composer || "", vocals: people(r.singer).map(n => [n, vocalColor(n)]),
       date: d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : "", thumb: r.thumb || "", type: r.song_type || "", vkind: r.vocal_kind || "", origId: r.original_id || "",  // 같은 곡 묶기 (원곡 번호)
       rating: +r.rating_score || 0, sources: [r.video_url, ...String(r.alt_urls || "").split(" ")].filter(u => /nicovideo\.jp|nico\.ms|youtube\.com|youtu\.be/.test(u || "")),
       tags: [...String(r.tags || "").split("|").filter(Boolean), ...ki.extraTags], nums: ki.nums, gone: ki.gone, only: ki.only, ord: ki.ord, karaoke: ki.karaoke, namu: ki.namu,
-      lyrics: ours.lyrics || "", ...(ours.sync === "ok" ? {sync: "ok", method: ours.method || "", score: ours.score ?? null} : {})};
-    it.flags = songFlags(it, r.lyrics === "Y", !!(r.title_ko && r.title_ko !== r.title_ja));  // 곡 상태 (song_filter.js FLAGS)
+      lyrics: ours.lyrics || "", ...(ours.sync === "ok" ? {sync: "ok", method: ours.method || "", score: ours.score ?? null} : {}),
+      ...(ours.vsync ? {vsync: 1} : {})};  // sync made on VocaDB's lyrics (export/db/vsync/<id>.json, 2026-11-17)
+    it.flags = songFlags(it, r.lyrics === "Y", !!(r.title_ko && r.title_ko !== r.title_ja && r.title_ko !== orig));  // 곡 상태 (song_filter.js FLAGS)
     vdbDerive(it); prepItem(it);
     return it;
   },

@@ -212,7 +212,7 @@ async function ltHost(open, pw, title) {
   if (!open && !pw) { LT.status = "비밀번호를 정해 주세요"; ltRender(); return $("ltNewPw").focus(); }
   if (!await ltNameFree()) return;
   ltLeave(true);
-  LT.me = ltName(); LT.open = open; LT.pw = open ? "" : pw; LT.title = title || `${LT.me}님의 방`;
+  LT.me = ltName(); nameHistAdd(LT.me); LT.open = open; LT.pw = open ? "" : pw; LT.title = title || `${LT.me}님의 방`;
   LT.status = "방을 만드는 중…"; ltRender();
   try { await ltLoadPeerJs(); } catch (e) { LT.status = e.message; return ltRender(); }
   ltHostPeer(ltNewCode(), 3);
@@ -382,7 +382,7 @@ async function ltJoin(code, pw = "") {
   if (LT.role && code === LT.code) { LT.status = "지금 있는 방입니다"; return ltRender(); }
   if (!await ltNameFree()) return;
   ltLeave(true);
-  LT.me = ltName(); LT.pw = pw; LT.ask = "";
+  LT.me = ltName(); nameHistAdd(LT.me); LT.pw = pw; LT.ask = "";
   LT.status = "들어가는 중…"; ltRender();
   try { await ltLoadPeerJs(); } catch (e) { LT.status = e.message; return ltRender(); }
   ltGuestPeer(code);
@@ -727,6 +727,62 @@ $("ltRooms").addEventListener("click", e => {
   LT.ask = r.code; LT.status = ""; ltRender(); $("ltPwIn").focus();  // secret room: password first
 });
 $("ltRefresh").onclick = () => { LTS.retry = 0; ltScan(); };
+/* phone: pull the 같이듣기 page down from its top and let go = 새로고침 (user request 2026-11-16, like SNS apps) —
+   only the room list follows the finger (user request 2026-11-16), with resistance; a round arrow turns with it above
+   the list, past the line it spins until the look ends */
+(() => {
+  const d = $("listenDlg"), body = d.querySelector(".dlg-body"), list = $("ltRooms");
+  const box = document.createElement("div"), ind = document.createElement("div");
+  box.className = "ltptr"; ind.className = "ltptr-i";
+  ind.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v4.5h-4.5"/></svg>`;
+  box.append(ind); list.before(box);
+  const MAX = 120, GO = 70, REST = 56, SIZE = 36;  // css px: furthest pull · let go past this = refresh · held here while looking
+  const slow = matchMedia("(prefers-reduced-motion:reduce)");
+  let s = null, busy = false;
+  const zoom = () => document.documentElement.getBoundingClientRect().width / document.documentElement.offsetWidth || 1;
+  const draw = (y, ms = 0) => {
+    const tr = ms && !slow.matches ? `transform ${ms}ms cubic-bezier(.2,.7,.3,1),opacity ${ms}ms` : "none";
+    list.style.transition = ind.style.transition = tr;
+    list.style.transform = y ? `translateY(${y}px)` : "";
+    const k = Math.min(1, y / GO);
+    ind.style.opacity = busy ? 1 : k;
+    ind.style.transform = `translateY(${Math.min(y, REST) - SIZE - 6}px) scale(${busy ? 1 : .6 + .4 * k})${busy ? "" : ` rotate(${y * 3}deg)`}`;
+    ind.classList.toggle("go", busy || y >= GO);
+  };
+  const done = () => { draw(0, 260); setTimeout(() => { if (!busy) ind.classList.remove("spin"); }, 280); };  // spins on while it slides away
+  body.addEventListener("touchstart", e => {
+    s = null;
+    if (!document.body.classList.contains("m") || busy || e.touches.length !== 1 || body.scrollTop > 0) return;
+    if (e.target.closest("input,textarea,select")) return;
+    box.style.top = list.offsetTop + "px";
+    s = {x: e.touches[0].clientX, y: e.touches[0].clientY, pull: 0, on: false};
+  }, {passive: true});
+  body.addEventListener("touchmove", e => {
+    if (!s) return;
+    const z = zoom(), dx = (e.touches[0].clientX - s.x) / z, dy = (e.touches[0].clientY - s.y) / z;
+    if (!s.on) {
+      if (dy < 8) { if (dy < -4 || Math.abs(dx) > 8) s = null; return; }  // scrolling up or a side swipe: not mine
+      if (Math.abs(dx) > dy || body.scrollTop > 0) { s = null; return; }
+      s.on = true; s.y += 8 * z;  // starts from here, no jump
+    }
+    e.preventDefault();  // the page itself must not scroll / bounce meanwhile
+    const p = Math.max(0, (e.touches[0].clientY - s.y) / z);
+    s.pull = MAX * (1 - Math.exp(-p / MAX));  // gives less the further it goes
+    draw(s.pull);
+  }, {passive: false});
+  const end = async () => {
+    const t = s; s = null;
+    if (!t || !t.on) return;
+    if (t.pull < GO) return done();
+    busy = true; ind.classList.add("spin");
+    draw(REST, 200);
+    LTS.retry = 0;
+    await Promise.all([ltScan(), new Promise(r => setTimeout(r, 500))]);  // a fast answer still shows the spin a moment
+    busy = false; done();
+  };
+  body.addEventListener("touchend", end);
+  body.addEventListener("touchcancel", end);
+})();
 
 /* ---------- 화면 ---------- */
 function ltRender() {
@@ -880,7 +936,7 @@ function ltRenderPop() {
       + (ltOpt.busy ? '<div class="fdd-none">우리 DB 에서 찾는 중…</div>' : os.length ? "" : '<div class="fdd-none">맞는 곡이 없습니다</div>')
       + os.map((o, i) => {
         const r = LT.reqs.find(r => r.key === keyOf(o.it));
-        return `<div class="fdd-opt${i === ltHl ? " hl" : ""}" data-i="${i}"><span class="t">${esc(o.it.title)} <span class="a">${esc(shortName(o.it.artist || ""))}</span></span>${
+        return `<div class="fdd-opt${i === ltHl ? " hl" : ""}" data-i="${i}"><span class="t">${titleHtml(o.it)} <span class="a">${esc(shortName(o.it.artist || ""))}</span></span>${
           r ? `<span class="st ${r.state}">${LT_REQ_STATE[r.state]}</span>` : `<span class="go">신청</span>`}</div>`;
       }).join("");
   } else {
@@ -958,13 +1014,14 @@ $("btnListen").onclick = () => {
   ltOpenFresh();
 };
 function ltOpenFresh() {
-  if (!LT.role) {  // user request: the nickname field always starts empty
-    $("ltName").value = ""; $("ltNameErr").hidden = true; $("ltName").closest(".ltfield").classList.remove("need");
+  if (!LT.role) {  // user request 2026-11-16: the nickname field starts with the last name used (was: always empty)
+    $("ltName").value = store.get("reportWho", ""); $("ltNameErr").hidden = true; $("ltName").closest(".ltfield").classList.remove("need");
   }
   ltOpenDlg();
   if (!LT.role) (ltName() ? $("ltTitle") : $("ltName")).focus();
 }
 $("ltLock").onclick = () => { LT.lock = !LT.lock; ltRender(); if (LT.lock) $("ltNewPw").focus(); };
+nameField($("ltName"));
 $("ltName").addEventListener("input", () => {
   store.set("reportWho", ltName());
   if (ltName()) { $("ltNameErr").hidden = true; $("ltName").closest(".ltfield").classList.remove("need"); }
@@ -988,7 +1045,7 @@ $("ltPlf").addEventListener("click", async e => {
   store.set("f.saved", [...store.get("f.saved", []).filter(f => f.name !== name), {name, groups}]);  // 같은 이름이면 덮어씀
   LT.status = `필터 '${name}' 을(를) 저장했습니다.`; ltRender();
 });
-$("ltLeave").onclick = () => { const code = LT.role === "host" ? LT.code : ""; $("ltName").value = ""; ltLeave(false); ltRescan(code, 800); };  // back to an empty nickname
+$("ltLeave").onclick = () => { const code = LT.role === "host" ? LT.code : ""; $("ltName").value = store.get("reportWho", ""); ltLeave(false); ltRescan(code, 800); };  // back to the last name used
 $("ltClose").onclick = () => $("listenDlg").close();
 $("ltCard").addEventListener("click", async e => {
   ltOpenFresh();  // opens, never folds

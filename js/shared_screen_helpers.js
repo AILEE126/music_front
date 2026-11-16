@@ -99,6 +99,21 @@ function lyrCols(g, head, roles) {
 /* 화면 표시용: 같은 글자가 10번 넘게 이어지면 '누×53' 처럼 줄임 (프로듀서 '누누누…' 같은 긴 이름). mp3 태그·검색·필터 값은 그대로 */
 const shortName = s => String(s ?? "").replace(/(.)\1{9,}/gu, (m, c) => `${c}×${[...m].length}`);
 const fold = s => String(s ?? "").normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+/* 곡 제목 표시 (user request 2026-11-17, 모든 곡 제목): 앞 이름을 굵게, 옆에 다른 이름을 흐리게 ' · ' 로 — 같은 이름은 한 번.
+   앞 이름: VocaDB 기본 이름이 일본어면 한글 제목(번역명, 우리가 가진 것만 — 자동 번역명이 생기면 그건 앞에 두지 않음),
+   없으면 기본 이름 / 기본 이름이 영어 등 일본어가 아니면 기본 이름.
+   뒤: 기본 이름 > 일본어 이름 > 한글 발음 > 한글 제목 > 영어 이름 > VocaDB 다른 이름. 우리 DB 밖의 곡 (오프라인 mp3) 은 제목 · 원제 · 발음 */
+function titleNames(it) {
+  if (!it) return [""];
+  const main = (it.def && !it.defJa ? it.def : it.title) || "", seen = new Set([fold(main)]);
+  const subs = [it.def || it.orig, it.ja, it.reading, it.title, it.en, ...String(it.alt || "").split(",")]
+    .map(x => String(x || "").trim()).filter(x => x && !seen.has(fold(x)) && seen.add(fold(x)));
+  return [main, ...subs];
+}
+const titleOf = it => titleNames(it)[0];
+const titleSubHtml = it => titleNames(it).slice(1).map(x => `<span>${esc(x)}</span>`).join("");
+/* <b>기본 이름</b><span class="tsub">다른 · 이름</span> (.tsub: player_screen.css) */
+const titleHtml = it => { const sub = titleSubHtml(it); return `<b>${esc(titleOf(it))}</b>${sub ? `<span class="tsub">${sub}</span>` : ""}`; };
 /* 우클릭 메뉴 (곡 연결·플레이어 곡 목록): items [{label, href} 링크 | {label, fn} 누르면 실행 | {label, sub: [...]} 하위 메뉴 | {label} 흐리게].
    마우스 자리에 띄우고 고르거나·밖을 누르거나·Esc·스크롤·창 크기 바꾸면 닫힘 */
 function ctxMenu(e, items) {

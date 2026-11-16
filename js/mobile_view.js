@@ -10,15 +10,78 @@
   function open() {
     closePages();  // a page (검색 · 노래방 · 같이듣기 · 설정) sits above the player screen — it covered it (user report 2026-11-15)
     if (isOpen()) return;
+    sliding();
     body.classList.add("mplay");
     history.pushState({mplay: 1}, "");  // the phone's back button closes it
   }
   function close() {
     if (!isOpen()) return;
+    sliding();
     body.classList.remove("mplay");
     if (history.state && history.state.mplay) history.back();
   }
-  addEventListener("popstate", () => body.classList.remove("mplay"));
+  addEventListener("popstate", () => { if (isOpen()) sliding(); body.classList.remove("mplay"); });
+  /* while the player screen slides (or follows a finger) the video relay is folded (body.mmove, SHELL.videoHidden): it sits
+     outside the screen and only follows every 250ms, so it lagged behind as a ghost (user report 2026-11-16) — it comes back
+     at its place once the slide ends */
+  const main = document.querySelector(".main");
+  let slideT = 0;
+  function sliding() {
+    if (!body.classList.contains("m")) return;
+    body.classList.add("mmove"); SHELL.refitVideo();
+    clearTimeout(slideT); slideT = setTimeout(slid, 400);  // fallback when no transitionend comes (no change · hidden tab)
+  }
+  function slid() {
+    clearTimeout(slideT);
+    if (drag) return;  // a finger holds it again
+    body.classList.remove("mmove"); SHELL.refitVideo();
+  }
+  main.addEventListener("transitionend", e => { if (e.target === main && e.propertyName === "transform") slid(); });
+
+  /* 밀어서 열고 닫기 (user request 2026-11-16): drag the mini bar up → the player screen follows the finger; drag its top
+     (⌄ 재생 중 · song info · buttons) down → back to the mini bar. Let go past a quarter or with a flick = done, else it
+     springs back. Lyrics keep their own scrolling */
+  let drag = null;
+  const zoom = () => main.offsetHeight ? main.getBoundingClientRect().height / main.offsetHeight : 1;
+  function dragDown(e, fromOpen) {
+    if (!body.classList.contains("m") || !e.isPrimary || e.button > 0 || page()) return;
+    if (e.target.closest("input,select,textarea")) return;
+    drag = {id: e.pointerId, fromOpen, y0: e.clientY, x0: e.clientX, t0: e.timeStamp, on: false, z: zoom()};
+  }
+  function dragMove(e) {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dy = (e.clientY - drag.y0) / drag.z, dx = (e.clientX - drag.x0) / drag.z;
+    if (!drag.on) {
+      if (Math.abs(dy) < 8 || Math.abs(dy) < Math.abs(dx) || (drag.fromOpen ? dy < 0 : dy > 0)) {
+        if (Math.abs(dx) > 8 || Math.abs(dy) > 8) drag = null;  // sideways or the wrong way: not a slide
+        return;
+      }
+      drag.on = true;
+      drag.full = innerHeight / drag.z;  // closed = one screen down (CSS: translateY(100dvh))
+      main.style.transition = "none";
+      body.classList.add("mmove"); SHELL.refitVideo();
+    }
+    const off = Math.max(0, Math.min(drag.full, (drag.fromOpen ? 0 : drag.full) + dy));
+    drag.off = off; drag.v = dy / Math.max(1, e.timeStamp - drag.t0);
+    main.style.transform = `translateY(${off}px)`;
+  }
+  function dragUp(e) {
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag; drag = null;
+    if (!d.on) return;
+    noClick = true; setTimeout(() => { noClick = false; }, 0);  // the release is not a tap on what is under the finger
+    const moved = d.fromOpen ? d.off : d.full - d.off;
+    const go = moved > d.full * 0.25 || Math.abs(d.v) > 0.5 && (d.fromOpen ? d.v > 0 : d.v < 0);
+    main.style.transition = ""; main.style.transform = "";  // the CSS transition carries it on from where the finger left it
+    if (go) d.fromOpen ? close() : open(); else sliding();
+  }
+  let noClick = false;
+  addEventListener("click", e => { if (noClick) { e.stopPropagation(); e.preventDefault(); } }, true);
+  for (const [el, fromOpen] of [[$("miniBar"), false], [document.querySelector(".mhead"), true], [document.querySelector(".now"), true]])
+    el.addEventListener("pointerdown", e => dragDown(e, fromOpen));
+  addEventListener("pointermove", dragMove);  // on the window: the finger soon leaves the thin bar
+  addEventListener("pointerup", dragUp);
+  addEventListener("pointercancel", dragUp);
   // phone app's back button (music_app MainActivity): true = handled here, false = the app hides itself
   window.appBack = () => { if (!isOpen()) return false; close(); return true; };
   // touch phone (user request 2026-11-15): volume only by the device's keys — the slider is hidden, so the player stays at full volume
@@ -92,12 +155,13 @@
   for (const id of PAGES) {
     const d = $(id), modal = d.showModal.bind(d);
     d.showModal = () => { if (!body.classList.contains("m")) return modal(); if (!d.open) d.show(); };
-    new MutationObserver(() => renderNav()).observe(d, {attributes: true, attributeFilter: ["open"]});
+    // a page opening folds the player screen back to the mini bar (user request 2026-11-16: it stayed open under the page)
+    new MutationObserver(() => { if (d.open) close(); renderNav(); }).observe(d, {attributes: true, attributeFilter: ["open"]});
   }
   const page = () => PAGES.find(id => $(id).open) || "";
   // the video relay sits over the video box (z above everything): with the player screen down or a page over it, fold it —
   // it peeked out over the bottom menu (user report 2026-11-15); the sound goes on
-  SHELL.videoHidden = () => body.classList.contains("m") && (!isOpen() || !!page());
+  SHELL.videoHidden = () => body.classList.contains("m") && (!isOpen() || !!page() || body.classList.contains("mmove"));
   const closePages = () => PAGES.forEach(id => { if ($(id).open) $(id).close(); });
   nav.addEventListener("click", e => {
     const b = e.target.closest("button[data-nav]"); if (!b) return;
@@ -109,6 +173,77 @@
     if (k === "kara") return $("btnKara").click();  // opens the draw page as it was (노래방 모드 is on the playlist)
     if (k === "set") $("mSetDlg").showModal();
   });
+  /* 좌우로 밀어 메뉴 옮기기 (user request 2026-11-16): a sideways swipe goes to the next / previous bottom-menu item, in the
+     menu's order (the player screen counts as 재생목록). Touch events, not pointer ones: they still end when the browser
+     scrolls the list meanwhile. Not on inputs, sideways-scrolling rows or over a popup */
+  const NAV_ORDER = ["list", "listen", "search", "kara", "set"];
+  const sideScroll = el => {
+    for (; el && el !== body; el = el.parentElement) {
+      const ox = getComputedStyle(el).overflowX;
+      if ((ox === "auto" || ox === "scroll") && el.scrollWidth > el.clientWidth + 2) return true;
+    }
+    return false;
+  };
+  /* like a pager (user request 2026-11-16: the first fade-in looked poor): the screen follows the finger; let go past a
+     quarter (or a flick) → it slides out while the next one slides in right beside it; else it springs back.
+     transform only (Web Animations, ~0.2s) — light on a phone. 재생목록 = its scrolling parts, not the fixed room card · mini bar */
+  const screenEls = k => k !== "list" ? [$(NAV_PAGE[k])]
+    : isOpen() ? []  // the player screen is up: it folds down by itself when a page opens
+    : [...document.querySelectorAll(".side-head>:not(dialog):not(.ltcard),#list")];
+  const slow = matchMedia("(prefers-reduced-motion:reduce)");
+  const anim = (el, from, to, ms) => (el.style.transform = to ? `translateX(${to}px)` : "", el).animate(  // ends where it stays: no snap back[{transform: `translateX(${from}px)`}, {transform: `translateX(${to}px)`}],
+    {duration: slow.matches ? 0 : ms, easing: "cubic-bezier(.2,.7,.3,1)"}).finished.catch(() => {});
+  const openPage = k => {  // like the menu button, but the old page stays until it has slid away
+    if (k === "listen") return $("btnListen").click();
+    if (k === "search") return $("btnSearch").click();
+    if (k === "kara") return $("btnKara").click();
+    if (k === "set") $("mSetDlg").showModal();
+  };
+  let swipe = null;
+  addEventListener("touchstart", e => {
+    swipe = null;
+    if (!body.classList.contains("m") || e.touches.length !== 1) return;
+    const t = e.target;
+    if (t.closest("input,select,textarea,.mnav,#miniBar") || sideScroll(t)) return;
+    if ([...document.querySelectorAll("dialog[open]")].some(d => !PAGES.includes(d.id))) return;  // a popup is up
+    swipe = {x: e.touches[0].clientX, y: e.touches[0].clientY, t: e.timeStamp, on: false, dx: 0};
+  }, {passive: true});
+  addEventListener("touchmove", e => {
+    const s = swipe; if (!s || drag) return;
+    const z = zoom(), dx = (e.touches[0].clientX - s.x) / z, dy = (e.touches[0].clientY - s.y) / z;
+    if (!s.on) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      if (Math.abs(dx) < Math.abs(dy) * 1.5) { swipe = null; return; }  // a scroll
+      s.on = true; s.W = innerWidth / z;
+      s.cur = Object.keys(NAV_PAGE).find(k => NAV_PAGE[k] === page()) || "list";
+      s.els = screenEls(s.cur);
+    }
+    const next = NAV_ORDER[NAV_ORDER.indexOf(s.cur) + (dx < 0 ? 1 : -1)];
+    s.dx = next ? dx : dx * 0.25;  // nothing that way: it only gives a little
+    s.v = dx / Math.max(1, e.timeStamp - s.t);
+    for (const el of s.els) el.style.transform = `translateX(${s.dx}px)`;
+  }, {passive: true});
+  const swipeEnd = async () => {
+    const s = swipe; swipe = null;
+    if (!s || !s.on) return;
+    const dir = s.dx < 0 ? 1 : -1, k = NAV_ORDER[NAV_ORDER.indexOf(s.cur) + dir];
+    const go = k && (Math.abs(s.dx) > s.W * 0.25 || Math.abs(s.v) > 0.4 && Math.sign(s.v) === -dir);
+    const clear = () => s.els.forEach(el => { el.style.transform = ""; });
+    if (!go) { await Promise.all(s.els.map(el => anim(el, s.dx, 0, 160))); return clear(); }
+    const out = Promise.all(s.els.map(el => anim(el, s.dx, -dir * s.W, 220)));
+    if (k === "list") {  // the list lies under the page: the page slides away and shows it
+      await out; clear(); nav.querySelector('[data-nav="list"]').click(); return;
+    }
+    const old = page();
+    openPage(k);
+    const nw = $(NAV_PAGE[k]);
+    nw.classList.add("mswtop");  // over the page that is leaving
+    await Promise.all([out, anim(nw, s.dx + dir * s.W, 0, 220)]);
+    nw.classList.remove("mswtop"); clear();
+    if (old && old !== NAV_PAGE[k] && $(old).open) $(old).close();
+  };
+  addEventListener("touchend", swipeEnd, {passive: true});
+  addEventListener("touchcancel", swipeEnd, {passive: true});
   const renderNav = () => {
     // the screen in front (user request: clearer than the green 같이듣기): list · 곡 검색 page · 노래방 page
     const pg = page();

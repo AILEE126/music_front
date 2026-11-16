@@ -74,8 +74,8 @@ const KARA = {
     img.hidden = !cv || !!img.dataset.fail;
     // every line always there, so the block keeps its height (user request 2026-11-15): no original title → the title itself
     // (e.g. an English title) · our pronunciation after it as '원제 · 발음'
-    if (it) $("karaSong").innerHTML = `<div class="kt">${esc(it.title)}</div>`
-      + `<div class="ko">${esc(it.orig || it.title)}${it.reading ? ` · ${esc(it.reading)}` : ""}</div>`
+    if (it) $("karaSong").innerHTML = `<div class="kt">${esc(titleOf(it))}</div>`
+      + `<div class="ko">${esc((titleNames(it).length > 1 ? titleNames(it).slice(1) : titleNames(it)).join(" · "))}</div>`
       + `<div class="kp">${[it.composer && `작곡 ${esc(it.composer)}`, it.singer && `노래 ${esc(it.singer)}`].filter(Boolean).join(" · ") || "&nbsp;"}</div>`;
   },
   /* 지난 추첨 기록 (newest first, last 2 hours): time · machine · number · song */
@@ -88,11 +88,11 @@ const KARA = {
       ? hs.map(h => `<div class="khrow"><span class="kht">${hm(h.t)}</span><span class="khm">${esc(h.m)}</span><b class="khn" style="--bc:${this.color(h.m)}">${esc(h.n)}</b><span class="khs">${esc(title(h))}</span></div>`).join("")
       : `<div class="khempty">최근 2시간 동안 추첨한 기록이 없습니다</div>`;
   },
-  /* 노래방 모드 row on the playlist: ON/OFF + machine (shown while on) */
+  /* 노래방 모드: the 일반 | 노래방 switch under the name + the machine row on the playlist (shown while on) */
   renderBtn() {
     $("btnKaraMode").classList.toggle("on", this.mode);
-    $("btnKaraMode").querySelector("b").textContent = this.mode ? "ON" : "OFF";
-    $("karaModeMachine").hidden = !this.mode;
+    $("btnKaraMode").setAttribute("aria-pressed", this.mode);
+    $("karaModeMachine").hidden = $("karaModeMachine").parentElement.hidden = !this.mode;
     $("karaModeMachine").value = this.modeMachine;
   },
   /* the machine's color (user request 2026-11-15: playlist numbers · the drawn number — not in 간단 mode, CSS) */
@@ -112,10 +112,27 @@ const KARA = {
     SHELL.plan(SHELL.now);
   },
   setMode(on) {
+    if (on === this.mode) return;
     this.mode = on; store.set("kara.modeAt", on ? Date.now() : 0);
+    on ? this.presetF() : this.restoreF();
     this.applyFilter();
     renderList();
     this.renderBtn();
+  },
+  /* 노래방 모드 on (user request 2026-11-16, web · phone): the search filter and the playlist's filter become the 노래방
+     preset (필터 › 프리셋 — the one named 노래방, else the built-in one); the filters before are kept until it goes off */
+  presetF() {
+    if (!store.get("kara.prevF", null)) store.set("kara.prevF", {fg: FG, cur: fCur, plf: PLF});
+    const ps = fPresets(), p = ps.find(f => /노래방/.test(f.name)) || F_PRESETS_DEF[0];
+    applyFilter(p.groups);
+    setPlFilter(FG.filter(fReal));
+  },
+  /* 일반 again: the filters as they were before — not saveChips (it would turn an empty filter into an '오리지널' group) */
+  restoreF() {
+    const prev = store.get("kara.prevF", null); if (!prev) return;
+    FG = prev.fg || []; fCur = prev.cur || 0; store.set("f.groups", FG); store.set("f.cur", fCur); renderFilterOptions(); runSearch();
+    setPlFilter(prev.plf);
+    store.set("kara.prevF", null);
   },
 };
 /* 노래방 모드: the playlist shows the picked machine's number in the sync % spot */
@@ -131,16 +148,9 @@ $("karaModeMachine").innerHTML = KARA_MACHINES.map(m => `<option value="${esc(m)
 $("btnKaraMode").onclick = () => KARA.setMode(!KARA.mode);
 $("karaModeMachine").onchange = e => { KARA.modeMachine = e.target.value; store.set("kara.modeMachine", KARA.modeMachine); KARA.applyFilter(); renderList(); };
 KARA.renderBtn();
-/* older versions put the 노래방 preset into the search / playlist filters while the mode was on — put them back once */
-{
-  const prev = store.get("kara.prevF", null);
-  if (prev) {  // as it was — not saveChips (it would turn an empty filter into an '오리지널' group)
-    FG = prev.fg || []; fCur = 0; store.set("f.groups", FG); store.set("f.cur", 0); renderFilterOptions(); runSearch();
-    setPlFilter(prev.plf);
-    store.set("kara.prevF", null);
-  }
-  store.set("kara.mode", null);
-}
+/* the mode starts off: the screen was closed while it was on → the filters from before it come back */
+KARA.restoreF();
+store.set("kara.mode", null);
 // on for 2 hours → off by itself (checked each minute; a sleeping tab catches up on its next tick)
 setInterval(() => { if (KARA.mode && Date.now() - store.get("kara.modeAt", 0) >= KARA_MODE_MS) KARA.setMode(false); }, 60 * 1000);
 $("karaMachines").onclick = e => { const b = e.target.closest("button[data-m]"); if (!b) return; KARA.machine = b.dataset.m; store.set("kara.machine", KARA.machine); KARA.cur = null; KARA.render(); };

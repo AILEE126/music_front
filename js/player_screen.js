@@ -10,7 +10,7 @@ window.addEventListener("pagehide", () => cleanups.forEach(f => f()));  // 화�
 
 let LIB = {items: [], sites: {}}, view = [], cur = null, song = null;
 let editShift = 0;  // +/− pushed while editing (shown next to the buttons)
-let times = null, offset = 0, curIdx = -1, editing = false, editTimes = null, editOk = null, cursor = 0, editFoldedVid = false;
+let times = null, offset = 0, curIdx = -1, editing = false, editTimes = null, editOk = null, cursor = 0, editFoldedVid = false, editFoldedBar = false;
 let userScrollAt = 0;
 
 /* ================= 재생목록 (user request 2026-11-14) =================
@@ -222,7 +222,7 @@ function badgesHtml(it) {
 function itemHtml(it, i) {
   const pl = ONLINE && !guestPl;
   return `<div class="item${cur && keyOf(cur) === keyOf(it) ? " cur" : ""}${it.deleted ? " gone" : ""}" data-i="${i}"${pl ? ' draggable="true"' : ""}${it.deleted ? ' aria-disabled="true"' : ""}>
-    ${coverHtml(it, "thumb")}<div class="meta"><div class="t">${esc(it.title)}</div><div class="a">${esc(shortName(it.artist || it.name))}</div></div>
+    ${coverHtml(it, "thumb")}<div class="meta"><div class="t">${titleHtml(it)}</div><div class="a">${esc(shortName(it.artist || it.name))}</div></div>
     <div class="badges">${badgesHtml(it)}</div>${pctHtml(it)}${pl ? '<button class="plx" title="재생목록에서 빼기">✕</button>' : ""}</div>`;
 }
 /* mp3 안의 썸네일 (오프라인 곡) · 원곡 영상의 썸네일 주소 (온라인 곡) — 못 받은 그림은 ♪ */
@@ -230,12 +230,7 @@ const coverUrl = it => it.site === "local" ? OFFDIR.coverUrl(it) : LOCAL.coverUr
 const hasCover = it => it.site === "local" ? !!it.cover : !!coverUrl(it);
 const coverHtml = (it, cls) => hasCover(it) ? `<img class="${cls}" data-ck="${esc(keyOf(it))}" src="${coverUrl(it)}" loading="lazy" alt="">` : `<span class="${cls}">♪</span>`;
 /* 곡 상세: 제목 옆에 원제 · 제목 발음 (원제가 제목과 같으면 생략) */
-function detailHtml(it) {
-  const parts = [];
-  if (it.orig && it.orig !== it.title) parts.push(`<span title="원제">${esc(it.orig)}</span>`);
-  if (it.reading) parts.push(`<span title="제목 발음">${esc(it.reading)}</span>`);
-  return parts.join("");
-}
+const detailHtml = titleSubHtml;  // 재생 화면 제목줄: 기본 이름 옆 다른 이름들 (titleNames)
 /* ◎ 재생 중인 곡으로 (곡이 넘어가도 목록은 저절로 움직이지 않음) */
 $("btnFindCur").onclick = () => {
   const now = SHELL.now || cur; if (!now) return;
@@ -406,7 +401,7 @@ function renderSearch(info) {
       : it.lyrics ? tagChipHtml("flag", "우리 가사 있음", "가사", "src", "우리 데이터가 있는 곡") : `<span class="b src" title="우리 데이터가 있는 곡">노래방</span>`;
     const tk = it.type ? VDB_TYPE_KO[it.type] || it.type : "", vc = vcountOf(it);
     return `<div class="sitem${canPlay(it) ? "" : " gone"}" data-i="${i}">${coverHtml(it, "thumb")}
-      <div class="meta"><div class="t">${esc(it.title)}${it.orig && it.orig !== it.title ? ` <span class="o">${esc(it.orig)}</span>` : ""}</div>
+      <div class="meta"><div class="t">${titleHtml(it)}</div>
         <div class="a">${esc(shortName(it.artist || ""))}</div>
         <div class="tags">${own}${tk ? tagChipHtml("type", tk, tk, "", "곡 종류") : ""}${vc ? tagChipHtml("vcount", vc, vcountLabel(vc), "", "보컬 인원수") : ""}${it.date ? `<span class="d">${esc(it.date)}</span>` : ""}</div></div>
       <div class="sacts">${inPl.has(keyOf(it)) ? `<span class="sin" title="재생목록에 있는 곡">✓</span>` : ""}${inF.has(songId(it)) ? `<span class="sin f" title="필터에 넣은 곡">${FILT_SVG}</span>` : ""}`
@@ -428,7 +423,7 @@ const sfItems = scopeItems;
    새 그룹('＋ 그룹' · '− 제외')은 그 첫 포함 그룹의 조건으로 시작함 */
 /* + 같은 곡 정렬 · 자르기 (user request 2026-11-16, song_filter.js filterGroups): 같은 노래는 재생되는 · 원곡 · 인기 · 먼저 나온 한 곡만 */
 const F_DEFAULT_DEF = [{x: false, c: [{k: "type", v: ["오리지널", "커버"]}, {k: "vkind", v: ["엔진", "섞임"]},
-  {k: "same_sort", v: ["재생 가능", "원곡 먼저", "인기순", "먼저 나온 순"]}, {k: "same_cut", v: "1"}]}];
+  {k: "same_sort", v: ["재생 가능", "긴 버전 먼저", "원곡 먼저", "인기순", "먼저 나온 순"]}, {k: "same_cut", v: "1"}]}];
 const fDefault = () => JSON.parse(JSON.stringify(VDB.filter && (VDB.filter.default || []).length ? VDB.filter.default : F_DEFAULT_DEF)).map(g => ({...g, m: true}));
 const fBase = () => { const d = fDefault(); return (d.find(g => !g.x) || d[0]).c; };
 const fNewGroup = x => ({x, m: true, c: fBase()});
@@ -445,6 +440,12 @@ if (store.get("f.defV", 0) < 3) {
   const was = [JSON.stringify([{k: "type", v: "오리지널"}]), JSON.stringify(F_DEFAULT_DEF[0].c.slice(0, 2))];
   if (FG.length === 1 && was.includes(JSON.stringify(FG[0].c))) { FG = fDefault(); store.set("f.groups", FG); }
   store.set("f.defV", 3);
+}
+/* 4: + 긴 버전 먼저 (user request 2026-11-17) — the 2026-11-16 default left as it was → the new one, once */
+if (store.get("f.defV", 0) < 4) {
+  const was = JSON.stringify(F_DEFAULT_DEF[0].c.map(c => c.k === "same_sort" ? {...c, v: c.v.filter(v => v !== "긴 버전 먼저")} : c));
+  if (FG.length === 1 && JSON.stringify(FG[0].c) === was) { FG = fDefault(); store.set("f.groups", FG); }
+  store.set("f.defV", 4);
 }
 let fCur = Math.min(store.get("f.cur", 0), FG.length - 1);
 samePlayable = it => canPlay(it);  // 같은 곡 정렬 '재생 가능' = 재생목록에 넣을 수 있는 곡
@@ -792,7 +793,18 @@ $("sQ").addEventListener("keydown", e => {
 });
 
 /* 곡 종류 (user request 2026-11-14: moved from the search row into the filter) — value = Korean name, our songs keep VocaDB's type */
-FKIND.type = ["곡 종류", (it, v) => (VDB_TYPE_KO[it.type] || it.type) === v];
+/* 긴 버전 (user request 2026-11-17): a song tagged 'extended version' / 'full version' whose original (origId) is a
+   'short version' counts as that original's type here — Tell Your World's full song is VocaDB Remix 8395 of the 61 s
+   Original CM, so 곡 종류 오리지널 + 같은 곡 정렬 '긴 버전 먼저' picks the full song. Set once per song (longVersionTypes) */
+FKIND.type = ["곡 종류", (it, v) => (VDB_TYPE_KO[it.typeAs || it.type] || it.typeAs || it.type) === v];
+const LONG_TAGS = ["extended version", "full version"];
+function longVersionTypes(all) {
+  const byId = new Map(all.filter(it => it.vocadb).map(it => [String(it.vocadb), it]));
+  for (const it of all) {
+    const o = it.origId && byId.get(String(it.origId));
+    if (o && isShortVer(o) && !isShortVer(it) && (it.tags || []).some(t => LONG_TAGS.includes(t))) it.typeAs = o.type;
+  }
+}
 /* filter categories: the scope's songs (with counts) + 곡 종류 */
 function sfCats(its) {
   // 가사·싱크 상태 is replaced by 곡 상태 here (user request 2026-11-15 — 싱크 · 가사 유무 · 번역명 as tags)
@@ -815,6 +827,7 @@ async function warmSearch() {
   sfCatsMemo(scopeItems());
   const all = VDB.all();
   for (const it of all) sameKeyOf(it, all);  // 같은 곡 묶음 (song_filter.js) — once per song
+  longVersionTypes(all);  // 숏버전 원곡의 긴 버전은 원곡의 곡 종류로
   try { await sortedScope(searchTick(searchGen)); } catch (e) { if (e !== STALE) throw e; }
 }
 /* 음원 관리 › 필터 (user request 2026-11-14 — export/db/filter.json): a category's row {id, label, icon, p} · its symbol */
@@ -828,7 +841,7 @@ const tagChipHtml = (cat, v, text, cls = "", title = "") => { const c = tagColor
 /* 태그 → 분류 (song_filter.js tagGroupOf): master tag rows keep VocaDB's category — remade when master is read again */
 let tagCats = {of: null, map: new Map()};
 /* 곡 조건의 값(VocaDB 번호) → 제목 (song_filter.js songTitleOf) */
-songTitleOf = v => { const it = VDB.itemById(v); return it ? it.title : `곡 ${v}`; };
+songTitleOf = v => { const it = VDB.itemById(v); return it ? titleOf(it) : `곡 ${v}`; };
 tagGroupOf = v => {
   if (tagCats.of !== VDB.master) tagCats = {of: VDB.master, map: new Map((VDB.master.tag || []).map(t => [t.name, TAG_CAT_KO[t.cat] || t.cat || ""]))};
   return tagCats.map.get(v) || "";
@@ -871,7 +884,7 @@ function openSongMenu(it, btn) {
   const inPl = SHELL.queue.some(q => keyOf(q) === keyOf(it)), inF = fSongIds().includes(songId(it)), ok = canPlay(it);
   const row = (a, label, desc, dis) => `<button data-a="${a}"${dis ? " disabled" : ""}><span class="si">${a === "add" && inPl ? "✓" : SM_ICON[a]}</span><span class="sl"><b>${label}</b><small>${desc}</small></span></button>`;
   const m = $("sMenu");
-  m.innerHTML = `<div class="smgrip"></div><div class="smhead">${coverHtml(it, "thumb")}<div class="meta"><div class="t">${esc(it.title)}</div><div class="a">${esc(shortName(it.artist || ""))}</div></div></div>`
+  m.innerHTML = `<div class="smgrip"></div><div class="smhead">${coverHtml(it, "thumb")}<div class="meta"><div class="t">${titleHtml(it)}</div><div class="a">${esc(shortName(it.artist || ""))}</div></div></div>`
     + (ok ? row("play", "지금 재생", "재생목록에 넣고 바로 틂")
       + row("next", "다음에 재생", "재생 대기열(직접 넣은 곡)에 넣음 — 무작위 재생이어도 지금 곡 다음에")
       + row("add", inPl ? "재생목록에 있음" : "재생목록에 추가", inPl ? "이미 재생목록에 있는 곡" : "재생목록 끝에 넣음", inPl)
@@ -1055,13 +1068,13 @@ async function showSong(it) {
   if (!it || (cur && keyOf(cur) === keyOf(it))) return;
   stopEdit();
   cur = it;
-  $("nowTitle").textContent = it.title; $("nowArtist").textContent = shortName(it.artist || it.name);
+  $("nowTitle").textContent = titleOf(it); showArtist(it);
   $("nowDetail").innerHTML = detailHtml(it);
   showViews(it);
   renderMeta(it);
   if (hasCover(it)) { $("nowCover").dataset.ck = keyOf(it); $("nowCover").src = coverUrl(it); } else $("nowCover").removeAttribute("src");
   showVideo();
-  document.title = `${it.title} · 음원 플레이어`;
+  document.title = `${titleOf(it)} · 음원 플레이어`;
   renderRows(true);  // 지금 곡 표시만 (목록을 다시 거르지 않음)
   await loadSong();
 }
@@ -1081,6 +1094,36 @@ const KARAOKE_TAG = {TJ: "TJ", JOYSOUND: "JOY"};
 /* 특정 기기에서만 선곡 가능 (나무위키 ⓗ · ⓢ, user request 2026-11-15): the symbol after the brand + its meaning on hover */
 const karaOnlyMark = (it, b) => it.only && it.only[b] ? `<small>${esc(it.only[b].charAt(0))}</small>` : "";
 const karaOnlyTip = (it, b, base) => it.only && it.only[b] ? `${base} — 특정 기기에서만 선곡 가능: ${it.only[b]}` : base;
+/* 보컬이 너무 많은 곡 (user request 2026-11-16): 앞 VOCAL_SHOW 명만 칩 · 나머지는 '+N' 칩 (곡 상태 태그 MANY_VOCALS 의 색) →
+   누르면 전체 보컬을 스크롤되는 작은 팝업으로 (펼치면 세로 화면에서 영상·가사가 밀려나서). 제목 옆 보컬 줄도 같음 */
+const vocalChip = ([n, c]) => `<span class="b vocal" style="--vc:${esc(c)}" title="보컬">${esc(n)}</span>`;
+const vocalMoreChip = (n, all) => { const c = tagColor("flag", MANY_VOCALS);
+  return `<button type="button" class="b vmore${c ? " tc" : ""}"${c ? ` style="--tc:${esc(c)}"` : ""} data-vmore title="보컬 ${all}명 — 눌러서 모두 보기">+${n}</button>`; };
+const vocalsOf = it => it.vocals && it.vocals.length ? it.vocals : String(it.singer || "").split(",").map(x => x.trim()).filter(Boolean).map(n => [n, vocalColor(n)]);
+function showArtist(it) {
+  if (!it.vocalMore) { $("nowArtist").textContent = shortName(it.artist || it.name); return; }
+  $("nowArtist").innerHTML = `${esc(shortName(it.artistBase))} ${vocalMoreChip(it.vocalMore, it.vocalMore + VOCAL_SHOW)}`;
+}
+function vocalPopClose() { document.querySelectorAll(".vpop").forEach(p => p.remove()); }
+function vocalPop(btn) {
+  const open = document.querySelector(".vpop");
+  vocalPopClose();
+  if (!cur || (open && open._from === btn)) return;  // the same chip again = close
+  const vs = vocalsOf(cur), p = document.createElement("div");
+  p.className = "vpop"; p._from = btn;
+  p.innerHTML = `<div class="h">보컬 ${vs.length}명</div>${vs.map(vocalChip).join("")}`;
+  document.body.appendChild(p);
+  // 화면 축소(--ui-zoom): same correction as ctxMenu · below the chip, above it when there is no room
+  const f = document.documentElement.getBoundingClientRect().width / document.documentElement.offsetWidth || 1;
+  const r = btn.getBoundingClientRect(), w = p.offsetWidth * f, h = p.offsetHeight * f;
+  const x = Math.max(4, Math.min(r.left, innerWidth - w - 4)), y = r.bottom + 4 + h <= innerHeight ? r.bottom + 4 : Math.max(4, r.top - 4 - h);
+  p.style.left = x / f + "px"; p.style.top = y / f + "px";
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-vmore]"); if (b) { e.stopPropagation(); vocalPop(b); } });
+addEventListener("mousedown", e => { if (!e.target.closest(".vpop, [data-vmore]")) vocalPopClose(); }, true);
+addEventListener("keydown", e => { if (e.key === "Escape") vocalPopClose(); });
+addEventListener("scroll", e => { if (!(e.target.closest && e.target.closest(".vpop"))) vocalPopClose(); }, true);
+addEventListener("resize", vocalPopClose);
 function renderMeta(it) {
   const tags = it.tags || [], notes = it.notes || [], box = $("songMeta");
   const kara = tags.filter(t => KARAOKE_TAG[t]).map(t => [KARAOKE_TAG[t], t]);
@@ -1091,8 +1134,9 @@ function renderMeta(it) {
     : tagChipHtml("tag:" + tagGroupOf(t), t, t, "", tagGroupOf(t) || "태그");
   // user request 2026-11-15: only colored chips are shown; the plain ones fold behind a "+N" chip (open state remembered)
   const isPlain = t => !lists.includes(t) && !tagColor("tag:" + tagGroupOf(t), t);
+  const vocals = it.vocals || [];
   const chips = [
-    ...(it.vocals || []).map(([n, c]) => `<span class="b vocal" style="--vc:${esc(c)}" title="보컬">${esc(n)}</span>`),
+    ...vocals.slice(0, VOCAL_SHOW).map(vocalChip), ...(vocals.length > VOCAL_SHOW ? [vocalMoreChip(vocals.length - VOCAL_SHOW, vocals.length)] : []),
     ...kara.map(([t, b]) => `<span class="b kara" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b]}" title="${esc(karaOnlyTip(it, b, "노래방 수록"))}">${esc(t)}${karaOnlyMark(it, b)}</span>`),
     ...Object.keys(it.gone || {}).map(b => `<span class="b kara gone" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b] || "#888"}" title="노래방에서 내려간 곡입니다 (${esc(b)} ${esc(it.gone[b])})">${esc(KARAOKE_TAG[b] || b)}</span>`),
     ...inner.filter(t => !isPlain(t)).map(tagChip)];
@@ -1264,7 +1308,7 @@ on(audio, "seeked", () => tick(true));
 on(audio, "loadedmetadata", () => { $("tDur").textContent = fmt(audio.duration); });
 // audio.error 가 없으면 이미 다음 곡으로 넘어간 것 (재생기가 못 튼 곡을 건너뜀) → 새 곡에 오류 글을 적지 않음
 on(audio, "error", () => { if (cur && audio.error) $("nowArtist").textContent = cur.site === "stream" ? audio.error.reason || "원곡 영상을 재생할 수 없습니다" : "재생할 수 없는 파일입니다: " + cur.name; });
-on(audio, "playing", () => { if (cur) $("nowArtist").textContent = shortName(cur.artist || cur.name); });  // 끊겼다 이어 틀면 오류 글을 되돌림
+on(audio, "playing", () => { if (cur) showArtist(cur); });  // 끊겼다 이어 틀면 오류 글을 되돌림
 on(audio, "volumechange", () => renderVolume($("btnMute"), $("vol"), audio));
 // 곡이 끝났을 때 다음 곡으로 넘기는 일은 재생기가 함
 
@@ -1335,6 +1379,9 @@ function startEdit() {
   // phone (user request 2026-11-15): fold the video while syncing, unfold it again when done (not remembered)
   editFoldedVid = document.body.classList.contains("m") && VID.on;
   if (editFoldedVid) { VID.on = false; showVideo(); }
+  // phone (user request 2026-11-16): the lyrics tool bar folds too, and unfolds when done (the remembered fold stays as it was)
+  editFoldedBar = document.body.classList.contains("m") && !document.body.classList.contains("barfold");
+  if (editFoldedBar) applyBar(true);
   editTimes = song.groups.map((_, i) => times ? +(times[i] + offset).toFixed(2) : null);
   editShift = offset;  // the song's current push is baked into editTimes; show it as the start value
   // 묶음마다 믿을 만한 시간인지: 인식으로 맞았거나 손으로 찍음 → 안 고친 '추정' 묶음은 저장해도 추정으로 남음
@@ -1350,6 +1397,7 @@ function startEdit() {
 function stopEdit() {
   editing = false; editTimes = null; editOk = null; SHELL.editing = false;
   if (editFoldedVid) { editFoldedVid = false; VID.on = true; showVideo(); }
+  if (editFoldedBar) { editFoldedBar = false; applyBar(false); }
   $("editbar").classList.remove("show"); $("btnEdit").classList.remove("on");
   showOff(); $("offMinus").disabled = $("offPlus").disabled = !times;
   $("lyrics").classList.remove("editing");
@@ -1372,6 +1420,12 @@ function stamp() {
   cursor = Math.min(cursor + 1, editTimes.length - 1);
   renderStamps(); tick(true);
 }
+// ↓ / Space: stamp (paused → play first) · ↑: one group back — keyboard and the phone's floating buttons
+function editDown() { if (audio.paused) audio.play(); else stamp(); }
+function editUp() { cursor = Math.max(0, cursor - 1); renderStamps(); }
+// pointerdown, not click: the stamp lands when the finger touches, and the button never takes focus
+for (const [id, fn] of [["editDown", editDown], ["editUp", editUp]])
+  $(id).addEventListener("pointerdown", e => { e.preventDefault(); if (editing) fn(); });
 $("btnEdit").onclick = () => editing ? stopEdit() : startEdit();
 $("btnEditCancel").onclick = () => { stopEdit(); renderLyrics(); };
 $("btnEditSave").onclick = async () => {
@@ -1396,12 +1450,12 @@ $("btnEditSave").onclick = async () => {
 /* ================= 원곡 영상 칸: 재생 중인 온라인 곡의 중계 플레이어(니코니코·유튜브)가 곧 영상 =================
    재생기(play_engine.js)가 중계 플레이어를 이 칸 위에 겹쳐 보임 (placeVideo). 영상을 숨기면 칸만 접음 — 소리는 그대로 */
 const VID = {on: store.get("video", false)};
-/* 간단 표시 (왼쪽 위 '간단' 버튼): 재생목록 썸네일 · 오른쪽 위 썸네일을 숨기고 영상도 접음 (영상 켜기 설정은 그대로 — 간단 표시를 끄면 다시 보임)
+/* 간단 표시 (이름 밑 '기본 | 간단' 스위치): 재생목록 썸네일 · 오른쪽 위 썸네일을 숨기고 영상도 접음 (영상 켜기 설정은 그대로 — 간단 표시를 끄면 다시 보임)
    · 가사·오버레이도 보컬 색 없이 일반 글자색 (파트 표시는 그대로 — player_screen.css · play_engine.js sendNow) */
 let SIMPLE = !!store.get("simple", false);
 function applySimple() {
   document.body.classList.toggle("simple", SIMPLE);
-  $("btnSimple").classList.toggle("on", SIMPLE);
+  $("btnSimple").classList.toggle("on", SIMPLE); $("btnSimple").setAttribute("aria-pressed", SIMPLE);
   $("btnVideo").disabled = SIMPLE;
   // 간단 (user request 2026-11-15): 노래방 · 노래방 모드 buttons off and icon only (CSS) — a mode left on is turned off · the filter folds
   for (const b of [$("btnKara"), $("btnKaraMode"), document.querySelector('#mNav [data-nav="kara"]')]) if (b) b.disabled = SIMPLE;
@@ -1492,7 +1546,7 @@ function reportCanSend() {
 function setReportSong(it) {
   reportIt = it;
   const playing = it && SHELL.now && keyOf(SHELL.now) === keyOf(it);
-  $("reportSong").innerHTML = it ? `<b>${esc(it.title)}</b> <span class="hint">${esc(shortName(it.artist || ""))}${playing ? ` · 재생 위치 ${fmt(audio.currentTime)}` : ""}</span>`
+  $("reportSong").innerHTML = it ? `${titleHtml(it)} <span class="hint">${esc(shortName(it.artist || ""))}${playing ? ` · 재생 위치 ${fmt(audio.currentTime)}` : ""}</span>`
     : '<span class="hint">곡을 고르세요</span>';
   reportCanSend();
 }
@@ -1549,6 +1603,41 @@ $("reportDlg").addEventListener("paste", e => {  // text pastes as usual — onl
 $("reportDlg").addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); $("reportDlg").classList.add("drop"); } });
 $("reportDlg").addEventListener("dragleave", e => { if (!$("reportDlg").contains(e.relatedTarget)) $("reportDlg").classList.remove("drop"); });
 $("reportDlg").addEventListener("drop", e => { $("reportDlg").classList.remove("drop"); if (e.dataTransfer.files.length) { e.preventDefault(); addReportImages(e.dataTransfer.files); } });
+/* 이름 칸 (user request 2026-11-16, web · phone): 같이듣기 닉네임 · 오류 신고 보내는 사람 start with the last name used,
+   and tapping the field lists the names used before under it (✕ drops one) — store "nameHist", newest first */
+const NAME_HIST = 8;
+function nameHistAdd(n) {
+  n = String(n || "").trim(); if (!n) return;
+  store.set("nameHist", [n, ...store.get("nameHist", []).filter(x => x !== n)].slice(0, NAME_HIST));
+}
+if (!store.get("nameHist", []).length) nameHistAdd(store.get("reportWho", ""));  // the one name kept before
+function nameField(inp) {
+  const ul = document.createElement("ul");
+  ul.className = "namehist"; ul.hidden = true; inp.after(ul);
+  const show = () => {
+    const q = inp.dataset.typed ? inp.value.trim().toLowerCase() : "";  // tapped: every name · typing: the names with that text
+    const names = store.get("nameHist", []).filter(n => !q || n.toLowerCase().includes(q));
+    ul.innerHTML = names.map(n => `<li data-n="${esc(n)}"><span>${esc(n)}</span><button type="button" class="nhx" title="목록에서 지우기" aria-label="지우기">✕</button></li>`).join("");
+    ul.style.top = inp.offsetTop + inp.offsetHeight + 2 + "px";
+    ul.hidden = !names.length;
+  };
+  const hide = () => { ul.hidden = true; delete inp.dataset.typed; };
+  inp.addEventListener("focus", show);
+  inp.addEventListener("click", show);
+  inp.addEventListener("input", () => { if (inp.dataset.pick) return; inp.dataset.typed = 1; show(); });
+  inp.addEventListener("blur", hide);
+  inp.addEventListener("change", () => nameHistAdd(inp.value));
+  inp.addEventListener("keydown", e => { if (e.key === "Escape" && !ul.hidden) { e.preventDefault(); e.stopPropagation(); hide(); } });  // closes the list, not the window
+  ul.addEventListener("mousedown", e => e.preventDefault());  // the field keeps focus
+  ul.addEventListener("click", e => {
+    e.preventDefault();  // inside a <label>: the click must not reach the field again (it would reopen the list)
+    const li = e.target.closest("li"); if (!li) return;
+    if (e.target.closest(".nhx")) { store.set("nameHist", store.get("nameHist", []).filter(x => x !== li.dataset.n)); return show(); }
+    inp.value = li.dataset.n; hide();
+    inp.dataset.pick = 1; inp.dispatchEvent(new Event("input")); delete inp.dataset.pick;  // the field's own input handler (store · checks)
+  });
+}
+nameField($("reportWho"));
 $("reportWho").addEventListener("input", () => { store.set("reportWho", $("reportWho").value.trim()); reportCanSend(); });
 let reportDiag = "";  // diagnostic log attached to a stall report (play_engine.js diag)
 function openReport(pre = {}) {
@@ -1588,7 +1677,7 @@ $("reportQ").addEventListener("input", () => {
   if (reportReq()) { reportCanSend(); return; }  // request: the box is the song name, no search
   const raw = $("reportQ").value.trim(), seq = ++reportSeq;
   const show = (hits, more) => {
-    $("reportList").innerHTML = hits.map((it, i) => `<div class="ri" data-i="${i}"><b>${esc(it.title)}</b> <span class="hint">${esc(shortName(it.artist || ""))}${it.deleted ? " · 삭제됨" : ""}${it.api ? " · VocaDB" : ""}</span></div>`).join("")
+    $("reportList").innerHTML = hits.map((it, i) => `<div class="ri" data-i="${i}">${titleHtml(it)} <span class="hint">${esc(shortName(it.artist || ""))}${it.deleted ? " · 삭제됨" : ""}${it.api ? " · VocaDB" : ""}</span></div>`).join("")
       + (more ? '<div class="hint">우리 DB 에서 찾는 중…</div>' : "") || (raw ? '<div class="hint">맞는 곡이 없습니다</div>' : "");
     $("reportList").onclick = e => { const r = e.target.closest(".ri"); if (!r) return; setReportSong(LOCAL.remember(hits[+r.dataset.i])); $("reportQ").value = ""; $("reportList").innerHTML = ""; };
   };
@@ -1608,6 +1697,7 @@ $("reportSend").onclick = async () => {
   const playing = it && SHELL.now && keyOf(SHELL.now) === keyOf(it);
   $("reportSend").disabled = true;
   try {
+    nameHistAdd($("reportWho").value);
     await post("/api/report", {kind: $("reportKind").value, text: $("reportText").value, who: $("reportWho").value.trim(), request: req,
       song: it ? {site: it.site, name: it.name, title: it.title, artist: it.artist || "", ...(it.vocadb ? {vocadb: String(it.vocadb)} : {})} : null,  // VocaDB id: the song's key from now on
       pos: playing ? Math.round(audio.currentTime * 10) / 10 : null, source: playing ? audio.src : "",
@@ -1768,8 +1858,8 @@ $("btnOverlaySet").onclick = e => { e.stopPropagation(); openOverlaySettings(); 
 /* ================= 키보드 ================= */
 document.addEventListener("keydown", e => {
   if (e.target.closest("input[type=text],input[type=search],textarea,select") || $("coverDlg").open || $("reportDlg").open || $("searchDlg").open || $("karaDlg").open || document.querySelector("dialog.uidlg[open]")) return;
-  if (editing && (e.code === "Space" || e.key === "ArrowDown")) { e.preventDefault(); if (audio.paused) audio.play(); else stamp(); return; }
-  if (editing && e.key === "ArrowUp") { e.preventDefault(); cursor = Math.max(0, cursor - 1); renderStamps(); return; }
+  if (editing && (e.code === "Space" || e.key === "ArrowDown")) { e.preventDefault(); editDown(); return; }
+  if (editing && e.key === "ArrowUp") { e.preventDefault(); editUp(); return; }
   if (e.code === "Space") { e.preventDefault(); $("btnPlay").click(); }
   else if (e.key === "ArrowRight") audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 5);
   else if (e.key === "ArrowLeft") audio.currentTime = Math.max(0, audio.currentTime - 5);

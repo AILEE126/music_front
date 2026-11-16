@@ -187,9 +187,9 @@ const LOCAL = {
     try { return JSON.parse((await this.readText(path)).replace(/^\uFEFF/, "")); }
     catch (e) { if (e.name === "NotFoundError" || e instanceof SyntaxError) return dflt; throw e; }
   },
-  async writeText(path, text) {
+  async writeText(path, text, asWho = "") {  // asWho: name for a write the player makes by itself (no name prompt)
     if (this.gh) {  // 깃허브: 지금 파일의 sha 를 받아 그 위에 커밋 (새 파일이면 sha 없이)
-      const who = await this.ghWho();
+      const who = asWho || await this.ghWho();
       let sha;
       try { sha = (await (await this.ghFetch(path)).json()).sha; } catch (e) { if (e.name !== "NotFoundError") throw e; }
       await this.ghFetch(path, {method: "PUT", headers: {"Content-Type": "application/json"},
@@ -309,12 +309,19 @@ const LOCAL = {
     else if (it.vocadb) {
       const v = await VDB.lyricsDoc(it.vocadb).catch(() => null);  // nothing of ours → VocaDB's own lyrics (API)
       if (v) d = vdbLyrics(await this.withReading(v, it.vocadb), it);
+      if (d && it.vsync) {  // a confirmed sync on these VocaDB lines (user request 2026-11-17) — used while the lines still match
+        const sj = await this.readJson(this.vsyncPath(it), null);
+        if (sj && Array.isArray(sj.times)) {
+          d.sync = sj;
+          d.sync_state = sj.times.length === d.groups.length && sj.lyrics_hash === await lyricsHash(d.groups) ? "ok" : "stale";
+        }
+      }
     }
     if (!d) return {site, name, title: it.title, artist: it.artist, sync_fail: null, lyrics_src: "", lyrics_kind: "", lyrics_file: "",
       raw: "", notes: [], groups: [], sync_state: "", sync: null, link: null, live: false};
     if (it.vocadb && d.groups.length) {
       const pj = await this.readJson(this.pendingPath(it), null);
-      if (pj && Array.isArray(pj.times) && pj.times.length === d.groups.length && pj.lyrics_hash === (d.sync ? d.sync.lyrics_hash : await lyricsHash(d.groups))) {
+      if (pj && Array.isArray(pj.times) && pj.times.length === d.groups.length && pj.lyrics_hash === await syncHash(d)) {
         d.sync = pj; d.sync_state = "ok";
         d.sync_pending = pj.pending || {};  // 고친 싱크가 음원 관리의 확인(반영)을 기다리는 중
       }
@@ -365,13 +372,42 @@ const LOCAL = {
     await this.writeText(`${this.data}reports/${id}.json`, JSON.stringify(r, null, 1));
     return {ok: true, id};
   },
+  /* 소리 크기 요청 (user request 2026-11-17): a Niconico video played without a measured value (play_engine.js LOUD) →
+     Server/data/loudness_req/<time>_<rand>.json {at, who, urls} for the server's 소리 크기 job. Gathered for a minute so a run
+     of songs makes one file; each video is asked once per browser (loudAsked). */
+  _loudQ: new Set(), _loudT: 0,
+  loudAsk(ref) {
+    if (!this.ready || !ref || !ref.id) return;
+    const asked = store.get("loudAsked", []);
+    if (asked.includes(ref.id) || this._loudQ.has(ref.url)) return;
+    this._loudQ.add(ref.url);
+    if (!this._loudT) this._loudT = setTimeout(() => this.loudFlush(), 60000);
+  },
+  async loudFlush() {
+    this._loudT = 0;
+    const urls = [...this._loudQ].filter(u => !LOUD.map[(vidRef(u) || {}).id]);  // the table may have come in after the song started
+    if (!urls.length || !this.ready) return;
+    this._loudQ.clear();
+    const at = nowText(), id = at.replace(/[-: ]/g, "").replace(/^(\d{8})/, "$1_") + "_" + Math.random().toString(36).slice(2, 6);
+    const who = String(store.get("reportWho", "") || "").trim() || "자동";
+    try {
+      await this.writeText(`${this.data}loudness_req/${id}.json`, JSON.stringify({at, who, urls}, null, 1), who);
+      const ids = urls.map(u => (vidRef(u) || {}).id).filter(Boolean);
+      store.set("loudAsked", [...store.get("loudAsked", []), ...ids].slice(-3000));
+    } catch (e) { urls.forEach(u => this._loudQ.add(u)); }  // next song tries again
+  },
   /* Sync edits (user request): the player never replaces a sync. The edited sync waits in
      Server/data/sync_pending/vocadb/<VocaDB id>.json (keyed by the VocaDB song since 2026-11-14 — no old file paths) and one
      '싱크 수정' report goes to the manage screen. Until it is confirmed or thrown away the player plays the pending one. */
   pendingPath(it) { return `${this.base}sync_pending/vocadb/${it.vocadb}.json`; },
-  async currentSync(it) {  // pending edit first, else the sync in our lyrics file
+  vsyncPath(it) { return `${this.out}/db/vsync/${it.vocadb}.json`; },
+  async currentSync(it) {  // pending edit first, else the sync in our lyrics file (or the one on VocaDB's lyrics)
     const pj = await this.readJson(this.pendingPath(it), null);
     if (pj && Array.isArray(pj.times)) return {sj: pj, pend: pj.pending || {}};
+    if (!it.lyrics && it.vsync) {
+      const v = await this.readJson(this.vsyncPath(it), null);
+      return {sj: v && Array.isArray(v.times) ? v : null, pend: null};
+    }
     const d = await this.readJson(`${this.out}/db/lyrics/${it.vocadb}.json`, null);
     return {sj: d && d.sync ? {...d.sync} : null, pend: null};
   },
@@ -408,7 +444,7 @@ const LOCAL = {
     if (!Array.isArray(d.times) || d.times.length !== L.groups.length) throw new Error("시간 개수가 가사 묶음 수와 다릅니다.");
     const times = d.times.map(t => Math.round(+t * 100) / 100);
     const ok = Array.isArray(d.matched) && d.matched.length === times.length ? d.matched.map(Boolean) : times.map(() => true);
-    const hash = L.sync ? L.sync.lyrics_hash : await lyricsHash(L.groups), now = isoNow();
+    const hash = await syncHash(L), now = isoNow();
     const cur = (await this.currentSync(it)).sj || {};
     delete cur.pending;
     Object.assign(cur, {version: 1, times, lyrics_hash: hash, offset: Math.round((+(d.offset ?? cur.offset ?? 0) || 0) * 100) / 100});
@@ -439,6 +475,11 @@ function pyJson(obj, eol = /Windows/.test(navigator.userAgent) ? CRLF : LF) {
 async function lyricsHash(groups) {
   const buf = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(groups.map(g => g.orig).join("\n")));
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+}
+/* the hash a sync of this lyrics doc must carry: our lyrics file → the server's (its sync); VocaDB lyrics → made from the lines
+   shown now (a VocaDB-lyrics sync may be stale — its old hash must not be copied into a new edit) */
+async function syncHash(d) {
+  return d.sync && d.lyrics_kind !== "vocadb" ? d.sync.lyrics_hash : lyricsHash(d.groups);
 }
 
 function nowText() {  // '2026-11-08 15:20:03' (서버 메모 시각과 같은 모양)
