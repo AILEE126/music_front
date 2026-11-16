@@ -172,7 +172,10 @@ const VDB = {
       .filter(([, , xs]) => xs.length === ol.length);
     const used = [orig, ...extra.map(([, l]) => l)];
     const cc = l => ((l.cultureCodes || []).find(Boolean) || "etc").toLowerCase().replace(/[^a-z0-9-]/g, "");
-    return {vdb: 1, roles: ["o", ...extra.map(([role]) => role)], langs: ["", ...extra.map(([role, l]) => role === "x" ? cc(l) : "")],
+    // where each row came from (user request 2026-11-16: 원문 · 발음 · 번역 출처 above the lyrics) — shown by lyricsSources
+    const meta = l => ({by: "VocaDB", lang: (l.cultureCodes || []).filter(Boolean), source: l.source || "", url: l.url || "", type: l.translationType});
+    const has = role => extra.some(([r]) => r === role);
+    return {vdb: 1, info: {o: meta(orig), ...(has("r") ? {r: meta(rom)} : {}), ...(has("t") ? {t: meta(ko)} : {})}, roles: ["o", ...extra.map(([role]) => role)], langs: ["", ...extra.map(([role, l]) => role === "x" ? cc(l) : "")],
       g: ol.map((t, i) => [t, ...extra.map(([, , xs]) => xs[i])]),
       src: [`VocaDB https://vocadb.net/S/${id}`, ...used.map(l => `${l.source || "?"}${l.url ? " " + l.url : ""} (${l.translationType}${(l.cultureCodes || []).length ? " · " + l.cultureCodes.join(",") : ""})`)]};
   },

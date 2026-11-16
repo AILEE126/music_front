@@ -1040,6 +1040,31 @@ function showOff() {
   const v = editing ? editShift : offset;
   $("offVal").textContent = (v > 0 ? "+" : v < 0 ? "−" : "±") + Math.abs(v).toFixed(1) + "초";
 }
+/* 가사 출처 (user request 2026-11-16, PC · mobile): 원문 · 발음 · 번역 rows above the lyrics.
+   Ours: the wiki the lyrics file came from (its reading / translation lines come with it). VocaDB: each row's own lyric
+   (language · source); 발음 made by the server = 자동 생성 (lines it had no reading for keep VocaDB's romaji). Lines marked
+   auto make a row 자동 생성 too (translation engine not built yet). A row with no lines = 없음. */
+const LANG_KO = {ja: "일본어", en: "영어", ko: "한국어", zh: "중국어", cmn: "중국어", es: "스페인어", fr: "프랑스어", ru: "러시아어", de: "독일어", id: "인도네시아어", th: "태국어", tl: "타갈로그어"};
+const WIKI_KO = {namu: "나무위키", vocaro: "보카로 가사위키", unknown: "출처 모름 (구버전)"};
+function lyricsSources(s) {
+  const lines = s.groups.flatMap(g => g.cols ? g.cols.flatMap(c => c.lines || []) : g.lines);
+  const link = (text, url) => /^https?:\/\//.test(url || "") ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(text)}</a>` : esc(text);
+  const vdb = m => {
+    const lang = m.type === "Romanized" ? "로마자" : (m.lang || []).filter(c => c !== "und").map(c => LANG_KO[c] || c).join("·");
+    return link(`VocaDB${lang ? " " + lang : ""}${m.type === "Original" ? " (원본)" : m.type === "Translation" ? " (번역)" : ""}`, m.url) + (m.source ? ` · ${esc(m.source)}` : "");
+  };
+  const wiki = WIKI_KO[s.lyrics_kind] ? link(WIKI_KO[s.lyrics_kind], s.lyrics_src) : "";
+  const info = s.src_info || {};
+  const row = role => {
+    const ls = lines.filter(l => l.role === role && l.text);
+    if (!ls.length) return "없음";
+    const m = info[role], nAuto = ls.filter(l => l.auto).length;
+    if (m && m.by === "auto") return nAuto === ls.length || !m.fill ? "자동 생성" : `자동 생성 + ${vdb(m.fill)} (${ls.length - nAuto}줄)`;
+    const base = m ? vdb(m) : wiki || "출처 모름";
+    return nAuto === ls.length ? "자동 생성" : nAuto ? `${base} + 자동 생성 (${nAuto}줄)` : base;
+  };
+  return `<div class="lsrc"><span><b>원문</b> ${row("o")}</span><span><b>발음</b> ${row("r")}</span><span><b>번역</b> ${row("t")}</span></div>`;
+}
 function renderLyrics() {
   const box = $("lyrics");
   curIdx = -1;
@@ -1053,7 +1078,7 @@ function renderLyrics() {
   const partTag = p => p ? `<div class="part" style="--pc:${/^#[0-9a-f]{6}$/i.test(p.color) ? p.color : "transparent"}">${
     (p.colors || [null]).map(c => c && /^#[0-9a-f]{6}$/i.test(c) ? `<i style="--pc:${c}"></i>` : "<i></i>").join("")}${esc(p.name)}</div>` : "";
   // 동시에 부르는 묶음(g.cols): 보컬마다 칸을 나란히 (칸 위에 그 보컬 이름)
-  box.innerHTML = notes + song.groups.map((g, i) => `<div class="g${times && song.sync.method !== "manual" && matched[i] === false ? " guess" : ""}" data-i="${i}">
+  box.innerHTML = lyricsSources(song) + notes + song.groups.map((g, i) => `<div class="g${times && song.sync.method !== "manual" && matched[i] === false ? " guess" : ""}" data-i="${i}">
       ${g.cols ? lyrCols(g, p => partTag(p) || '<div class="part">&nbsp;</div>') : partTag(g.part) + g.lines.map(l => lyrLine(l.role + (l.auto ? " auto" : "") + (l.lang ? ` xl-${l.lang}` : ""), l.text, g.vc)).join("")}
       <div class="prog"><i></i></div>
       <div class="stamp"><button data-d="-1" title="1초 앞으로">&lt;&lt;</button><button data-d="-0.2" title="0.2초 앞으로">&lt;</button><span class="tv"></span><button data-d="0.2" title="0.2초 뒤로">&gt;</button><button data-d="1" title="1초 뒤로">&gt;&gt;</button></div>

@@ -35,7 +35,7 @@ function vdbLyrics(d, it) {
     ...(auto.includes(d.roles[i]) && !(manual[d.roles[i]] || []).includes(k) ? {auto: true} : {})})).filter(l => l.text)}));
   const raw = [it.title, `작곡: ${it.composer || ""} / 노래: ${it.singer || ""}`, ...d.src.map((s, i) => (i ? "가사 출처: " : "출처: ") + s),
     "※ 인용된 가사의 저작권은 원저작자 및 관련 권리자에게 있습니다.", "=".repeat(40), "", ...d.g.map(xs => xs.join("\n")), ""].join("\n");
-  return {site: it.site, name: it.name, title: it.title, artist: it.artist, sync_fail: null, lyrics_src: "vocadb", lyrics_kind: "vocadb",
+  return {site: it.site, name: it.name, title: it.title, artist: it.artist, sync_fail: null, lyrics_src: "vocadb", lyrics_kind: "vocadb", src_info: d.info || null,
     lyrics_file: "", raw, notes: [], groups, sync_state: "", sync: null, link: null};
 }
 /* 썸네일 그림을 못 받으면(지워진 영상·주소 끝 값이 필요한 니코니코 새 영상) 깨진 그림 대신 ♪ 칸 — 그 주소는 기억해 다시 부르지 않음 */
@@ -277,7 +277,11 @@ const LOCAL = {
     return {views: ref && ref.kind === "nico" ? await nicoViews(ref.id) : null};
   },
   item(site, name) {
-    const it = this.items.get(site + "/" + name);
+    let it = this.items.get(site + "/" + name);
+    // a collected song without lyrics of ours is made from the song list on demand (VDB.itemById) and was never registered
+    // here — its lyrics failed with this error (user report 2026-11-16, playlist songs after the DB update)
+    const m = !it && site === "stream" && /^vocadb_(\d+)$/.exec(name), v = m && VDB.itemById(m[1]);
+    if (v) it = this.remember(v);
     if (!it) throw new Error("곡을 찾을 수 없습니다.");
     return it;
   },
@@ -303,7 +307,7 @@ const LOCAL = {
     if (d) d = {site, name, title: it.title, artist: it.artist, sync_fail: null, lyrics_file: "", link: null, ...d};
     else if (it.vocadb) {
       const v = await VDB.lyricsDoc(it.vocadb).catch(() => null);  // nothing of ours → VocaDB's own lyrics (API)
-      if (v) d = vdbLyrics(v, it);
+      if (v) d = vdbLyrics(await this.withReading(v, it.vocadb), it);
     }
     if (!d) return {site, name, title: it.title, artist: it.artist, sync_fail: null, lyrics_src: "", lyrics_kind: "", lyrics_file: "",
       raw: "", notes: [], groups: [], sync_state: "", sync: null, link: null, live: false};
@@ -315,6 +319,29 @@ const LOCAL = {
       }
     }
     return d;
+  },
+
+  /* 자동 가사 hangul reading (user 2026-11-16: the readings were made but romaji still showed) — export/db/reading/<id // 1000>.json.gz
+     {id: {h, r, m}} from the server (vocadb/table_export.py _readings). Used only when VocaDB's original still hashes the same
+     (h = first 16 hex of SHA-1 of the lines joined by \n); it takes the 발음 row (role r) in place of VocaDB's romaji
+     (a line without a reading keeps the romaji), marked '자동' except the lines in m (checked / edited). */
+  _readBlocks: new Map(),
+  async withReading(v, id) {
+    try {
+      const b = Math.floor(+id / 1000);
+      if (!this._readBlocks.has(b)) this._readBlocks.set(b, this.readBytes(`${this.out}/db/reading/${b}.json.gz`)
+        .then(gz => new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).json()).catch(() => ({})));
+      const s = (await this._readBlocks.get(b))[String(id)];
+      if (!s || s.r.length !== v.g.length) return v;
+      const sha = new Uint8Array(await crypto.subtle.digest("SHA-1", new TextEncoder().encode(v.g.map(x => x[0]).join("\n"))));
+      if ([...sha].map(x => x.toString(16).padStart(2, "0")).join("").slice(0, 16) !== s.h) return v;
+      let ri = v.roles.indexOf("r");
+      const g = v.g.map(xs => xs.slice()), roles = v.roles.slice(), langs = (v.langs || roles.map(() => "")).slice();
+      if (ri < 0) { ri = 1; roles.splice(1, 0, "r"); langs.splice(1, 0, ""); g.forEach(xs => xs.splice(1, 0, "")); }
+      g.forEach((xs, k) => { if (s.r[k]) xs[ri] = s.r[k]; });
+      const manual = (s.m || []).concat(g.map((xs, k) => s.r[k] ? -1 : k).filter(k => k >= 0));  // romaji kept → no '자동'
+      return {...v, g, roles, langs, auto: ["r"], manual: {r: manual}, info: {...(v.info || {}), r: {by: "auto", fill: v.info && v.info.r}}};
+    } catch (e) { return v; }
   },
 
   /* ---- 저장 ---- */
