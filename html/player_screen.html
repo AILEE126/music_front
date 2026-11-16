@@ -208,7 +208,7 @@
         상위 <input type="number" id="sTopN" min="1" step="1" value="1000"> 곡
         <button id="sMakePl" disabled>재생목록 만들기</button></span>
       <select id="sSort" title="정렬"><option value="RatingScore">인기순</option></select></div><!-- user request 2026-11-14: sort at the far right, after 재생목록 만들기 -->
-    <div class="slist" id="sList"></div>
+    <div class="slistw"><div class="slist" id="sList"></div><div class="sbusy" id="sBusy" hidden></div></div><!-- sBusy: 검색 중 도는 표시 (2026-11-16) -->
   </div>
 </dialog>
 <dialog id="coverDlg"><img id="coverBig" alt="" title="누르면 닫기 · 오른쪽 클릭하면 저장"></dialog>

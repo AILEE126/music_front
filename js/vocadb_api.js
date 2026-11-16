@@ -119,7 +119,7 @@ const VDB = {
     const d = String(r.upload_date || "");
     const it = {site: "stream", name: `vocadb_${id}`, vocadb: id, title, orig: r.title_ja !== title ? r.title_ja : "", reading: r.title_reading || "",
       singer: r.singer || "", composer: r.composer || "", vocals: people(r.singer).map(n => [n, vocalColor(n)]),
-      date: d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : "", thumb: r.thumb || "", type: r.song_type || "",
+      date: d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : "", thumb: r.thumb || "", type: r.song_type || "", vkind: r.vocal_kind || "", origId: r.original_id || "",  // 같은 곡 묶기 (원곡 번호)
       rating: +r.rating_score || 0, sources: [r.video_url, ...String(r.alt_urls || "").split(" ")].filter(u => /nicovideo\.jp|nico\.ms|youtube\.com|youtu\.be/.test(u || "")),
       tags: [...String(r.tags || "").split("|").filter(Boolean), ...ki.extraTags], nums: ki.nums, gone: ki.gone, only: ki.only, ord: ki.ord, karaoke: ki.karaoke, namu: ki.namu,
       lyrics: ours.lyrics || "", ...(ours.sync === "ok" ? {sync: "ok", method: ours.method || "", score: ours.score ?? null} : {})};

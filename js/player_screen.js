@@ -317,16 +317,82 @@ async function findSongs(q, known = [], max = 40) {
   for (const it of [...known, ...db]) if (!seen.has(keyOf(it))) { seen.add(keyOf(it)); out.push(it); }
   return out.slice(0, max);
 }
-/* the scope's songs: 전체 곡 = our whole DB · 노래방 곡만 · 가사·싱크 있는 곡 = our songs */
-const scopeItems = () => { const sc = $("sScope").value; return sc === "kara" ? VDB.curated.filter(it => it.karaoke) : sc === "ours" ? VDB.curated.filter(it => !!(it.lyrics || it.sync)) : VDB.all(); };
+/* the scope's songs: 전체 곡 = our whole DB · 노래방 곡만 · 가사·싱크 있는 곡 = our songs —
+   kept until the scope or the song data changes (same array → the categories · sorted order below are reused) */
+let scopeMemo = {};
+const scopeItems = () => {
+  const sc = $("sScope").value, all = VDB.all(), cur = VDB.curated;
+  if (scopeMemo.sc !== sc || scopeMemo.all !== all || scopeMemo.cur !== cur)
+    scopeMemo = {sc, all, cur, its: sc === "kara" ? cur.filter(it => it.karaoke) : sc === "ours" ? cur.filter(it => !!(it.lyrics || it.sync)) : all};
+  return scopeMemo.its;
+};
+/* 검색이 화면을 멈추지 않게 (user request 2026-11-16: 필터를 걸고 뺄 때마다 화면이 잠깐 멈춤 — 목록 칸에만 도는 표시):
+   정렬은 범위·정렬이 바뀔 때만 (정렬해 둔 범위 곡을 거르면 순서가 그대로라 다시 정렬할 일 없음) · 카테고리도 범위가 바뀔 때만 ·
+   거르기 · 정렬은 조금씩 나눠 하면서 화면에 차례를 넘김. 하는 사이 다시 바꾸면 하던 건 버림 (searchGen) */
+const STALE = {};
+let searchGen = 0, sortMemo = new WeakMap();  // scope songs → {key: sort, out: sorted}
+/* give the screen a turn (input · drawing) — not setTimeout: clamped to 4 ms, and far slower in a hidden tab */
+const yieldUI = () => globalThis.scheduler && scheduler.yield ? scheduler.yield() : new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); });
+function searchTick(gen) {
+  let last = performance.now();
+  return async () => {
+    if (performance.now() - last > 12) { await yieldUI(); last = performance.now(); }
+    if (gen !== searchGen) throw STALE;
+  };
+}
+/* stable merge sort that yields (Array.sort of 14만 곡 by title takes about a second in one go) */
+async function sortAsync(a, cmp, tick) {
+  const n = a.length, R = 32;
+  let src = a.slice(), dst = new Array(n), ops = 0;  // ops: comparisons since the last tick
+  for (let s = 0; s < n; s += R) {
+    const e = Math.min(s + R, n);
+    for (let i = s + 1; i < e; i++) { const x = src[i]; let j = i - 1; while (j >= s && cmp(src[j], x) > 0) { src[j + 1] = src[j]; j--; ops++; } src[j + 1] = x; ops++; }
+    if (ops > 2048) { ops = 0; await tick(); }
+  }
+  for (let w = R; w < n; w *= 2) {
+    for (let s = 0; s < n; s += 2 * w) {
+      const m = Math.min(s + w, n), e = Math.min(s + 2 * w, n);
+      let i = s, j = m, k = s;
+      while (i < m && j < e) { dst[k++] = cmp(src[j], src[i]) < 0 ? src[j++] : src[i++]; if (++ops > 2048) { ops = 0; await tick(); } }
+      while (i < m) dst[k++] = src[i++];
+      while (j < e) dst[k++] = src[j++];
+    }
+    [src, dst] = [dst, src];
+  }
+  return src;
+}
+async function sortedScope(tick) {
+  const its = scopeItems(), key = $("sSort").value, m = sortMemo.get(its);
+  if (m && m.key === key) return m.out;
+  const out = await sortAsync(its, ourCmp(), tick);
+  sortMemo.set(its, {key, out});
+  return out;
+}
+/* 재생 가능 세기: 곡마다 영상 주소 풀이는 한 번만 (deleted 는 그때그때) */
+const refsN = new WeakMap();
+const playableFast = it => it.site !== "stream" ? canPlay(it) : !it.deleted && (refsN.has(it) ? refsN.get(it) : (refsN.set(it, streamRefs(it).length), refsN.get(it))) > 0;
+/* 목록 칸의 도는 표시 — 금방 끝나면 안 보이게 조금 뒤에 */
+let busyTimer = 0;
+function listBusy(on) {
+  const b = $("sBusy"); if (!b) return;  // page from before the 2026-11-16 html (cached) — no marker, search still works
+  clearTimeout(busyTimer);
+  if (on) busyTimer = setTimeout(() => { b.hidden = false; }, 120); else b.hidden = true;
+}
 /* keep: stay where the list is (user request 2026-11-14: a song action — e.g. '현재 필터에 추가' — never jumps to the top) */
-function runSearch(keep) {
-  const q = $("sQ").value.trim(), v = fold(q);
+async function runSearch(keep) {
+  const gen = ++searchGen, tick = searchTick(gen), q = $("sQ").value.trim(), v = fold(q);
   S.q = q;
-  if (!keep) $("sList").scrollTop = 0;
-  S.items = ourSort(scopeItems().filter(it => passChips(it) && (!v || FKIND.text[1](it, v))));
-  // 검색결과 N곡 · 재생 가능 M곡 (user request 2026-11-15: songs without a video are found but can't go in the playlist)
-  renderSearch(`검색결과 ${S.items.length.toLocaleString()}곡 · 재생 가능 ${S.items.filter(canPlay).length.toLocaleString()}곡${q ? ` — "${q}"` : ""}`);
+  listBusy(true);
+  try {
+    let its = await filterGroupsAsync(await sortedScope(tick), FG.filter(fReal), tick);
+    if (v) its = await chunkFilter(its, it => FKIND.text[1](it, v), tick);
+    const nPlay = (await chunkFilter(its, playableFast, tick)).length;
+    S.items = its;
+    if (!keep) $("sList").scrollTop = 0;
+    // 검색결과 N곡 · 재생 가능 M곡 (user request 2026-11-15: songs without a video are found but can't go in the playlist)
+    renderSearch(`검색결과 ${its.length.toLocaleString()}곡 · 재생 가능 ${nPlay.toLocaleString()}곡${q ? ` — "${q}"` : ""}`);
+  } catch (e) { if (e !== STALE) throw e; }
+  finally { if (gen === searchGen) listBusy(false); }
 }
 function renderSearch(info) {
   const st = $("sList").scrollTop;  // runSearch already put it at 0 when it should go to the top
@@ -357,15 +423,31 @@ const sfItems = scopeItems;
    포함 그룹끼리는 하나라도 맞으면 보임(합집합), 제외 그룹의 조건에 모두 맞는 곡은 빠짐. fCur: 새 조건이 들어갈 그룹.
    버튼으로 그룹을 만들지 않았으면(m 없음) 조건을 고를 때마다 그 조건 하나만으로 거름 (앞 조건은 바뀜).
    예전 태그(f.chips: 태그마다 포함·제외)는 태그 하나짜리 그룹으로 옮김 · m 이 생기기 전에 저장한 조건 여럿짜리 그룹은 직접 만든 것으로 봄 */
-/* 곡 종류는 그룹마다 꼭 하나 (user request 2026-11-14) — 없으면 오리지널로 넣음 · 지울 수 없고, 카테고리 '곡 종류'에서 고르면 값만 바뀜 */
-const F_TYPE_DEF = "오리지널";
-const withType = g => g.c.some(c => c.k === "type") ? g : {...g, c: [{k: "type", v: F_TYPE_DEF}, ...g.c]};
-/* 곡 종류만 든 그룹은 첫 그룹이 아니면 아직 빈 그룹 — 다른 조건을 고를 때까지 거르지 않음 ('＋ 그룹'만 눌러도 결과가 늘지 않게) */
-const fReal = (g, i) => i === 0 || g.c.some(c => c.k !== "type");
+/* 기본 필터 (user request 2026-11-16, was 곡 종류 오리지널 only): [곡 종류 오리지널 또는 커버 · 보컬 종류 엔진 또는 섞임] —
+   음원 관리 › 필터 › 기본 필터 (filter.json default) 가 있으면 그것. 아무것도 안 고른 때 · ↺ 뒤의 필터이고,
+   새 그룹('＋ 그룹' · '− 제외')은 그 첫 포함 그룹의 조건으로 시작함 */
+/* + 같은 곡 정렬 · 자르기 (user request 2026-11-16, song_filter.js filterGroups): 같은 노래는 재생되는 · 원곡 · 인기 · 먼저 나온 한 곡만 */
+const F_DEFAULT_DEF = [{x: false, c: [{k: "type", v: ["오리지널", "커버"]}, {k: "vkind", v: ["엔진", "섞임"]},
+  {k: "same_sort", v: ["재생 가능", "원곡 먼저", "인기순", "먼저 나온 순"]}, {k: "same_cut", v: "1"}]}];
+const fDefault = () => JSON.parse(JSON.stringify(VDB.filter && (VDB.filter.default || []).length ? VDB.filter.default : F_DEFAULT_DEF)).map(g => ({...g, m: true}));
+const fBase = () => { const d = fDefault(); return (d.find(g => !g.x) || d[0]).c; };
+const fNewGroup = x => ({x, m: true, c: fBase()});
+/* 곡 종류는 그룹마다 꼭 하나 (user request 2026-11-14) — 없으면 기본 필터의 곡 종류로 넣음 · 지울 수 없고, 카테고리 '곡 종류'에서 고르면 값만 바뀜 */
+const withType = g => g.c.some(c => c.k === "type") ? g : {...g, c: [fBase().find(c => c.k === "type") || {k: "type", v: "오리지널"}, ...g.c]};
+/* 곡 종류와 기본 필터 조건만 든 그룹은 첫 그룹이 아니면 아직 빈 그룹 — 다른 조건을 고를 때까지 거르지 않음 ('＋ 그룹'만 눌러도 결과가 바뀌지 않게) */
+const fBaseCond = c => c.k === "type" || fBase().some(b => b.k === c.k && JSON.stringify(b.v) === JSON.stringify(c.v));
+const fReal = (g, i) => i === 0 || g.c.some(c => !fBaseCond(c));
 let FG = (store.get("f.groups", null) || store.get("f.chips", []).map(c => ({x: !!c.x, c: [{k: c.k, v: c.v}]})))
   .map(g => "m" in g ? g : {...g, m: g.c.length > 1}).map(withType);
+/* an old built-in default left as it was (one group: 곡 종류 오리지널 only · 2: + 보컬 종류, before 같은 곡) → the new default, once
+   (user request 2026-11-16) */
+if (store.get("f.defV", 0) < 3) {
+  const was = [JSON.stringify([{k: "type", v: "오리지널"}]), JSON.stringify(F_DEFAULT_DEF[0].c.slice(0, 2))];
+  if (FG.length === 1 && was.includes(JSON.stringify(FG[0].c))) { FG = fDefault(); store.set("f.groups", FG); }
+  store.set("f.defV", 3);
+}
 let fCur = Math.min(store.get("f.cur", 0), FG.length - 1);
-const passChips = it => passGroups(it, FG.filter(fReal));
+samePlayable = it => canPlay(it);  // 같은 곡 정렬 '재생 가능' = 재생목록에 넣을 수 있는 곡
 function saveChips(keepScroll) { sfDefaultGroup(); store.set("f.groups", FG); store.set("f.cur", fCur); renderFilterOptions(); runSearch(keepScroll); }
 function addChip(k, v) {  // v: 값 하나 또는 [값, …] (그중 하나라도)
   if (!v || (Array.isArray(v) && !v.length)) return;
@@ -375,8 +457,9 @@ function addChip(k, v) {  // v: 값 하나 또는 [값, …] (그중 하나라�
     FG.push(withType({x: false, m: false, c: [{k, v}]})); fCur = FG.length - 1;
     return saveChips();
   }
-  const g = FG[fCur], t = g.c.find(c => c.k === "type");
-  if (k === "type" && t) { t.v = v; return saveChips(); }  // 곡 종류는 하나뿐 — 값만 바꿈
+  const g = FG[fCur], t = g.c.find(c => c.k === k && ONE_COND.includes(k));
+  if (k === "same_cut" && Array.isArray(v)) v = v[v.length - 1];  // 자르기는 값 하나
+  if (t) { t.v = v; return saveChips(); }  // 곡 종류 · 같은 곡 정렬 · 자르기는 그룹에 하나뿐 — 값만 바꿈
   if (!g.c.some(c => c.k === k && JSON.stringify(c.v) === JSON.stringify(v))) g.c.push({k, v});
   saveChips();
 }
@@ -386,12 +469,19 @@ function addChip(k, v) {  // v: 값 하나 또는 [값, …] (그중 하나라�
 function songGroup() { return FG.find(g => !g.x && g.c.some(c => c.k === "song") && g.c.every(c => c.k === "song" || c.k === "type")); }
 function songId(it) { return String(it.vocadb || it.name); }
 var FILT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M3 5h12l-5 6v5l-3 2v-7z"/><path d="M18 12v8M14 16h8"/></svg>';
+/* 그룹에 하나뿐인 조건 — 다시 고르면 값만 바뀜 */
+var ONE_COND = ["type", "same_sort", "same_cut"];
+/* 같은 곡 정렬: 체크한 순서 = 우선순위 — 목록에 '1순위' … 로 보임 */
+function sameRank(v) {
+  if (ddOpen !== "fVal" || $("fKind").value !== "same_sort" || !ddSel.has(v)) return "";
+  return `<span class="n">${[...ddSel].indexOf(v) + 1}순위</span>`;
+}
 function fSongIds() { const g = songGroup(), c = g && g.c.find(c => c.k === "song"); return c ? [].concat(c.v) : []; }
 function toggleSongCond(it) {
   sfDefaultGroup();
   const id = songId(it), ty = VDB_TYPE_KO[it.type] || it.type;
   let g = songGroup();
-  if (!g) { g = {x: false, m: true, c: [{k: "type", v: ty || F_TYPE_DEF}]}; FG.push(g); }
+  if (!g) { g = {x: false, m: true, c: [ty ? {k: "type", v: ty} : fBase().find(c => c.k === "type")]}; FG.push(g); }
   FG.forEach(x => { x.m = true; });  // 버튼 없이 고른 조건도 그룹으로 남김 (다음 조건을 골라도 지워지지 않게)
   let c = g.c.find(c => c.k === "song");
   if (c && [].concat(c.v).includes(id)) {
@@ -425,7 +515,7 @@ function applyEdit(e, vs) {
     vs = vs.filter(Boolean);
     if (!vs.length) { if (c.k !== "type") g.c.splice(e.c, 1); }  // 다 풀면 조건을 뺌 (곡 종류는 꼭 하나라 그대로)
     else {
-      c.v = vs.length === 1 && c.k !== "song" ? vs[0] : vs;
+      c.v = c.k === "same_cut" ? vs[vs.length - 1] : vs.length === 1 && c.k !== "song" ? vs[0] : vs;
       if (c.k === "singer" || c.k === "solo") c.k = $("fSolo").checked ? "solo" : "singer";
     }
   }
@@ -438,7 +528,7 @@ function renderFilterOptions() {
     $(id).innerHTML = opt("", head) + rows.map(([k, n]) => opt(k, n === "" ? label(k) : `${label(k)} (${n})`)).join("");
     $(id).hidden = !show;
   };
-  const cats = sfCats(its), ec = editCond();
+  const cats = sfCatsMemo(its), ec = editCond();
   if (ec && ec.k === "song") cats.unshift({id: "song", label: "곡", k: "song", rows: [].concat(ec.v).map(v => [v, ""]), lab: songTitleOf});  // 넣은 곡만 (빼기용)
   FCATS = cats;
   const want = store.get("f.kind", "singer"), c = cats.find(x => x.id === want) || cats[0];
@@ -485,7 +575,7 @@ function setFilterOpen(open) {
   $("fPanel").hidden = !open; store.set("sfOpen", open); renderFilterOptions();
 }
 /* open panel with no group yet → one empty include group, ready for the first condition (user request 2026-11-14) */
-function sfDefaultGroup() { if (!FG.length) { FG = [{x: false, m: true, c: [{k: "type", v: F_TYPE_DEF}]}]; fCur = 0; } }  // 첫 그룹: 곡 종류 오리지널
+function sfDefaultGroup() { if (!FG.length) { FG = fDefault(); fCur = 0; } }  // 기본 필터 (fDefault)
 /* 필터 목록 칸 펼치기: 맨 위 검색창 + 항목 (optgroup 은 작은 제목). 글자를 치면 그 글자가 든 항목만, Enter 는 위에서 첫 항목,
    ↑↓ 로 고르기, Esc·바깥 누르기로 닫힘. 항목을 누르면 원래 select 의 change 로 조건을 더함 */
 var DD_IDS = ["fKind", "fVal"];
@@ -551,6 +641,7 @@ function openDD(id, preset) {  // preset: values checked at the start (고치는
       if (e.target !== ck) ck.checked = !ck.checked;
       ck.checked ? ddSel.add(o.dataset.v) : ddSel.delete(o.dataset.v);
       ddAddBtn(p.querySelector(".fdd-add"));
+      if ($("fKind").value === "same_sort") { e.stopPropagation(); renderDD(); }  // 순위 숫자 다시 (다시 그리면 누른 칸이 떨어져 나가 바깥 누르기로 보임)
       return;
     }
     pickDD(o.dataset.v);
@@ -579,7 +670,7 @@ function renderDD() {
     if (grp) html += `<div class="fdd-grp">${esc(node.label)}</div>`;
     html += hit.map(o => `<div class="fdd-opt${k++ === ddHl ? " hl" : ""}" data-v="${esc(o.value)}">`
       + (ddOpen === "fVal" ? `<input type="checkbox" class="fdd-ck"${ddSel.has(o.value) ? " checked" : ""}>` : "")
-      + `${esc(name(o))}${cnt(o) ? `<span class="n">${cnt(o)}</span>` : ""}</div>`).join("");
+      + `${esc(name(o))}${sameRank(o.value) || (cnt(o) ? `<span class="n">${cnt(o)}</span>` : "")}</div>`).join("");
   }
   if (html && ddOpen === "fVal") {  // 맨 위 '전체 선택' (찾은 값 모두 체크 / 다시 누르면 모두 해제)
     const vs = ddVisible(), on = vs.filter(v => ddSel.has(v)).length;
@@ -630,7 +721,7 @@ $("fNew").addEventListener("click", e => {
   const x = b.dataset.new === "exc";
   FG.forEach(g => { g.m = true; });  // 버튼 없이 고른 조건도 그룹으로 남김 (다음 조건을 골라도 지워지지 않게)
   if (FG[fCur] && !fReal(FG[fCur], fCur)) FG[fCur].x = x;  // 비어 있는 선택 그룹은 새로 만들지 않고 종류만 바꿈
-  else { FG.push({x, m: true, c: [{k: "type", v: F_TYPE_DEF}]}); fCur = FG.length - 1; }
+  else { FG.push(fNewGroup(x)); fCur = FG.length - 1; }
   saveChips();
 });
 $("fKind").onchange = () => { fEdit = null; store.set("f.kind", $("fKind").value); renderFilterOptions(); };
@@ -707,8 +798,24 @@ function sfCats(its) {
   // 가사·싱크 상태 is replaced by 곡 상태 here (user request 2026-11-15 — 싱크 · 가사 유무 · 번역명 as tags)
   const cats = filterCats(its, true).filter(c => c.id !== "state"), types = countBy(its.map(it => it.type ? [VDB_TYPE_KO[it.type] || it.type] : []));
   if (types.length) cats.push({id: "type", label: "곡 종류", k: "type", rows: types, lab: x => x});
+  cats.push(...sameCats());  // 같은 곡 정렬 · 자르기 (user request 2026-11-16)
   const p = id => (fltCat(id) || {p: 1e9}).p;  // 음원 관리 › 필터의 순서 (없으면 가나다순)
   return cats.sort((a, b) => p(a.id) - p(b.id) || a.label.localeCompare(b.label, "ko"));
+}
+/* categories only change with the scope's songs (not with the filter) — counted once, copies handed out (the caller changes rows) */
+let catMemo = new WeakMap();
+function sfCatsMemo(its) {
+  let m = catMemo.get(its);
+  if (!m || m.f !== VDB.filter || m.m !== VDB.master) catMemo.set(its, m = {f: VDB.filter, m: VDB.master, cats: sfCats(its)});
+  return m.cats.map(c => ({...c}));
+}
+/* right after the song data is read (still on the loading screen): count the categories (about a second over 14만 곡, can't be
+   split) and sort the scope, so opening the search window later never stalls the screen (user request 2026-11-16, phones too) */
+async function warmSearch() {
+  sfCatsMemo(scopeItems());
+  const all = VDB.all();
+  for (const it of all) sameKeyOf(it, all);  // 같은 곡 묶음 (song_filter.js) — once per song
+  try { await sortedScope(searchTick(searchGen)); } catch (e) { if (e !== STALE) throw e; }
 }
 /* 음원 관리 › 필터 (user request 2026-11-14 — export/db/filter.json): a category's row {id, label, icon, p} · its symbol */
 const fltCat = id => VDB.filter && (VDB.filter.cats || []).find(c => c.id === id);
@@ -741,7 +848,7 @@ function renderSortOptions() {
 }
 const titleGroup = t => { const c = (t || "").trim()[0] || ""; return /[가-힣ㄱ-ㅣ]/.test(c) ? 0 : /\d/.test(c) ? 1 : /[a-z]/i.test(c) ? 2 : 3; };
 const KO_CMP = new Intl.Collator("ko").compare;  // same order as localeCompare(…, "ko"), much faster over 수십만 곡
-function ourSort(list) {
+function ourCmp() {
   const big = 1e9, txt = (a, b) => (a ? 0 : 1) - (b ? 0 : 1) || KO_CMP(a || "", b || "");
   const ord = it => { const o = it.ord || {}; return o.namu != null ? o.namu : o.japan != null ? 1e6 + o.japan : big; };
   const num = it => { const n = it.nums || {}, b = ["TJ", "금영", "DAM", "JOYSOUND", "UGA"].findIndex(x => n[x]); return b < 0 ? [big, big] : [b, parseInt(String(n[["TJ", "금영", "DAM", "JOYSOUND", "UGA"][b]]).replace(/\D/g, ""), 10) || big]; };
@@ -750,7 +857,7 @@ function ourSort(list) {
     no: (a, b) => { const x = num(a), y = num(b); return x[0] - y[0] || x[1] - y[1]; },
     PublishDate: (a, b) => (a.date ? 0 : 1) - (b.date ? 0 : 1) || (b.date || "").localeCompare(a.date || ""), old: (a, b) => txt(a.date, b.date),
     composer: (a, b) => txt(a.composer, b.composer), singer: (a, b) => txt(a.singer, b.singer)}[$("sSort").value] || (() => 0);
-  return list.sort((a, b) => cmp(a, b) || byTitle(a, b));
+  return (a, b) => cmp(a, b) || byTitle(a, b);
 }
 
 /* Song options (user request 2026-11-15, like Spotify): the 4 result buttons moved into a ⋯ button — shown on hover on the

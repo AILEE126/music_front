@@ -296,6 +296,7 @@ const LOCAL = {
       this.items.set(it.site + "/" + it.name, it);
       Object.assign(it, this.synced.get(it.site + "/" + it.name) || {});  // 이번에 서버 없이 맞춘 싱크
     }
+    if (typeof warmSearch === "function") { this.progress("곡 검색 준비 중…", 0.9); await warmSearch(); }  // player_screen.js (no stall on the first search)
     return {items, sync_ready: true};
   },
 

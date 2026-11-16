@@ -562,6 +562,11 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
 #searchDlg .fpanel,#searchDlg .fchips{margin:0}
 #searchDlg .sinfo{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
 #searchDlg .slist{flex:1;min-height:0;overflow-y:auto;border:1px solid var(--line);border-radius:8px}
+/* 검색 중 (user request 2026-11-16): 목록 칸에만 흐리게 + 도는 표시 — 화면의 다른 곳은 그대로 움직임 */
+#searchDlg .slistw{flex:1;min-height:0;position:relative;display:flex;flex-direction:column}
+#searchDlg .sbusy{position:absolute;inset:0;border-radius:8px;background:color-mix(in srgb,var(--card) 50%,transparent);pointer-events:none}
+#searchDlg .sbusy[hidden]{display:none}
+#searchDlg .sbusy::before{content:"";position:absolute;left:50%;top:40%;width:32px;height:32px;margin:-16px 0 0 -16px;border:4px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
 .sitem{display:flex;gap:10px;align-items:center;padding:7px 12px;border-bottom:1px solid var(--line)}
 .sitem:hover{background:var(--chip)}
 .sitem.gone{opacity:.5}
