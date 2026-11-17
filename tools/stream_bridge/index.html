@@ -12,7 +12,8 @@
 /* 중계 페이지 (GitHub Pages 에 올려 https 주소로 씀 — 개인 데이터 없음)
    파일로 연 음원 플레이어(file://)는 주소가 없어 유튜브·니코니코 플레이어가 거부함 → 이 페이지가 대신 띄우고,
    재생 상태·시간을 부모 화면으로 보내고 부모의 명령(재생·멈춤·이동·소리)을 플레이어에 전함.
-   주소: ?yt=<유튜브 영상 번호> 또는 ?nico=<sm…> · &start=<초> · &mute=1 · &vol=<0~100> · &id=<부모가 구분하는 번호>
+   주소: ?yt=<유튜브 영상 번호> 또는 ?nico=<sm…> (또는 ?sc=<SoundCloud 주소> · ?vimeo=<번호> · ?file=<음원 파일 주소> ·
+   ?bili=<av…|BV…>&len=<초> — 원곡이 없어진 곡의 다른 링크, 2026-11-18) · &start=<초> · &mute=1 · &vol=<0~100> · &id=<부모가 구분하는 번호>
    · &cmt=0: 니코니코 댓글 끄기 (기본 켬) · 유튜브 자막은 늘 끄고 시작
    · &info=1: 니코니코 영상 정보만 알리고 재생하지 않음 (플레이어 곡 정보 줄의 재생수)
    · cmd load {yt|nico, start, play}: next song in the same player (reused so playback goes on in a hidden tab)
@@ -122,6 +123,109 @@ if (q.get("yt")) {
        volume: v => { vol = v; send("volumeChange", {volume: v / 100}); }, mute: on => { muted = on; send("mute", {mute: on}); },
        comments: on => { cmt = on; send("commentVisibilityChange", {commentVisibility: on}); },
        load: v => { if (!v.nico) return; cur = {nico: v.nico, start: +v.start || 0, play: !!v.play}; dur = 0; f.contentWindow.location.replace(url(cur)); }};  // replace: no history entry per song (phone app's back button stepped the video back — user report)
+} else if (q.get("sc")) {
+  // SoundCloud (user request 2026-11-18: the song's other links when the original is gone) — Widget API
+  const f = document.createElement("iframe");
+  f.allow = "autoplay";
+  f.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(q.get("sc"))}&auto_play=false&visual=true&show_comments=false&buying=false&sharing=false&download=false&show_teaser=false`;
+  document.getElementById("p").replaceWith(f);
+  const s = document.createElement("script");
+  s.src = "https://w.soundcloud.com/player/api.js";
+  s.onerror = () => up({ev: "error", code: "api"});  // also what an ad blocker that blocks it looks like → next source
+  document.head.appendChild(s);
+  s.onload = () => {
+    const w = SC.Widget(f), E = SC.Widget.Events;
+    let vol = startVol, muted = startMuted, dur = 0;
+    w.bind(E.READY, () => {
+      w.setVolume(muted ? 0 : vol);
+      w.getDuration(ms => {
+        dur = (+ms || 0) / 1000;
+        if (start) w.seekTo(start * 1000);
+        w.play();
+        up({ev: "ready", d: dur});
+      });
+    });
+    w.bind(E.PLAY, () => up({ev: "state", s: "playing"}));
+    w.bind(E.PAUSE, () => up({ev: "state", s: "paused"}));
+    w.bind(E.FINISH, () => up({ev: "state", s: "ended"}));
+    w.bind(E.PLAY_PROGRESS, e => up({ev: "time", t: (+e.currentPosition || 0) / 1000, d: dur}));
+    w.bind(E.ERROR, () => up({ev: "error", code: "sc"}));
+    P = {play: () => w.play(), pause: () => w.pause(), seek: t => w.seekTo(t * 1000),
+         volume: v => { vol = v; if (!muted) w.setVolume(v); }, mute: on => { muted = on; w.setVolume(on ? 0 : vol); }};
+  };
+} else if (q.get("vimeo")) {
+  // Vimeo — Player API (player.js)
+  const s = document.createElement("script");
+  s.src = "https://player.vimeo.com/api/player.js";
+  s.onerror = () => up({ev: "error", code: "api"});
+  document.head.appendChild(s);
+  s.onload = () => {
+    const v = new Vimeo.Player("p", {id: +q.get("vimeo"), autoplay: true, muted: startMuted, dnt: true, title: false, byline: false, portrait: false, responsive: true});
+    let dur = 0, vol = startVol;
+    v.on("play", () => up({ev: "state", s: "playing"}));
+    v.on("pause", () => up({ev: "state", s: "paused"}));
+    v.on("ended", () => up({ev: "state", s: "ended"}));
+    v.on("timeupdate", e => up({ev: "time", t: +e.seconds || 0, d: +e.duration || dur}));
+    v.on("error", () => up({ev: "error", code: "vimeo"}));
+    v.ready().then(async () => {
+      dur = await v.getDuration().catch(() => 0);
+      v.setVolume(vol / 100).catch(() => {});
+      if (start) v.setCurrentTime(start).catch(() => {});  // never awaited: before the first play it may not answer (tested)
+      v.play().catch(() => {});  // blocked autoplay: the parent's ▶ sends play again
+      up({ev: "ready", d: dur});
+    }).catch(() => up({ev: "error", code: "vimeo"}));  // deleted · private · not embeddable
+    P = {play: () => v.play().catch(() => {}), pause: () => v.pause().catch(() => {}), seek: t => v.setCurrentTime(t).catch(() => {}),
+         volume: x => { vol = x; v.setVolume(x / 100).catch(() => {}); }, mute: on => v.setMuted(on).catch(() => {})};
+  };
+} else if (q.get("file")) {
+  // a plain audio file (VocaDB 'LocalFile' · 'File' links)
+  const a = new Audio();
+  a.preload = "auto"; a.volume = startVol / 100; a.muted = startMuted;
+  a.addEventListener("loadedmetadata", () => { if (start) a.currentTime = start; a.play().catch(() => {}); up({ev: "ready", d: a.duration || 0}); }, {once: true});
+  a.addEventListener("playing", () => up({ev: "state", s: "playing"}));
+  a.addEventListener("pause", () => { if (!a.ended) up({ev: "state", s: "paused"}); });
+  a.addEventListener("ended", () => up({ev: "state", s: "ended"}));
+  a.addEventListener("error", () => up({ev: "error", code: "file"}));
+  setInterval(() => { if (a.readyState) up({ev: "time", t: a.currentTime, d: a.duration || 0}); }, 250);
+  a.src = q.get("file");
+  P = {play: () => a.play().catch(() => {}), pause: () => a.pause(), seek: t => { a.currentTime = t; },
+       volume: v => { a.volume = Math.max(0, Math.min(1, v / 100)); }, mute: on => { a.muted = on; }};
+} else if (q.get("bili")) {
+  // Bilibili: its embed player has no API — it takes no command and tells nothing (tested 2026-11-18). So it plays only
+  // while it should be heard: pause / mute = the frame is emptied, play / seek = reopened at that second (&t=).
+  // Time is counted here from when the frame loaded; the end = the length the parent got from VocaDB (&len=).
+  // No volume control at all.
+  const bid = q.get("bili"), len = +q.get("len") || 0;
+  const f = document.createElement("iframe");
+  f.allow = "autoplay; fullscreen";
+  document.getElementById("p").replaceWith(f);
+  const src = t => `https://player.bilibili.com/player.html?${/^bv/i.test(bid) ? "bvid=" + bid : "aid=" + bid.replace(/^av/i, "")}&page=1&autoplay=1&danmaku=0&high_quality=1&t=${Math.floor(t)}`;
+  let base = start, at = 0, playing = true, muted = startMuted, open = false;
+  const now = () => playing && at ? base + (performance.now() - at) / 1000 : base;
+  const freeze = () => { base = now(); at = 0; };
+  // heard → frame open (time runs from its load) · silent → frame empty, time runs on its own while playing (priming)
+  const show = () => {
+    const want = playing && !muted;
+    if (want && !open) { open = true; freeze(); f.onload = () => { if (open) at = performance.now(); }; f.src = src(base); }
+    else if (!want && open) { freeze(); open = false; f.onload = null; f.src = "about:blank"; if (playing) at = performance.now(); }
+  };
+  let lastState = "";
+  const state = s => { if (s !== lastState) { lastState = s; up({ev: "state", s}); } };
+  if (!len) up({ev: "error", code: "no-length"});
+  else {
+    if (muted) at = performance.now();
+    show();
+    up({ev: "ready", d: len});
+    setInterval(() => {
+      if (playing && now() >= len) { base = len; at = 0; playing = false; show(); state("ended"); }
+      else if (playing && at) state("playing");
+      up({ev: "time", t: Math.min(now(), len), d: len});
+    }, 250);
+    P = {play: () => { if (playing) return; if (base >= len) base = 0; playing = true; if (muted) at = performance.now(); show(); },
+         pause: () => { if (!playing) return; freeze(); playing = false; show(); state("paused"); },
+         seek: t => { base = Math.max(0, Math.min(+t || 0, len)); at = 0; if (playing) { if (open) { open = false; show(); } else at = performance.now(); } },
+         volume: () => {}, mute: on => { muted = on; show(); }};
+  }
 } else if (q.get("ytlist")) {
   // ?ytlist=<유튜브 재생목록 번호>: 그 재생목록의 영상 번호만 알림 {ev: "list", ids} — 재생 안 함
   // (플레이어 오프라인 모드의 유튜브 재생목록 — user request 2026-11-15; 플레이어 화면은 youtube.com 을 직접 못 읽음)

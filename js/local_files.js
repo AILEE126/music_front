@@ -394,30 +394,6 @@ const LOCAL = {
     await this.writeText(`${this.data}reports/${id}.json`, JSON.stringify(r, null, 1));
     return {ok: true, id};
   },
-  /* 소리 크기 요청 (user request 2026-11-17): a Niconico video played without a measured value (play_engine.js LOUD) →
-     Server/data/loudness_req/<time>_<rand>.json {at, who, urls} for the server's 소리 크기 job. Gathered for a minute so a run
-     of songs makes one file; each video is asked once per browser (loudAsked). */
-  _loudQ: new Set(), _loudT: 0,
-  loudAsk(ref) {
-    if (!this.ready || !ref || !ref.id) return;
-    const asked = store.get("loudAsked", []);
-    if (asked.includes(ref.id) || this._loudQ.has(ref.url)) return;
-    this._loudQ.add(ref.url);
-    if (!this._loudT) this._loudT = setTimeout(() => this.loudFlush(), 60000);
-  },
-  async loudFlush() {
-    this._loudT = 0;
-    const urls = [...this._loudQ].filter(u => !LOUD.map[(vidRef(u) || {}).id]);  // the table may have come in after the song started
-    if (!urls.length || !this.ready) return;
-    this._loudQ.clear();
-    const at = nowText(), id = at.replace(/[-: ]/g, "").replace(/^(\d{8})/, "$1_") + "_" + Math.random().toString(36).slice(2, 6);
-    const who = String(store.get("reportWho", "") || "").trim() || "자동";
-    try {
-      await this.writeText(`${this.data}loudness_req/${id}.json`, JSON.stringify({at, who, urls}, null, 1), who);
-      const ids = urls.map(u => (vidRef(u) || {}).id).filter(Boolean);
-      store.set("loudAsked", [...store.get("loudAsked", []), ...ids].slice(-3000));
-    } catch (e) { urls.forEach(u => this._loudQ.add(u)); }  // next song tries again
-  },
   /* Sync edits (user request): the player never replaces a sync. The edited sync waits in
      Server/data/sync_pending/vocadb/<VocaDB id>.json (keyed by the VocaDB song since 2026-11-14 — no old file paths) and one
      '싱크 수정' report goes to the manage screen. Until it is confirmed or thrown away the player plays the pending one. */

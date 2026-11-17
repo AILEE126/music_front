@@ -5,15 +5,28 @@
    makePlayer(audio): 곡 바꾸기 · 대기열(play_queue.js) · 가사(위 막대·오버레이용) · 가사 먼저 보이기 · 못 튼 곡 창·오류 신고 ·
    가사 오버레이 알림 · 영상 칸(placeVideo) 을 한곳에 */
 const BRIDGE_URL = store.get("bridgeUrl", "") || "https://ailee126.github.io/music-bridge/";  // 시험할 때만 브라우저 저장값 player.bridgeUrl 로 다른 주소
-/* 영상 주소 → {kind: yt|nico, id, url} */
+/* 영상 주소 → {kind: yt|nico|sc|vimeo|bili|file, id, url}
+   sc · vimeo · bili · file (user request 2026-11-18): the song's other links (SoundCloud · Vimeo · Bilibili · an mp3 file on
+   VocaDB) play too, after Niconico/YouTube — for songs whose original was deleted. Bandcamp · Piapro have no player to drive. */
 function vidRef(url) {
-  let m = (url || "").match(/(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
+  url = url || "";
+  let m = url.match(/(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
   if (m) return {kind: "yt", id: m[1], url};
-  m = (url || "").match(/(?:nicovideo\.jp\/watch\/|nico\.ms\/)((?:sm|nm|so)\d+)/);
-  return m ? {kind: "nico", id: m[1], url} : null;
+  m = url.match(/(?:nicovideo\.jp\/watch\/|nico\.ms\/)((?:sm|nm|so)\d+)/);
+  if (m) return {kind: "nico", id: m[1], url};
+  m = url.match(/^https?:\/\/(?:www\.|m\.)?soundcloud\.com\/([\w-]+\/[\w-]+)(?:[?#]|$)/);
+  if (m) return {kind: "sc", id: "https://soundcloud.com/" + m[1], url};
+  m = url.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+  if (m) return {kind: "vimeo", id: m[1], url};
+  m = url.match(/bilibili\.com\/video\/(av\d+|BV\w{10})/i);
+  if (m) return {kind: "bili", id: m[1], url};
+  // https only: the bridge page is https (an http file would be blocked as mixed content)
+  return /^https:\/\/[^?#]+\.(?:mp3|m4a|ogg|opus|wav)(?:[?#]|$)/i.test(url) ? {kind: "file", id: url, url} : null;
 }
-/* 온라인 곡 출처 차례: 직접 연결한 영상 → 곡의 영상 차례 (니코니코 → 유튜브) — 서버의 싱크 만들기 소리 차례(_sources)와 같음 */
-const streamRefs = it => [...new Set([it.video_link, ...(it.sources || [])].filter(Boolean))].map(vidRef).filter(Boolean);
+/* 온라인 곡 출처 차례: 직접 연결한 영상 → 곡의 영상 차례 (니코니코 → 유튜브 → 그 밖 — vocadb_api.js 가 그 차례로 둠).
+   vocadb: Bilibili needs the song's length from VocaDB (LocalMedia.biliLength) */
+const streamRefs = it => [...new Set([it.video_link, ...(it.sources || [])].filter(Boolean))].map(vidRef).filter(Boolean)
+  .map(r => it.vocadb ? {...r, vocadb: it.vocadb} : r);
 /* 틀 수 있는 곡: 오프라인 곡(고른 mp3 폴더) · 원곡 영상 주소가 있는 온라인 곡.
    deleted: original video confirmed gone (Manage › 오류 신고) — user request: shown greyed, never played or queued */
 const canPlay = it => !!it && (it.site === "local" || (it.site === "stream" && !it.deleted && streamRefs(it).length > 0));
@@ -66,7 +79,7 @@ class BridgePlayer {
     this.ref = ref; this.on = on;  // on: 메시지 받는 곳 (미리 띄워 둔 플레이어를 넘겨받으면 바뀜)
     const f = this.frame = document.createElement("iframe");
     f.allow = "autoplay; encrypted-media; fullscreen";
-    f.src = `${BRIDGE_URL}?${ref.kind}=${encodeURIComponent(ref.id)}&id=${this.id}&start=${Math.floor(start)}${mute ? "&mute=1" : ""}&vol=${Math.round(volume * 100)}${nicoComments() ? "" : "&cmt=0"}`;
+    f.src = `${BRIDGE_URL}?${ref.kind}=${encodeURIComponent(ref.id)}&id=${this.id}&start=${Math.floor(start)}${mute ? "&mute=1" : ""}&vol=${Math.round(volume * 100)}${nicoComments() ? "" : "&cmt=0"}${ref.len ? "&len=" + ref.len : ""}`;
     // 유튜브 플레이어는 칸이 접혀(1px) 안 보이면 재생 상태(state)를 알려 주지 않음 → 시간이 흐르는지로 재생·멈춤·끝을 셈
     const guess = s => { if (this.state === s) return; this.state = s; if (s === "playing") this.played = true; this.on({ev: "state", s}); };
     let still = 0;
@@ -118,7 +131,7 @@ class BridgePlayer {
     this.arm();
     this.cmd("load", {[ref.kind]: ref.id, start, play});
   }
-  canLoad(kind) { return this.ref.kind === kind && this.ver >= (kind === "nico" ? 3 : 2); }
+  canLoad(kind) { return this.ref.kind === kind && this.ver >= ({nico: 3, yt: 2}[kind] || Infinity); }  // other kinds: a new frame per song
   cmd(cmd, v) { try { this.frame.contentWindow.postMessage({cmd, v}, "*"); } catch (e) {} }
   time() { return this.state === "playing" ? this.t + (performance.now() - this.at) / 1000 : this.t; }  // 0.25초마다 받는 시간 사이를 메움
   play() { this.cmd("play"); }
@@ -136,19 +149,48 @@ function bridgeReason(code) {
   if (code === 2 || code === 5) return "유튜브 플레이어가 영상을 열지 못했습니다";
   if (code === "timeout" || code === "api") return "중계 페이지·플레이어가 뜨지 않았습니다 — 인터넷 연결을 확인하세요 (잠시 뒤 다시)";
   if (code === "no-video") return "원곡 영상 주소가 없습니다";
+  if (code === "no-length") return "비리비리 영상의 길이를 몰라 재생할 수 없습니다";
+  if (code === "sc" || code === "vimeo" || code === "file") return `${{sc: "SoundCloud", vimeo: "Vimeo", file: "음원 파일"}[code]} 을 열지 못했습니다 — 삭제·비공개이거나 막힘`;
   return `니코니코 플레이어 오류 (${code}) — 삭제·비공개이거나 잠시 재생이 막힘`;
 }
-/* 소리 크기 (user request 2026-11-17): Niconico videos the server measured (export/db/loudness.json.gz {id: [LUFS, peak]},
-   music_backend vocadb/loudness.py — read by VDB.load) → turned down to -14 LUFS (can't turn up — the player's volume is at most 100).
-   YouTube levels itself to -14 (its stats: 'cont.-5.9dB tgt.-14.0dB') → nothing here. A Niconico video without a value is
-   asked for (LOCAL.loudAsk), so the server measures it next time its 소리 크기 job runs. */
-const LOUD = {map: {}};
-const LOUDNESS = -14, GAIN_PEAK = -1;
-function gainFactor(v) {
-  if (!v || !isFinite(v[0])) return 1;
-  let db = LOUDNESS - v[0];
-  if (db > 0 && isFinite(v[1])) db = Math.max(0, Math.min(db, GAIN_PEAK - v[1]));
-  return Math.min(1, 10 ** (Math.max(-20, Math.min(db, 12)) / 20));
+/* 소리 크기 per platform (user request 2026-11-18 — no measuring per video). Both platforms level each video themselves:
+   YouTube turns loud videos down to -14 LUFS, Niconico to about -15 (watch API audios[].loudnessCollection 'video', e.g.
+   직소 퍼즐 -4.3 → ×0.29). So no extra cut here — the old cut came on top of theirs (직소 퍼즐 sounded far too quiet).
+   What differs is the volume knob: YouTube uses it as it is (media volume = v × its loudness factor), Niconico's embed bends
+   it — out = c(80·v + 20) / c(100), c(x) = 0.6838x³ − 1.7262x² + 2.4252x (its player script), ~-7 dB at 0.7 instead
+   of -3. platformVolume sends the value whose Niconico output equals the slider, so the slider means the same on both. */
+const nicoCurve = v => {
+  if (v <= 0) return 0;
+  const c = x => 0.6838 * x ** 3 - 1.7262 * x ** 2 + 2.4252 * x;
+  return Math.max(0.01, c(80 * Math.min(v, 1) + 20) / c(100));
+};
+/* SoundCloud · Vimeo · a plain file (user request 2026-11-18): nobody levels them and their knob is linear. Songs are mastered
+   around -8 LUFS (YouTube's own stats on loud songs: 'cont.-5.9dB' to reach -14) → a fixed -6 dB brings them near the other two.
+   Bilibili's embed takes no volume at all (no player API — the bridge can only mute it). */
+const UNLEVELED = 0.5;
+function platformVolume(kind, v) {
+  if (kind === "sc" || kind === "vimeo" || kind === "file") return Math.max(0, Math.min(1, v)) * UNLEVELED;
+  if (kind !== "nico" || v <= 0 || v >= 1) return Math.max(0, Math.min(1, v));
+  let lo = 0, hi = 1;  // nicoCurve rises with v → bisect for the value Niconico turns into v
+  for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (nicoCurve(m) < v) lo = m; else hi = m; }
+  return hi;
+}
+
+/* Bilibili video length in seconds (0 = unknown): VocaDB API (CORS ok — bilibili's own API is not) → that PV's length,
+   else the song's. Kept per video while the page is open */
+const BILI_LEN = new Map();
+async function biliLength(ref) {
+  if (BILI_LEN.has(ref.id)) return BILI_LEN.get(ref.id);
+  let n = 0;
+  try {
+    if (ref.vocadb && typeof VDB !== "undefined") {
+      const s = await VDB.get(`songs/${ref.vocadb}`, {fields: "PVs"});
+      const pv = (s.pvs || []).find(p => p.service === "Bilibili" && String(p.url || "").toLowerCase().includes(ref.id.toLowerCase()));
+      n = +(pv && pv.length) || +s.lengthSeconds || 0;
+    }
+  } catch (e) { return 0; }  // offline etc. — asked again next time
+  BILI_LEN.set(ref.id, n);
+  return n;
 }
 
 /* 재생기 하나로 보이게: mp3 는 <audio>, 온라인 곡은 중계 페이지 — 화면은 이것만 봄 (audio 와 같은 이름·이벤트)
@@ -156,7 +198,7 @@ function gainFactor(v) {
 class LocalMedia extends EventTarget {
   constructor(el, host) {
     super();
-    this.el = el; this.host = host; this.br = null; this.refs = null; this.brPaused = true; this.brErr = null; this.gain = 1; this.errs = [];
+    this.el = el; this.host = host; this.br = null; this.refs = null; this.brPaused = true; this.brErr = null; this.errs = [];
     this.kept = {yt: null, nico: null};  // kept bridge player per kind (see tryRef)
     for (const ev of ["play", "pause", "playing", "ended", "seeked", "loadedmetadata", "error", "waiting", "emptied", "timeupdate"])
       el.addEventListener(ev, () => { if (!this.refs) this.fire(ev); });
@@ -179,7 +221,8 @@ class LocalMedia extends EventTarget {
     this.dropPreload();
     // YouTube: no preload — the one kept YouTube player loads the next song itself (see tryRef).
     // Niconico: only while shown — a frame created while the tab is hidden stays silent; then the kept Niconico player loads it.
-    if (!ref || ref.kind === "yt" || document.hidden || (this.br && this.br.ref.url === ref.url)) return;
+    // Other kinds (SoundCloud · Bilibili …): no preload — they are fallbacks, rarely next.
+    if (!ref || ref.kind !== "nico" || document.hidden || (this.br && this.br.ref.url === ref.url)) return;
     const pre = this.pre = {failed: false};
     pre.br = new BridgePlayer(this.host, ref, {mute: true, volume: 0, on: m => {
       // let it really start (muted) before pausing: a frame that has played can go on in a hidden tab
@@ -225,8 +268,11 @@ class LocalMedia extends EventTarget {
     this.release(this.br); this.br = null;
     const ref = this.refs[i], refs = this.refs;
     if (!ref) { this.brErr = {code: 4, reason: this.reason()}; this.brPaused = true; return this.fire("error"); }  // 출처가 모두 안 됨
-    this.ri = i; this.gain = ref.kind === "nico" ? gainFactor(LOUD.map[ref.id]) : 1;
-    if (ref.kind === "nico" && !LOUD.map[ref.id] && typeof LOCAL !== "undefined") LOCAL.loudAsk(ref);
+    if (ref.kind === "bili" && ref.len === undefined) {  // its player tells no time — the bridge counts it up to the length
+      biliLength(ref).then(n => { ref.len = n; if (this.refs !== refs) return; if (n) this.tryRef(i, got); else { this.errs.push("no-length"); this.tryRef(i + 1); } });
+      return;
+    }
+    this.ri = i;
     const on = m => {
       if (this.br !== br) return;
       if (m.ev === "ready") { if (!this.priming) { if (!this.autoplay) br.pause(); this.fire("loadedmetadata"); } }
@@ -259,7 +305,7 @@ class LocalMedia extends EventTarget {
       br.load(ref, this.start); br.comments(nicoComments());  // always plays (priming pauses it once it really started)
       diag("reuse", ref.kind + ":" + ref.id, document.hidden ? "hidden" : "shown");
     } else {
-      br = new BridgePlayer(this.host, ref, {start: this.start, volume: this.el.volume * this.gain, mute: this.el.muted || this.priming, on});
+      br = new BridgePlayer(this.host, ref, {start: this.start, volume: platformVolume(ref.kind, this.el.volume), mute: this.el.muted || this.priming, on});
       if (kept) kept.destroy();  // (old bridge page: replaced each time as before)
       this.kept[ref.kind] = br;
       diag("new frame", ref.kind + ":" + ref.id, document.hidden ? "hidden" : "shown");
@@ -299,7 +345,7 @@ class LocalMedia extends EventTarget {
   get kind() { return this.refs && this.br ? this.br.ref.kind : ""; }
   get comments() { return nicoComments(); }
   set comments(on) { store.set("nicoComments", !!on); if (this.br) this.br.comments(!!on); if (this.pre) this.pre.br.comments(!!on); }
-  applyVolume() { if (this.br) { this.br.volume(this.el.volume * this.gain); this.br.mute(this.el.muted || this.priming); } }
+  applyVolume() { if (this.br) { this.br.volume(platformVolume(this.br.ref.kind, this.el.volume)); this.br.mute(this.el.muted || this.priming); } }
   get currentTime() { return this.refs ? (this.br ? this.br.time() : 0) : this.el.currentTime; }
   set currentTime(t) { if (!this.refs) { this.el.currentTime = t; return; } if (this.br) { this.br.seek(t); setTimeout(() => this.fire("seeked"), 0); } }
   get duration() { return this.refs ? (this.br && this.br.d) || NaN : this.el.duration; }
@@ -372,7 +418,7 @@ function makePlayer(el) {
     async load(it, autoplay = true, how = "") {
       if (!it) return;
       if (!canPlay(it)) {
-        uiAlert(it.deleted ? "이 곡은 원곡 영상이 삭제되어 재생할 수 없습니다." : it.site === "stream" ? "이 곡은 원곡 영상(니코니코·유튜브) 주소가 없어 재생할 수 없습니다." : "오프라인 폴더에서 그 곡을 찾을 수 없습니다. 폴더를 다시 연결하세요.");
+        uiAlert(it.deleted ? "이 곡은 원곡 영상이 삭제되어 재생할 수 없습니다." : it.site === "stream" ? "이 곡은 재생할 수 있는 영상 주소(니코니코·유튜브·비리비리·SoundCloud 등)가 없습니다." : "오프라인 폴더에서 그 곡을 찾을 수 없습니다. 폴더를 다시 연결하세요.");
         return;
       }
       this.queueOnLoad(it, how);  // 지난 곡·다음 곡 순서 (play_queue.js)

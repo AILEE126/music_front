@@ -690,6 +690,23 @@ function ltLeave(quiet) {
   ltRender();
 }
 
+/* OPEN CHANNEL: stopped from outside → leave (user request 2026-11-18). Phone: another app playing media takes the sound and
+   the player pauses; nobody controls the channel, so the one paused leaves it — the others go on (holder → handover), and
+   alone = the usual 1-min snapshot. Our own pauses never get here (audio.pause is blocked in the channel); song end, a song
+   change, lining up (prep) and a failing song are not "outside". Checked after a moment: a pause that comes right back isn't one. */
+const ltOuter = {timer: 0, ended: false};
+function ltChOuterPause() {
+  if (!LT.chOn || !LT.role || ltApplying || LT.prep || LT.gprep || audio.priming || LT.reloading) return;
+  const k = SHELL.now ? keyOf(SHELL.now) : "";
+  ltOuter.ended = false;
+  clearTimeout(ltOuter.timer);
+  ltOuter.timer = setTimeout(() => {
+    if (!LT.chOn || !LT.role || !k || ltOuter.ended || !audio.paused || audio.error || LT.prep || LT.gprep || LT.reloading) return;
+    if (!SHELL.now || keyOf(SHELL.now) !== k) return;
+    ltLeave(true); LT.status = "다른 곳에서 재생이 멈춰 OPEN CHANNEL 에서 나왔습니다"; ltRender();
+  }, 2500);
+}
+
 /* 3초마다: 방장은 지금 상태를 알리고 연결 서버와 끊겼으면 다시 이음 · 손님은 살아 있다고 알리고 끊겼으면 다시 들어감 */
 function ltKeep() {
   const now = Date.now();
@@ -772,6 +789,8 @@ function ltKeep() {
   audio.pause = function () { if (!locked() && !chLocked()) return proto.pause.call(this); };
   ["play", "playing", "pause", "seeked", "loadedmetadata"].forEach(ev => audio.addEventListener(ev, ltBroadcast));
   audio.addEventListener("playing", ltWant);
+  audio.addEventListener("pause", ltChOuterPause);
+  audio.addEventListener("ended", () => { ltOuter.ended = true; });
   audio.addEventListener("loadedmetadata", () => { ltPrepCheck(); ltGuestReady(); });
   SHELL.subscribe(() => { if (LT.role === "host") setTimeout(() => { ltSendQueue(); ltReqFollow(); ltCoolTick(); }, 0); });  // song changed → upcoming changed too
   setInterval(ltKeep, 3000);

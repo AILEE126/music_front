@@ -36,6 +36,12 @@ function vocalColor(name) {
   return `hsl(${h % 360} 60% 66%)`;
 }
 
+/* playable links in play order: Niconico/YouTube in the server's order (원본 → 니코니코 → 유튜브, unchanged), then the other
+   platforms the player can drive (user request 2026-11-18: SoundCloud · Vimeo · Bilibili · mp3 file — when the original is gone) */
+const MAIN_URL = /nicovideo\.jp|nico\.ms|youtube\.com|youtu\.be/;
+const OTHER_URL = /soundcloud\.com\/[\w-]+\/[\w-]+|vimeo\.com\/(?:video\/)?\d+|bilibili\.com\/video\/(?:av\d|BV)|^https:\/\/[^?#]+\.(?:mp3|m4a|ogg|opus|wav)(?:[?#]|$)/i;
+const vdbSources = urls => [...urls.filter(u => MAIN_URL.test(u || "")), ...urls.filter(u => u && !MAIN_URL.test(u) && OTHER_URL.test(u))];
+
 /* fields every player item has, derived from the ones above (Niconico first — sources are in that order) */
 function vdbDerive(it) {
   it.video = it.sources[0] || "";
@@ -79,10 +85,6 @@ const VDB = {
   async load() {
     const rd = f => LOCAL.readJson(`${LOCAL.out}/db/${f}`, null);
     const [mst, kara, songs, flt] = await Promise.all([rd("master.json"), rd("karaoke.json"), this.loadSongs(), rd("filter.json")]);
-    // 소리 크기 (user request 2026-11-17): measured Niconico videos {id: [LUFS, peak]} → play_engine.js LOUD (missing → no levelling)
-    LOCAL.readBytes(`${LOCAL.out}/db/loudness.json.gz`)
-      .then(gz => new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).json())
-      .then(m => { LOUD.map = m || {}; }).catch(() => {});
     this.filter = flt;  // 음원 관리 › 필터 (user request 2026-11-14): category order · symbols · 필터 프리셋 추천 — missing → built-in defaults
     const miss = [!mst && "master.json", !kara && "karaoke.json", !songs && "songs/index.json"].filter(Boolean);
     if (miss.length) throw new Error(`${LOCAL.out}/db 에 ${miss.join(", ")} 이 없습니다. 서버에서 내보내기·올리기를 하세요.`);
@@ -132,7 +134,7 @@ const VDB = {
       en: r.title_en || "", alt: r.alt_names || "",  // 검색용 영어 이름 · 다른 이름 (user request 2026-11-16)
       singer: r.singer || "", composer: r.composer || "", vocals: people(r.singer).map(n => [n, vocalColor(n)]),
       date: d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : "", thumb: r.thumb || "", type: r.song_type || "", vkind: r.vocal_kind || "", origId: r.original_id || "",  // 같은 곡 묶기 (원곡 번호)
-      rating: +r.rating_score || 0, sources: [r.video_url, ...String(r.alt_urls || "").split(" ")].filter(u => /nicovideo\.jp|nico\.ms|youtube\.com|youtu\.be/.test(u || "")),
+      rating: +r.rating_score || 0, sources: vdbSources([r.video_url, ...String(r.alt_urls || "").split(" ")]),
       tags: [...String(r.tags || "").split("|").filter(Boolean), ...ki.extraTags], nums: ki.nums, gone: ki.gone, only: ki.only, ord: ki.ord, karaoke: ki.karaoke, namu: ki.namu,
       lyrics: ours.lyrics || "", ...(ours.sync === "ok" ? {sync: "ok", method: ours.method || "", score: ours.score ?? null} : {}),
       ...(ours.vsync ? {vsync: 1} : {})};  // sync made on VocaDB's lyrics (export/db/vsync/<id>.json, 2026-11-17)
