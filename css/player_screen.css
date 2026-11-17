@@ -956,9 +956,9 @@ body.m .songmeta{order:2}
 .pn-b ol ul li{font-size:13px;font-weight:400;color:var(--muted)}
 .pn-b p{margin:2px 0}
 /* 서버 · 웹 chips before a detail (user request 2026-11-17) */
-.pchip{display:inline-block;font-size:10.5px;font-weight:700;line-height:1;padding:3px 6px;border-radius:9px;margin-right:6px;vertical-align:1px;color:#fff}
-.pchip.sv{background:#2563eb}
-.pchip.web{background:#16a34a}
+.pchip{display:inline-block;font-size:10.5px;font-weight:700;line-height:1;padding:3px 6px;border-radius:9px;margin-right:6px;vertical-align:1px}
+.pchip.sv{background:rgba(37,99,235,.18);color:#3b82f6;box-shadow:inset 0 0 0 1px rgba(59,130,246,.35)}  /* translucent (user request 2026-11-17) */
+.pchip.web{background:rgba(22,163,74,.18);color:#22a35a;box-shadow:inset 0 0 0 1px rgba(34,197,94,.35)}
 .pn-b li.fold summary{cursor:pointer}
 .pn-b li.fold summary::marker{color:var(--muted)}
 .pn-b li.fold details:not([open]) summary::after{content:" 펼치기";font-size:11px;font-weight:400;color:var(--muted)}
