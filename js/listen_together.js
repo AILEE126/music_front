@@ -315,9 +315,19 @@ function ltShowPl(list) {
   guestPl = (list || []).map(x => typeof x === "number" ? VDB.itemById(x) : x && x.site === "local" ? x : liveItem(x)).filter(Boolean);
   renderList();
 }
+const ltMyColor = () => okColor(store.get("myColor", ""));
+/* my 대표색상 changed (nickname dialog): host → everyone's list again · guest → tell the host */
+function ltColorChanged() {
+  if (LT.role === "host") return ltMembers();
+  if (LT.role === "guest" && LT.host) { LT.colors = Object.assign({}, LT.colors, {[ltKey(LT.me)]: ltMyColor()}); ltSend(LT.host, {t: "color", c: ltMyColor()}); }
+  ltRender();
+}
 function ltMembers() {
   LT.members = [LT.me, ...[...LT.conns.values()].map(v => v.name)];
-  const m = {t: "members", list: LT.members, title: LT.title, open: LT.open};
+  // 대표색상 per nickname (user request 2026-11-17) — kept apart from list so old screens read members as before
+  LT.colors = {};
+  [[LT.me, ltMyColor()], ...[...LT.conns.values()].map(v => [v.name, v.color])].forEach(([n, c]) => { if (c) LT.colors[ltKey(n)] = c; });
+  const m = {t: "members", list: LT.members, colors: LT.colors, title: LT.title, open: LT.open};
   LT.conns.forEach((_, c) => ltSend(c, m));
   ltRender();
   ltAnnounceSoon();  // room opened / someone came or left → other screens at once
@@ -360,7 +370,7 @@ function ltHostPeer(code, left) {
         ltSend(c, {t: "denied", why: "name"});
         return setTimeout(() => { try { c.close(); } catch (e) {} }, 800);
       }
-      LT.conns.set(c, {name, uid, seen: Date.now()}); ltMembers(); ltSend(c, {t: "state", s: ltState()}); ltSendQueue(c); ltSend(c, ltReqsMsg()); ltSend(c, ltPlMsg());
+      LT.conns.set(c, {name, uid, color: okColor(c.metadata && c.metadata.color), seen: Date.now()}); ltMembers(); ltSend(c, {t: "state", s: ltState()}); ltSendQueue(c); ltSend(c, ltReqsMsg()); ltSend(c, ltPlMsg());
     });
     c.on("data", m => ltHostGot(c, m));
     c.on("close", () => { if (LT.conns.delete(c)) ltMembers(); });
@@ -465,6 +475,7 @@ function ltHostGot(c, m) {
   v.seen = Date.now();
   if (m.t === "ping") ltSend(c, {t: "pong", at: m.at});  // guest measures the round trip
   else if (m.t === "want") ltSend(c, {t: "state", s: ltState()});  // guest's song just started sounding: exact position now
+  else if (m.t === "color") { v.color = okColor(m.c); ltMembers(); }  // guest changed 대표색상 while in the room
   else if (m.t === "ready") { if (LT.prep && m.id === LT.prep.id) { LT.prep.wait.delete(c); ltPrepCheck(); } }  // guest lined up at 0
   else if (m.t === "req" && m.key && !LT.reqs.some(r => r.key === m.key)) {  // song request from a guest
     if (LT.chOn && ltCoolLeft(v.uid)) return ltSendReqs();  // channel: still cooling down (their screen shows how long)
@@ -528,7 +539,7 @@ function ltGuestPeer(code) {
   };
   peer.on("open", () => {
     if (LT.peer !== peer) return;
-    const c = peer.connect(LT_PREFIX + code, {reliable: true, metadata: {name: LT.me, pw: LT.pw, uid: LT.uid}});
+    const c = peer.connect(LT_PREFIX + code, {reliable: true, metadata: {name: LT.me, pw: LT.pw, uid: LT.uid, color: ltMyColor()}});
     const t = setTimeout(() => { if (LT.peer === peer && LT.host !== c) fail("방에 들어가지 못했습니다 — 번호를 확인하거나 다시 해 보세요"); }, 15000);
     c.on("data", m => {
       if (LT.peer !== peer || !m) return;
@@ -581,7 +592,7 @@ function ltGuestGot(m) {
     return;
   }
   if (m.t === "bye") { const code = LT.code; ltLeave(true); LT.status = "방장이 방을 닫았습니다"; return ltRescan(code, 800); }
-  if (m.t === "members") { LT.members = m.list || []; LT.title = m.title || ""; LT.open = m.open !== false; return ltRender(); }
+  if (m.t === "members") { LT.members = m.list || []; LT.colors = m.colors || {}; LT.title = m.title || ""; LT.open = m.open !== false; return ltRender(); }
   if (m.t === "state") return ltApply(m.s, performance.now());
   if (m.t === "go") return ltGuestGo(m.id);
   if (m.t === "pong") { const r = performance.now() - m.at; if (r >= 0 && r < 5000) LT.rtt = LT.rtt ? LT.rtt * 0.7 + r * 0.3 : r; return; }
@@ -664,7 +675,7 @@ function ltLeave(quiet) {
   ltLobbyStop();
   const peer = LT.peer;
   ltPrepEnd(); LT.gprep = null;
-  LT.peer = null; LT.role = ""; LT.code = ""; LT.host = null; LT.members = []; LT.hostPlf = null; LT.reqs = []; LT.reqPage = 0; LT.lead = 0; LT.conns = new Map(); LT.lostAt = 0; LT.retryAt = 0;
+  LT.peer = null; LT.role = ""; LT.code = ""; LT.host = null; LT.members = []; LT.colors = {}; LT.hostPlf = null; LT.reqs = []; LT.reqPage = 0; LT.lead = 0; LT.conns = new Map(); LT.lostAt = 0; LT.retryAt = 0;
   SHELL.follow = false;
   if (LT.chSave) {  // left the channel: my own queue back
     const k = LT.chSave; LT.chSave = null;
@@ -1062,7 +1073,11 @@ function ltRender() {
   document.querySelector("#ltRoom .ltmemhead").firstChild.textContent = LT.chOn ? "" : "참여자 ";
   $("ltMemCount").textContent = LT.chOn ? `${mem.length}명 듣는 중` : `${mem.length}명`;
   $("ltMembers").hidden = LT.chOn;
-  $("ltMembers").innerHTML = mem.map((m, i) => `<li class="${ltKey(ltNick(m)) === ltKey(LT.me) ? "me" : ""}">${i === 0 && !LT.chOn ? ltCrownSvg() : ""}${esc(ltNick(m))}</li>`).join("");
+  // 대표색상 (user request 2026-11-17): chip see-through in that person's color (rooms only — the channel shows no chips)
+  $("ltMembers").innerHTML = mem.map((m, i) => {
+    const k = ltKey(ltNick(m)), c = okColor((LT.colors || {})[k] || (k === ltKey(LT.me) ? ltMyColor() : ""));
+    return `<li class="${k === ltKey(LT.me) ? "me" : ""}${c ? " mc" : ""}"${c ? ` style="--mc:${c}"` : ""}>${i === 0 && !LT.chOn ? ltCrownSvg() : ""}${esc(ltNick(m))}</li>`;
+  }).join("");
   // 방장의 재생목록 필터 (user request 2026-11-15) — host: mine · guest: what the host sent
   const plf = LT.role === "host" && !LT.chOn ? PLF : LT.hostPlf;
   // user request 2026-11-15: no filter → just '필터 없음' · a filter → the header with a thin 필터 저장하기 at its right end

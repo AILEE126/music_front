@@ -1916,16 +1916,38 @@ function renderHello() {
   if (!h) return;
   h.hidden = !who || !LOCAL.ready;
   // ✎ mirrored (css): the nickname can be changed — by everyone, read-only tokens too (user request 2026-11-17)
-  h.innerHTML = `${esc(who)}님 안녕하세요! <span class="pen">✎</span>`;
+  h.innerHTML = `<span class="nm">${esc(who)}</span>님 안녕하세요! <span class="pen">✎</span>`;
   h.classList.add("edit");
-  h.title = "누르면 닉네임 바꾸기";
+  h.title = "누르면 닉네임 · 대표색상 바꾸기";
+  // 대표색상 (user request 2026-11-17): only the nickname in that color, not the whole greeting (간단 mode stays plain — css)
+  const c = okColor(store.get("myColor", ""));
+  h.classList.toggle("colored", !!c);
+  if (c) h.style.setProperty("--me", c); else h.style.removeProperty("--me");
 }
-$("hello").onclick = async () => {
-  const v = await uiPrompt("닉네임", store.get("reportWho", ""), "닉네임");
-  if (!v || !v.trim()) return;
-  store.set("reportWho", v.trim().slice(0, 40));
-  renderHello(); LOCAL.userSyncSoon();
-};
+/* nickname + 대표색상 dialog (opened from the greeting) */
+function editMe() {
+  const d = document.createElement("dialog");
+  d.className = "uidlg medlg";
+  d.innerHTML = `<div class="dlg-body"><label class="ghform ghfield"><span class="ghlab">닉네임</span><input type="text" id="meWho" maxlength="40" autocomplete="off" spellcheck="false"></label>
+      <div class="ghform ghfield"><span class="ghlab">대표색상</span><span id="meClr"></span></div></div>
+    <div class="dlg-foot"><button data-v="0">취소</button><button class="primary" data-v="1">확인</button></div>`;
+  const who = d.querySelector("#meWho"), cf = colorField(store.get("myColor", ""));
+  d.querySelector("#meClr").replaceWith(cf.el);
+  who.value = store.get("reportWho", "");
+  who.addEventListener("keydown", e => { if (e.key === "Enter" && who.value.trim()) d.close("1"); });
+  d.addEventListener("click", e => { const b = e.target.closest("button[data-v]"); if (b && (b.dataset.v === "0" || who.value.trim())) d.close(b.dataset.v); });
+  d.addEventListener("close", () => {
+    d.remove();
+    if (d.returnValue !== "1") return;
+    const nm = who.value.trim().slice(0, 40), nameChanged = nm !== store.get("reportWho", "");
+    store.set("reportWho", nm); store.set("myColor", cf.value);
+    renderHello(); if (nameChanged) LOCAL.userSyncSoon();
+    if (typeof ltColorChanged === "function") ltColorChanged();  // 같이듣기 chips follow at once
+  });
+  document.body.appendChild(d);
+  d.showModal(); who.focus();
+}
+$("hello").onclick = editMe;
 /* 저장된 필터 → the server (users/<nickname>.json) whenever they change */
 { const set = store.set; store.set = function (k, v) { const r = set.call(this, k, v); if (k === "f.saved" && LOCAL.ready) LOCAL.userSyncSoon(); return r; }; }
 async function offlineOpened() {
@@ -1977,6 +1999,7 @@ async function offlineDialog(err = "") {
       <div class="ghmade">마지막 토큰 생성 <b>${TOKEN_MADE}</b></div>
       <div class="ghform"><input type="password" id="ghToken" placeholder="깃허브 토큰 (github_pat_…)" autocomplete="off"></div>
       <label class="ghform ghfield"><span class="ghlab"><span class="ltreq">*</span>닉네임</span><input type="text" id="ghWho" maxlength="40" autocomplete="off" spellcheck="false"></label>
+      <div class="ghform ghfield"><span class="ghlab">대표색상</span><span id="ghClr"></span></div>
       <label class="ghform ghfield" id="ghViaRow" hidden><span class="ghlab"><span class="ltreq">*</span>소개받은 닉네임</span><input type="text" id="ghVia" placeholder="토큰을 준 사람의 닉네임" maxlength="40" autocomplete="off" spellcheck="false"></label>
       <div class="ghform ghbtns"><button class="primary" id="ghOpen">열기</button>${cancelable ? '<button id="ghCancel" title="지금 열린 그대로 (Esc)">취소</button>' : ""}</div>
     <div class="offerr" id="offErr"></div></div>`;
@@ -1995,6 +2018,8 @@ async function offlineDialog(err = "") {
     await offlineOpened();
   };
   q("#ghWho").value = store.get("reportWho", ""); q("#ghVia").value = store.get("ghVia", "");
+  const clr = colorField(store.get("myColor", ""));  // 대표색상 (optional, user request 2026-11-17)
+  q("#ghClr").replaceWith(clr.el);
   q("#ghOpen").onclick = () => tryOpen(async () => {
     const who = q("#ghWho").value.trim(), via = q("#ghVia").value.trim();
     if (!q("#ghToken").value.trim()) { q("#ghToken").focus(); throw new Error("토큰을 넣어 주세요."); }
@@ -2012,7 +2037,7 @@ async function offlineDialog(err = "") {
         throw new Error(!shown || !via ? "읽기 전용 토큰입니다 — 소개받은 닉네임을 넣어 주세요." : `'${via}' 은(는) 등록된 닉네임이 아닙니다 — 토큰을 준 사람의 닉네임을 넣어 주세요.`);
       }
     }
-    store.set("reportWho", who.slice(0, 40)); store.set("ghVia", via.slice(0, 40));
+    store.set("reportWho", who.slice(0, 40)); store.set("ghVia", via.slice(0, 40)); store.set("myColor", clr.value);
     store.set("gh", {repo, token: tok});  // remembered (only once everything checked out)
   });
   d.querySelectorAll("input").forEach(i => { i.onkeydown = e => { if (e.key === "Enter") q("#ghOpen").click(); }; });

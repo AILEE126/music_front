@@ -79,6 +79,30 @@ function uiPrompt(msg, value = "", placeholder = "") {
 }
 const uiConfirm = (msg, ok = "확인") => uiDialog(msg, ok, "취소");
 
+/* 대표색상 (user request 2026-11-17): one color per person — "" = none (shown as before). Picked in the entry dialog and the
+   nickname dialog; small like the server's tag color cell (color box + 기본) with a row of ready-made colors under it */
+const ME_COLORS = ["#ff6b6b", "#ff9f68", "#f6c453", "#a3d65c", "#4fd1a5", "#39c5bb", "#4aa8ff", "#5b7cfa", "#9b6dff", "#c77dff", "#f472b6", "#e85d8a"];
+const okColor = c => /^#[0-9a-f]{6}$/i.test(String(c || "")) ? String(c).toLowerCase() : "";
+function colorField(value = "") {
+  let cur = okColor(value);
+  const el = document.createElement("div");
+  el.className = "mycolor";
+  el.innerHTML = `<div class="mcrow"><input type="color" title="색 고르기"><button type="button" class="mcdef">기본</button></div>
+    <div class="mcsw">${ME_COLORS.map(c => `<button type="button" data-c="${c}" style="--c:${c}" title="${c}"></button>`).join("")}</div>`;
+  const inp = el.querySelector("input"), def = el.querySelector(".mcdef");
+  const show = () => {
+    inp.value = cur || "#888888"; inp.classList.toggle("none", !cur);
+    def.disabled = !cur; def.textContent = cur ? "기본으로" : "기본";
+    def.title = cur ? "색 지우기 — 지금처럼 보이기" : "색 안 넣음 (지금처럼)";
+    el.querySelectorAll(".mcsw button").forEach(b => b.classList.toggle("on", b.dataset.c === cur));
+  };
+  inp.addEventListener("input", () => { cur = okColor(inp.value); show(); });
+  def.onclick = () => { cur = ""; show(); };
+  el.querySelector(".mcsw").onclick = e => { const b = e.target.closest("button[data-c]"); if (b) { cur = b.dataset.c; show(); } };
+  show();
+  return {el, get value() { return cur; }};
+}
+
 /* 가사 글자색 (바탕화면 오버레이와 같음): 서버가 묶음마다 준 보컬 색 vc 1~3개. 여럿이면(듀엣·합창) 한 줄의 글자를
    위(첫 색)→아래(끝 색) 그라데이션으로 칠함 — 줄 높이(1lh)마다 반복돼 여러 줄로 넘어가도 줄마다 같음 */
 function lyrLine(cls, text, cs) {
