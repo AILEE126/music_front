@@ -105,6 +105,27 @@ const LOCAL = {
     return who.slice(0, 40);
   },
 
+  /* ---- 사용자 (user request 2026-11-17) ----
+     Server/data/users/<nickname>.json {name, at, filters}: a write token (or the server PC's folder) registers its nickname and
+     uploads its 저장된 필터 (store f.saved) — at every start and whenever they change; 음원 관리 › 필터 lists them.
+     A read-only token can't write: it only checks that the 1차 지인 nickname it typed is registered here. */
+  userKey: n => String(n || "").normalize("NFKC").trim().toLowerCase().replace(/[\\/:*?"<>|#%\s]+/g, "_").slice(0, 40),
+  userPath(n) { return `${this.data}users/${this.userKey(n)}.json`; },
+  async userExists(n) { return !!this.userKey(n) && !!(await this.readJson(this.userPath(n), null)); },
+  get canWrite() { return !!(this.dir || (this.gh && this.gh.write)); },
+  async userSync() {
+    const name = String(store.get("reportWho", "") || "").trim();
+    if (!name || !this.canWrite) return;
+    const filters = (store.get("f.saved", []) || []).map(({name, groups}) => ({name, groups}));
+    const old = await this.readJson(this.userPath(name), null);
+    if (old && old.name === name && JSON.stringify(old.filters || []) === JSON.stringify(filters)) return;  // nothing new — no commit
+    await this.writeText(this.userPath(name), JSON.stringify({name, at: new Date().toISOString(), filters}, null, 1) + "\n", name);
+  },
+  userSyncSoon() {
+    clearTimeout(this._userT);
+    this._userT = setTimeout(() => this.userSync().catch(e => console.warn("저장된 필터를 서버에 못 올림:", e.message || e)), 1500);
+  },
+
   /* ---- 폴더 ---- */
   async saved() { try { return await idb("get", "music-dir"); } catch (e) { return null; } },
   async pick() {
@@ -297,6 +318,7 @@ const LOCAL = {
       Object.assign(it, this.synced.get(it.site + "/" + it.name) || {});  // 이번에 서버 없이 맞춘 싱크
     }
     if (typeof warmSearch === "function") { this.progress("곡 검색 준비 중…", 0.9); await warmSearch(); }  // player_screen.js (no stall on the first search)
+    if (typeof ltChReady === "function") setTimeout(ltChReady, 0);  // 같이듣기: OPEN CHANNEL is known now (filter.json channel)
     return {items, sync_ready: true};
   },
 

@@ -250,9 +250,10 @@
     nav.querySelector('[data-nav="list"]').classList.toggle("cur", !pg && !isOpen());
     for (const [k, id] of Object.entries(NAV_PAGE)) nav.querySelector(`[data-nav="${k}"]`).classList.toggle("cur", pg === id);
     nav.querySelector('[data-nav="listen"]').classList.toggle("on", $("btnListen").classList.contains("on"));
-    const rooms = typeof LTS !== "undefined" && LTS.rooms ? LTS.rooms.length : 0;
-    nav.querySelector('[data-nav="listen"]').classList.toggle("live", rooms > 0);  // a room is open → green (user request)
-    $("mLtBadge").hidden = !rooms; $("mLtBadge").textContent = rooms > 99 ? "99+" : rooms;  // open rooms, like the web's badge (user request 2026-11-15)
+    nav.querySelector('[data-nav="listen"]').classList.toggle("live", $("btnListen").classList.contains("live"));  // a room is open → green (user request)
+    // open rooms, the web's badge as it is (user request 2026-11-15) — incl. OPEN CHANNEL's 'ONAIR' (2026-11-17)
+    const bd = $("ltBadge");
+    $("mLtBadge").hidden = bd.hidden; $("mLtBadge").textContent = bd.textContent; $("mLtBadge").classList.toggle("open", bd.classList.contains("open"));
     nav.querySelector('[data-nav="listen"]').classList.toggle("blink", $("btnListen").classList.contains("reqwait"));  // a request waits (host)
   };
   new MutationObserver(renderNav).observe(body, {attributes: true, attributeFilter: ["class"]});

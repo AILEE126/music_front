@@ -36,6 +36,18 @@ body.simple .side-head h1.rainbow{color:var(--text)}  /* 간단: plain text colo
 .side-head .top{display:flex;justify-content:space-between;align-items:center;gap:4px;margin-bottom:10px}
 .side-head .top{flex-wrap:wrap}
 .side-head .top h1{margin-right:auto;flex:none;white-space:nowrap}
+#listenDlg .ltfield{display:none}  /* one nickname (the start one) — no field here (2026-11-17) */
+/* '<닉네임>님 안녕하세요!' (user request 2026-11-17) — between the name and the theme button */
+.side-head .top h1:has(+ .hello:not([hidden])){margin-right:0}
+.hello{align-self:flex-end;margin-bottom:4px;margin-right:auto;margin-left:8px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted)}
+.hello[hidden]{display:none}
+.hello.edit{cursor:pointer}
+.hello .pen{display:inline-block;transform:scaleX(-1)}  /* pencil pointing the other way (user request 2026-11-17) */
+.hello.edit:hover{color:var(--text);text-decoration:underline}
+/* the app name inside text: 사이버노인정 / 간단 mode CSC */
+#ltRoomHint .t-simple{display:none}
+body.simple #ltRoomHint .t-full{display:none}
+body.simple #ltRoomHint .t-simple{display:inline}
 /* 온/오프라인 · 간단 · 노래방 모드 under the name (user request 2026-11-16): one row of switches, 온/오프라인 its old size */
 .side-head .top .modes{flex:1 0 100%;display:flex;gap:6px;margin-top:6px}
 body.m .side-head .top .modes .onoff:not(#onOff) .lb{min-width:0}  /* phone: the new two fit next to it */
@@ -149,6 +161,7 @@ body.simple .item .thumb{display:none}  /* 간단 표시: 목록 썸네일 숨�
 .vfallback .vmsg button{margin-left:6px;padding:1px 8px;font-size:12px}
 /* 오류 신고 창 */
 #reportDlg{width:min(560px,94vw)}
+#reportDlg .rlabel[hidden]{display:none}  /* 보내는 사람 = the start nickname (2026-11-17) */
 #reportDlg .rlabel{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);margin-bottom:8px}
 #reportDlg select,#reportQ,#reportWho{width:100%;box-sizing:border-box}
 .rsong{padding:6px 10px;border-radius:8px;background:var(--chip);color:var(--text)}
@@ -249,6 +262,11 @@ body.m #listenDlg .dlg-body{overscroll-behavior-y:contain}
 .ltpen:hover{color:var(--text);background:var(--chip)}
 #ltTitleIn{width:100%;max-width:340px;height:32px;font-size:17px;font-weight:700;text-align:center}
 .ltpwask{margin-top:10px;padding:10px;border:1px solid var(--accent);border-radius:8px;font-size:13px}
+.ltmembers[hidden]{display:none}  /* OPEN CHANNEL: count only (2026-11-17) */
+.ltcool{margin:0 0 3px;font-size:11px;color:var(--warn)}
+.ltcool[hidden]{display:none}
+.ltcool.shake{animation:ltshake .45s ease-in-out}
+@keyframes ltshake{0%,100%{transform:translateX(0)}20%{transform:translateX(-5px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}80%{transform:translateX(3px)}}
 .ltmembers{list-style:none;margin:2px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:4px}
 .ltmembers li{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:var(--chip);font-size:12px}
 /* 곡 요청 */
@@ -316,6 +334,26 @@ body.lt-guest #streamHost{pointer-events:none}
 .nbadge{position:absolute;top:-5px;right:-10px;min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;
   background:var(--ok);color:#0b2414;font-size:10.5px;font-weight:800;line-height:16px;text-align:center}
 .nbadge[hidden]{display:none}
+/* OPEN CHANNEL is the only open room: red 'ONAIR' instead of a number, like a notification badge (user request 2026-11-17) */
+/* user request 2026-11-17: like an ON AIR sign — black frame, red face, bold white letters filling it; further right so the icon shows */
+.nbadge.open{right:-38px;top:-9px;height:15px;line-height:11px;padding:0 3px;border:2px solid #111;border-radius:4px;
+  background:linear-gradient(180deg,#ff1a0e,#ff4a2e);color:#fff;font-size:10px;font-weight:900;letter-spacing:0;
+  font-family:"Arial Black","Segoe UI Black",Impact,sans-serif;box-shadow:0 1px 2px rgb(0 0 0 / .35)}
+/* OPEN CHANNEL row: always first, set apart from the rooms (user request 2026-11-17) */
+#ltChRow[hidden]{display:none}
+.ltroom.ltch{border:1.5px solid var(--ok);background:linear-gradient(90deg,rgb(21 128 61 / .12),transparent 70%)}
+.ltroom.ltch.here{border-color:var(--accent)}
+.ltchname{font-weight:800;letter-spacing:.08em;color:var(--ok)}
+.ltchsub{font-size:12px;font-weight:500;color:var(--muted);margin-left:4px}
+.ltchdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:middle;flex:none}
+.ltroom.ltch.on .ltchdot,#ltRoom .ltchdot,.ltcard .ltchdot{background:#ef4444;animation:ltchpulse 1.4s ease-in-out infinite}
+/* the channel's filter tag (user request 2026-11-17): calmer — red outline + dot · 간단 mode: no color */
+.ltchtag{display:inline-flex;align-items:center;gap:5px;margin:4px 0;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;letter-spacing:.08em;
+  color:#f87171;background:rgb(239 68 68 / .1);box-shadow:inset 0 0 0 1px rgb(239 68 68 / .45)}
+.ltchtag::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;animation:ltchpulse 1.4s ease-in-out infinite}
+body.simple .ltchtag{color:var(--muted);background:transparent;box-shadow:inset 0 0 0 1px var(--line)}
+body.simple .ltchtag::before{animation:none}
+@keyframes ltchpulse{50%{opacity:.3}}
 .khead{display:flex;align-items:center;justify-content:space-between;gap:8px}
 #karaMode{font-weight:400;font-size:13px}#karaMode b{margin-left:4px}
 .kmrow{display:flex;gap:6px;margin-top:8px}  /* 노래방 모드's machine, shown while it is on (the switch is under the name since 2026-11-16) */
@@ -413,6 +451,11 @@ body:not(.simple) .khn{color:color-mix(in srgb,var(--bc) var(--tint-k),var(--tin
   box-shadow:0 8px 24px rgba(0,0,0,.35);overflow:hidden}
 .ghform{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0}
 .ghform input{flex:1;min-width:120px}
+.ghform.ghbtns{justify-content:flex-end}
+.ghmade{margin-top:6px;font-size:12px;color:var(--muted)}
+.ghmade b{color:var(--text);font-weight:600}
+.ghform.ghfield[hidden]{display:none}
+.ghlab{flex:none;min-width:7.5em;font-size:13px;color:var(--muted)}
 .fdd-top{display:flex;gap:4px;align-items:center;margin:6px}
 .fdd-top input{flex:1;min-width:0}
 .fdd-add{flex:none;padding:4px 10px;font-size:12px}
@@ -454,6 +497,15 @@ body:not(.simple) .khn{color:color-mix(in srgb,var(--bc) var(--tint-k),var(--tin
 .fchip .v{min-width:0;overflow-wrap:anywhere;padding:1px 0}  /* long values wrap, never cut (user request 2026-11-15) */
 .fgroup.exc .fchip .v{text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--err) 70%,transparent)}
 .fchip button,.fgroup .gx,.fgroup .gh{cursor:pointer}
+/* 기본 필터 chip · dragging conditions between groups (user request 2026-11-17) */
+.fchip.fdef{gap:4px;padding:1px 6px 1px 7px;background:var(--accent);color:var(--accent-text);box-shadow:none;font-weight:700;cursor:pointer}
+.fchip.fdef .k{color:inherit;font-size:11px;margin:0}
+.fchip.fdef svg{flex:none;width:12px;height:12px}
+.fchip.fdef.open svg:last-child{transform:rotate(180deg)}
+.fchip.indef{background:var(--accent-soft);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 35%,transparent)}
+.fchip[draggable="true"]{cursor:grab}
+.fchip.drag{opacity:.4}
+.fgroup.dropto{outline:2px dashed var(--accent);outline-offset:1px}
 .fchip button{border:0;background:transparent;color:var(--muted);padding:0 6px;font-size:12px;line-height:1.3;border-radius:999px}
 .fchip button:hover,.fgroup .gx:hover{background:color-mix(in srgb,currentColor 18%,transparent);color:var(--text)}
 /* 오프라인 */
@@ -865,3 +917,26 @@ body.m #listenDlg .dlgx,body.m #mSetDlg .dlgx{display:none}  /* a page: the bott
 body.m .seek{flex-basis:100%;order:1;min-width:0}
 body.m .songmeta{order:2}
 @media (pointer:coarse){body.m .volpop{display:none}}
+/* 패치노트 (user request 2026-11-17, patch_notes.js): the app name opens it · red dot (no number) = a note not read and not popped up ·
+   the window grows out of / shrinks into the name (animated in js) */
+.side-head h1.pn-click{cursor:pointer;position:relative}
+.side-head h1.pn-dot::after{content:"";position:absolute;top:-2px;right:-9px;width:9px;height:9px;border-radius:50%;background:#ef4444;
+  box-shadow:0 0 0 2px var(--card)}
+.pn-wrap{position:fixed;inset:0;z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px}
+.pn-back{position:absolute;inset:0;background:rgb(0 0 0 / .45)}
+.pn-box{position:relative;width:min(560px,100%);max-height:min(76vh,720px);display:flex;flex-direction:column;background:var(--card);
+  color:var(--text);border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 50px rgb(0 0 0 / .45);transform-origin:center;overflow:hidden}
+.pn-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);font-size:15px}
+.pn-head .pn-x{margin-left:auto}
+.pn-list{overflow:auto;padding:6px 14px 14px}
+.pn-n{border-bottom:1px solid var(--line);padding:8px 0}
+.pn-n summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none}
+.pn-n summary::-webkit-details-marker{display:none}
+.pn-n summary span{color:var(--muted);font-size:12px}
+.pn-new{font-style:normal;font-size:10px;font-weight:700;padding:1px 6px;border-radius:9px;background:#ef4444;color:#fff}
+.pn-b{font-size:13px;line-height:1.55;padding-top:4px}
+.pn-b h4{margin:10px 0 2px;font-size:13px;color:var(--accent)}
+.pn-b ul{margin:2px 0;padding-left:20px}
+.pn-b p{margin:2px 0}
+.pn-old{margin-top:12px;font-size:12px;color:var(--muted)}
+.pn-none{color:var(--muted)}

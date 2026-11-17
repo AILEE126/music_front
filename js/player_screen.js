@@ -165,7 +165,7 @@ function renderList() {
   const pq = fold($("plQ").value.trim());
   if (pq) view = view.filter(it => FKIND.text[1](it, pq));  // 재생목록에서 찾기 (user request 2026-11-15)
   // label on its own line, the count (with commas) under it next to the buttons — a big count pushed them down (user request 2026-11-15)
-  const lbl = guestPl ? "방장 재생목록" : ONLINE ? "재생목록" : OFFSRC === "yt" ? "영상" : "mp3", unit = !guestPl && !ONLINE && OFFSRC === "yt" ? "개" : "곡";
+  const lbl = guestPl ? (typeof LT !== "undefined" && LT.chOn ? "OPEN CHANNEL" : "방장 재생목록") : ONLINE ? "재생목록" : OFFSRC === "yt" ? "영상" : "mp3", unit = !guestPl && !ONLINE && OFFSRC === "yt" ? "개" : "곡";
   // my online playlist: '<all our songs> / <in the playlist>곡' — the total and the slash plain, the playlist count stands out (user request 2026-11-15)
   const total = ONLINE && !guestPl ? vdbTotal() : 0;
   $("libInfo").innerHTML = `<span class="lbl">${lbl}</span><span class="cnt">${total ? `<span class="tot">${total.toLocaleString()} / </span>` : ""}<b>${view.length.toLocaleString()}</b>${unit}</span>`;
@@ -432,6 +432,48 @@ const withType = g => g.c.some(c => c.k === "type") ? g : {...g, c: [fBase().fin
 /* 곡 종류와 기본 필터 조건만 든 그룹은 첫 그룹이 아니면 아직 빈 그룹 — 다른 조건을 고를 때까지 거르지 않음 ('＋ 그룹'만 눌러도 결과가 바뀌지 않게) */
 const fBaseCond = c => c.k === "type" || fBase().some(b => b.k === c.k && JSON.stringify(b.v) === JSON.stringify(c.v));
 const fReal = (g, i) => i === 0 || g.c.some(c => !fBaseCond(c));
+/* 기본 필터 접기 (user request 2026-11-17 — same in 음원 관리 filter_manage_panel.js): a group holding every condition of the
+   default's first include group (곡 종류 included — 2026-11-17) shows them as one '기본 필터' chip; clicking it unfolds /
+   folds (g.d = unfolded). → indices of those conditions in g.c, or null */
+function fDefIdx(g) {
+  const out = [];
+  for (const b of fBase()) {  // 곡 종류 too (user request 2026-11-17)
+    const j = g.c.findIndex(c => c.k === b.k && JSON.stringify(c.v) === JSON.stringify(b.v));
+    if (j < 0) return null;
+    out.push(j);
+  }
+  return out.length ? out : null;
+}
+const fDefChip = (g, open, ro) => `<span class="fchip fdef${open ? " open" : ""}"${ro ? ` title="기본 필터: ${esc(fBase().map(chipLabel).join(" · "))}"` : ` draggable="true" data-def="1" title="기본 필터: ${esc(fBase().map(chipLabel).join(" · "))}&#10;누르면 ${open ? "접기" : "펼치기"} · 끌어서 다른 그룹으로 (곡 종류는 그대로)"`}><svg class="fdi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg><span class="k">기본 필터</span>${ro ? "" : DD_CHEV}</span>`;
+/* 조건 끌어 옮기기 (user request 2026-11-17): a condition (or the folded 기본 필터 — all of them) dragged onto another group moves
+   there. 곡 종류 never moves (one per group). A one-per-group condition replaces the one already there */
+function fMoveConds(from, ci, to) {
+  const src = FG[from], dst = FG[to];
+  if (!src || !dst || from === to) return false;
+  const moved = (ci < 0 ? fDefIdx(src) || [] : [ci]).map(j => src.c[j]).filter(c => c && c.k !== "type");
+  if (!moved.length) return false;
+  src.c = src.c.filter(c => !moved.includes(c));
+  for (const c of moved) {
+    const t = ONE_COND.includes(c.k) && dst.c.find(x => x.k === c.k);
+    if (t) t.v = c.v;
+    else if (!dst.c.some(x => x.k === c.k && JSON.stringify(x.v) === JSON.stringify(c.v))) dst.c.push(c);
+  }
+  if (ci < 0) dst.d = src.d;
+  FG.forEach(g => { g.m = true; });
+  return true;
+}
+/* "＋ 기본 필터" (user request 2026-11-17): the default's conditions into a group */
+function fAddDefault(g) {  // one-per-group kinds (곡 종류 · 같은 곡 정렬 · 자르기) take the default's value
+  let n = 0;
+  for (const b of fBase()) {
+        const v = JSON.stringify(b.v), t = ONE_COND.includes(b.k) && g.c.find(c => c.k === b.k);
+    if (t) { if (JSON.stringify(t.v) !== v) { t.v = JSON.parse(v); n++; } continue; }
+    if (g.c.some(c => c.k === b.k && JSON.stringify(c.v) === v)) continue;
+    g.c.push(JSON.parse(JSON.stringify(b))); n++;
+  }
+  g.m = true;
+  return n;
+}
 let FG = (store.get("f.groups", null) || store.get("f.chips", []).map(c => ({x: !!c.x, c: [{k: c.k, v: c.v}]})))
   .map(g => "m" in g ? g : {...g, m: g.c.length > 1}).map(withType);
 /* an old built-in default left as it was (one group: 곡 종류 오리지널 only · 2: + 보컬 종류, before 같은 곡) → the new default, once
@@ -547,13 +589,17 @@ function renderFilterOptions() {
   // 그룹 = 한 줄 상자 (왼쪽 동그라미 ＋ 포함 / − 제외). 포함 상자 사이에만 작은 '또는' 줄, 제외 상자는 맨 아래
   const box = i => {
     const g = FG[i], cs = g.c.filter(c => FKIND[c.k]), ed = fEdit && fEdit.g === i ? fEdit.c : -1;
+    const di = fDefIdx(g), dset = new Set(di || []), isDef = c => dset.has(g.c.indexOf(c));
+    const chip = (c, cls = "") => { const j = g.c.indexOf(c), on = j === ed ? " edit" : "";
+      // 곡 종류: 그룹마다 꼭 하나 — 지우기 없이 고르는 칸 모양 (▾), 옮기지 않음 · 다른 조건: 누르면 고치기, × 빼기, 끌어서 다른 그룹으로
+      return c.k === "type"
+        ? `<span class="fchip req${cls}${on}" data-c="${j}" title="곡 종류 — 그룹마다 꼭 하나 · 누르면 바꾸기"><span class="k">${esc(chipKind(c))}</span><span class="v">${esc(chipLabel(c))}</span>${DD_CHEV}</span>`
+        : `<span class="fchip${cls}${on}" data-c="${j}" draggable="true" title="누르면 이 조건 고치기 · 끌어서 다른 그룹으로"><span class="k">${esc(chipKind(c))}</span><span class="v">${esc(chipLabel(c))}</span><button title="빼기">×</button></span>`; };
     return `<div class="fgroup${g.x ? " exc" : ""}${i === fCur ? " cur" : ""}" data-g="${i}" title="${i === fCur ? "새 조건이 이 그룹에 들어감" : "누르면 이 그룹 선택"}">`
       + `<button class="gh" title="${g.x ? "제외 그룹 — 누르면 포함으로" : "포함 그룹 — 누르면 제외로"}">${g.x ? "−" : "＋"}</button>`
-      + cs.map(c => { const j = g.c.indexOf(c), on = j === ed ? " edit" : "";
-        // 곡 종류: 그룹마다 꼭 하나 — 지우기 없이 고르는 칸 모양 (▾) · 다른 조건: 누르면 고치기, × 빼기
-        return c.k === "type"
-          ? `<span class="fchip req${on}" data-c="${j}" title="곡 종류 — 그룹마다 꼭 하나 · 누르면 바꾸기"><span class="k">${esc(chipKind(c))}</span><span class="v">${esc(chipLabel(c))}</span>${DD_CHEV}</span>`
-          : `<span class="fchip${on}" data-c="${j}" title="누르면 이 조건 고치기"><span class="k">${esc(chipKind(c))}</span><span class="v">${esc(chipLabel(c))}</span><button title="빼기">×</button></span>`; }).join("")
+      + cs.filter(c => c.k === "type" && !isDef(c)).map(c => chip(c)).join("")
+      + (di ? fDefChip(g, g.d) + (g.d ? cs.filter(isDef).map(c => chip(c, " indef")).join("") : "") : "")
+      + cs.filter(c => c.k !== "type" && !isDef(c)).map(c => chip(c)).join("")
       + (fReal(g, i) ? "" : '<span class="empty">조건을 고르세요</span>')
       + `<button class="gx" title="그룹 지우기">✕</button></div>`;
   };
@@ -718,6 +764,7 @@ $("btnFilter").onclick = () => setFilterOpen($("fPanel").hidden);
 $("fFold").onclick = () => setFilterOpen(false);
 $("fPanel").hidden = !store.get("sfOpen", true);  // in the search popup: open unless folded there (user request 2026-11-14)
 $("fNew").addEventListener("click", e => {
+  if (e.target.closest("[data-defadd]")) { sfDefaultGroup(); if (FG[fCur]) fAddDefault(FG[fCur]); return saveChips(); }
   const b = e.target.closest("[data-new]"); if (!b) return;
   const x = b.dataset.new === "exc";
   FG.forEach(g => { g.m = true; });  // 버튼 없이 고른 조건도 그룹으로 남김 (다음 조건을 골라도 지워지지 않게)
@@ -735,6 +782,7 @@ function addValues(vs) {
 $("fChips").addEventListener("click", e => {
   const gEl = e.target.closest(".fgroup"); if (!gEl) return;
   const gi = +gEl.dataset.g, chip = e.target.closest(".fchip");
+  if (chip && chip.dataset.def) { e.stopPropagation(); FG[gi].d = !FG[gi].d; store.set("f.groups", FG); return renderFilterOptions(); }  // fold only — the filter is the same
   if (e.target.closest(".gx")) { FG.splice(gi, 1); if (fCur >= gi) fCur = Math.max(0, fCur - 1); }
   else if (chip && e.target.closest("button")) FG[gi].c.splice(+chip.dataset.c, 1);
   else if (chip) { e.stopPropagation(); return editChip(gi, +chip.dataset.c); }  // the page's outside-click would close the list it opens
@@ -743,6 +791,33 @@ $("fChips").addEventListener("click", e => {
   saveChips();
 });
 $("fReset").onclick = () => { FG = []; fCur = 0; saveChips(); };
+/* 조건 끌어 옮기기 (user request 2026-11-17) */
+{
+  let drag = null;
+  const clear = () => $("fChips").querySelectorAll(".dropto,.drag").forEach(x => x.classList.remove("dropto", "drag"));
+  $("fChips").addEventListener("dragstart", e => {
+    const ch = e.target.closest(".fchip[draggable]"), gEl = ch && ch.closest(".fgroup");
+    if (!ch || !gEl) return;
+    drag = {g: +gEl.dataset.g, c: ch.dataset.def ? -1 : +ch.dataset.c};
+    e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", "");
+    ch.classList.add("drag");
+  });
+  $("fChips").addEventListener("dragover", e => {
+    const gEl = e.target.closest(".fgroup");
+    if (!drag || !gEl || +gEl.dataset.g === drag.g) return;
+    e.preventDefault();
+    $("fChips").querySelectorAll(".fgroup.dropto").forEach(x => x !== gEl && x.classList.remove("dropto"));
+    gEl.classList.add("dropto");
+  });
+  $("fChips").addEventListener("drop", e => {
+    const gEl = e.target.closest(".fgroup");
+    if (!drag || !gEl) return;
+    e.preventDefault();
+    const to = +gEl.dataset.g, d = drag; drag = null; clear();
+    if (fMoveConds(d.g, d.c, to)) { fCur = to; saveChips(); }
+  });
+  $("fChips").addEventListener("dragend", () => { drag = null; clear(); });
+}
 
 /* 검색창도 펼친 목록처럼: 글자를 치면 바로 아래에 '"…" 검색' + 이름이 맞는 보컬·프로듀서·태그 등 (우리 곡 수와 함께)
    첫 줄(Enter)은 검색, 다른 줄을 누르거나 ↑↓ 로 골라 Enter → 그 조건을 필터에 더함. Esc·바깥 누르기로 닫힘 */
@@ -955,8 +1030,11 @@ function setPlFilter(groups) {
 }
 /* filter groups → read-only group boxes (also used by 같이듣기 for the host's filter) */
 function plfHtml(groups) {
-  const grp = g => `<div class="fgroup${g.x ? " exc" : ""}"><span class="gh">${g.x ? "−" : "＋"}</span>`
-    + g.c.filter(c => FKIND[c.k]).map(c => `<span class="fchip"><span class="k">${esc(chipKind(c))}</span><span class="v">${esc(chipLabel(c))}</span></span>`).join("") + "</div>";
+  const grp = g => { const ds = new Set(fDefIdx(g) || []), cs = g.c.filter(c => FKIND[c.k]);
+    const one = c => `<span class="fchip"><span class="k">${esc(chipKind(c))}</span><span class="v">${esc(chipLabel(c))}</span></span>`;
+    return `<div class="fgroup${g.x ? " exc" : ""}"><span class="gh">${g.x ? "−" : "＋"}</span>`  // 기본 필터 folded here as well (2026-11-17)
+      + cs.filter(c => c.k === "type" && !ds.has(g.c.indexOf(c))).map(one).join("") + (ds.size ? fDefChip(g, false, true) : "")
+      + cs.filter(c => c.k !== "type" && !ds.has(g.c.indexOf(c))).map(one).join("") + "</div>"; };
   const inc = groups.filter(g => !g.x), exc = groups.filter(g => g.x);
   return inc.map(grp).join('<div class="fsep">또는</div>') + exc.map(grp).join("");
 }
@@ -966,9 +1044,11 @@ function vdbTotal() { return VDB._all ? VDB._all.length : VDB.rowById.size + VDB
 let plfFold = true;
 function renderPlFilter() {
   // 같이듣기 손님: the list shown is the host's, so is the filter (user request 2026-11-15)
-  const box = $("plFilter"), f = guestPl ? (typeof LT !== "undefined" && LT.hostPlf) || null : PLF;
-  box.hidden = !f || !ONLINE;
-  box.classList.toggle("fold", plfFold);
+  const box = $("plFilter"), ch = guestPl && typeof LT !== "undefined" && LT.chOn, f = guestPl ? (typeof LT !== "undefined" && LT.hostPlf) || null : PLF;
+  box.hidden = !(f || ch) || !ONLINE;
+  box.classList.toggle("fold", plfFold && !ch);
+  // OPEN CHANNEL (user request 2026-11-17): its filter stays private — just the tag
+  if (ch) { box.innerHTML = `<div class="plfhead">현재 설정된 필터</div>${ltChTag()}`; return; }
   box.innerHTML = f ? `<div class="plfhead" role="button" tabindex="0" title="${plfFold ? "필터 펼치기" : "필터 접기"}">현재 설정된 필터<span class="chev">▾</span></div>` + plfHtml(f) : "";
 }
 $("plFilter").addEventListener("click", e => { if (e.target.closest(".plfhead")) { plfFold = !plfFold; renderPlFilter(); } });
@@ -1657,7 +1737,7 @@ function openReport(pre = {}) {
   const ro = LOCAL.gh && !LOCAL.gh.write;
   $("reportSend").title = ro ? "읽기만 되는 토큰" : "";
   $("reportDlg").showModal();
-  ($("reportWho").value ? $("reportText") : $("reportWho")).focus();
+  $("reportText").focus();  // sender = the start nickname (field hidden — user request 2026-11-17)
 }
 $("btnReport").onclick = () => openReport();
 $("sReport").onclick = () => openReport();  // 곡 검색 창 위에 열림 (dialog top layer)
@@ -1791,8 +1871,29 @@ function showLoad(label, frac) {
 }
 function hideLoad() { if ($("loadBox")) $("loadBox").hidden = true; }
 LOCAL.progress = showLoad;
+/* '<닉네임>님 안녕하세요!' right of the app name (user request 2026-11-17) — a write token (or the server PC) can change the
+   nickname by clicking it; a read-only token can't */
+function renderHello() {
+  const h = $("hello"), who = String(store.get("reportWho", "") || "").trim();
+  if (!h) return;
+  h.hidden = !who || !LOCAL.ready;
+  // ✎ mirrored (css): the nickname can be changed — by everyone, read-only tokens too (user request 2026-11-17)
+  h.innerHTML = `${esc(who)}님 안녕하세요! <span class="pen">✎</span>`;
+  h.classList.add("edit");
+  h.title = "누르면 닉네임 바꾸기";
+}
+$("hello").onclick = async () => {
+  const v = await uiPrompt("닉네임", store.get("reportWho", ""), "닉네임");
+  if (!v || !v.trim()) return;
+  store.set("reportWho", v.trim().slice(0, 40));
+  renderHello(); LOCAL.userSyncSoon();
+};
+/* 저장된 필터 → the server (users/<nickname>.json) whenever they change */
+{ const set = store.set; store.set = function (k, v) { const r = set.call(this, k, v); if (k === "f.saved" && LOCAL.ready) LOCAL.userSyncSoon(); return r; }; }
 async function offlineOpened() {
   showLoad("여는 중…", 0.1);
+  renderHello();
+  LOCAL.userSyncSoon();  // registers the nickname · uploads 저장된 필터 (only when changed)
   LOCAL.ovReopen();  // 이 브라우저에서 오버레이를 쓴 적이 있으면 바로 오버레이와 주고받음
   await loadLibrary();
   // the '☁ <repo> · 서버 없이 재생 중' note above the playlist was removed (user request 2026-11-15)
@@ -1802,12 +1903,15 @@ async function offlineOpened() {
   showLoad("재생목록 여는 중…", 1);
   if (it && canPlay(it) && !SHELL.now) { if (it === rit) SHELL.resumeAt(it, res.t); play(it, it === rit, ""); }
   setTimeout(hideLoad, 150);
+  if (typeof pnCheck === "function") setTimeout(() => pnCheck(true), 400);  // 패치노트: a new one pops up once (patch_notes.js)
 }
 async function offlineIntro() {
   const gh = LOCAL.savedGitHub();
   showLoad("여는 중…", 0);
-  if (gh) {  // 지난번에 깃허브에서 열었으면 그대로 (토큰이 만료됐으면 팝업에 까닭)
-    try { await LOCAL.useGitHub(gh.repo, gh.token); return offlineOpened(); } catch (e) { return offlineDialog(e.message); }
+  // kept in this browser again (user request 2026-11-17 — typing it at every start was too much): opens at once with the
+  // nickname kept too; an expired token → the dialog with the reason
+  if (gh && gh.token && store.get("reportWho", "")) {
+    try { await LOCAL.useGitHub(gh.repo, gh.token, false); return offlineOpened(); } catch (e) { return offlineDialog(e.message); }
   }
   const saved = await LOCAL.saved();  // 브라우저 저장소를 못 쓰면 없음
   if (saved) {  // 지난번 폴더: 권한이 남아 있으면 바로 (없으면 팝업의 단추를 한 번 눌러 허락 — 브라우저가 누를 때만 물어볼 수 있음)
@@ -1820,15 +1924,22 @@ async function offlineIntro() {
    offline mp3 folder is connected from the list after switching to offline). Repo = last one used or the default.
    Nothing open yet → can't be closed until a token opens. Already open ('다른 토큰으로 열기') → 취소 · Esc close it and the
    player stays as it was (user request 2026-11-14: the box wouldn't go away). */
+/* 마지막 토큰 생성 (user request 2026-11-17) — shown in the entry dialog. Kept here because the player can't read our data before a
+   token opens it; the newest 생성 시간 in 음원 관리 › 토큰 관리 is the value to put here */
+const TOKEN_MADE = "2026-11-16 14:00";
 async function offlineDialog(err = "") {
   hideLoad();
   const gh = LOCAL.savedGitHub(), repo = (gh || {}).repo || "AILEE126/music_backend", cancelable = LOCAL.ready;
   document.querySelector("dialog.offdlg")?.remove();
   const d = document.createElement("dialog");
   d.className = "uidlg offdlg";
-  d.innerHTML = `<div class="dlg-body"><b>깃허브 토큰을 넣어 주세요</b> <span class="muted">(받은 토큰 — 우리 곡의 노래방 번호·가사·싱크를 읽음 · 곡 검색은 VocaDB)</span>
-      <div class="ghform"><input type="password" id="ghToken" placeholder="깃허브 토큰 (github_pat_…)" autocomplete="off">
-        <button class="primary" id="ghOpen">열기</button>${cancelable ? '<button id="ghCancel" title="지금 열린 그대로 (Esc)">취소</button>' : ""}</div>
+  // + nickname (user request 2026-11-17) · a read-only token also needs the 1차 지인's nickname, registered on the server
+  d.innerHTML = `<div class="dlg-body"><b>깃허브 토큰을 넣어 주세요</b>
+      <div class="ghmade">마지막 토큰 생성 <b>${TOKEN_MADE}</b></div>
+      <div class="ghform"><input type="password" id="ghToken" placeholder="깃허브 토큰 (github_pat_…)" autocomplete="off"></div>
+      <label class="ghform ghfield"><span class="ghlab"><span class="ltreq">*</span>닉네임</span><input type="text" id="ghWho" maxlength="40" autocomplete="off" spellcheck="false"></label>
+      <label class="ghform ghfield" id="ghViaRow" hidden><span class="ghlab"><span class="ltreq">*</span>소개받은 닉네임</span><input type="text" id="ghVia" placeholder="토큰을 준 사람의 닉네임" maxlength="40" autocomplete="off" spellcheck="false"></label>
+      <div class="ghform ghbtns"><button class="primary" id="ghOpen">열기</button>${cancelable ? '<button id="ghCancel" title="지금 열린 그대로 (Esc)">취소</button>' : ""}</div>
     <div class="offerr" id="offErr"></div></div>`;
   const q = sel => d.querySelector(sel), btns = () => d.querySelectorAll("button");
   const showErr = m => { q("#offErr").textContent = m; };
@@ -1844,8 +1955,28 @@ async function offlineDialog(err = "") {
     done = true; d.close(); d.remove();
     await offlineOpened();
   };
-  q("#ghOpen").onclick = () => tryOpen(() => LOCAL.useGitHub(repo, q("#ghToken").value));
-  q("#ghToken").onkeydown = e => { if (e.key === "Enter") q("#ghOpen").click(); };
+  q("#ghWho").value = store.get("reportWho", ""); q("#ghVia").value = store.get("ghVia", "");
+  q("#ghOpen").onclick = () => tryOpen(async () => {
+    const who = q("#ghWho").value.trim(), via = q("#ghVia").value.trim();
+    if (!q("#ghToken").value.trim()) { q("#ghToken").focus(); throw new Error("토큰을 넣어 주세요."); }
+    if (!who) { q("#ghWho").focus(); throw new Error("닉네임을 넣어 주세요."); }
+    await LOCAL.useGitHub(repo, q("#ghToken").value, false);
+    const tok = q("#ghToken").value.trim();
+    // read-only: the 소개받은 닉네임 field appears only now (user request 2026-11-17) and must be a registered nickname
+    if (!LOCAL.gh.write) {
+      const shown = !q("#ghViaRow").hidden;
+      q("#ghViaRow").hidden = false;
+      let ok = false;
+      if (shown && via) try { ok = await LOCAL.userExists(via); } catch (e) {}
+      if (!ok) {
+        LOCAL.gh = null; q("#ghVia").focus();
+        throw new Error(!shown || !via ? "읽기 전용 토큰입니다 — 소개받은 닉네임을 넣어 주세요." : `'${via}' 은(는) 등록된 닉네임이 아닙니다 — 토큰을 준 사람의 닉네임을 넣어 주세요.`);
+      }
+    }
+    store.set("reportWho", who.slice(0, 40)); store.set("ghVia", via.slice(0, 40));
+    store.set("gh", {repo, token: tok});  // remembered (only once everything checked out)
+  });
+  d.querySelectorAll("input").forEach(i => { i.onkeydown = e => { if (e.key === "Enter") q("#ghOpen").click(); }; });
   document.body.appendChild(d);
   d.showModal();
   q("#ghToken").focus();
