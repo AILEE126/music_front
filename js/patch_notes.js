@@ -11,23 +11,25 @@ const pnUnread = () => PN.notes.filter(n => n.id > pnSeen());
 const pnName = () => document.querySelector(".side-head h1");
 
 /* body text → html: '## x' sub title · '- x' item · other lines plain (same rules as the manage screen) */
+const pnInline = t => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");  // **글자** → bold
 function pnHtml(text) {
   // '- x' item · '  - x' (indented) detail under the item above (user request 2026-11-17: feature + its details)
-  let html = "", lvl = 0;
-  const close = to => { while (lvl > to) { html += lvl === 2 ? "</ul>" : "</li></ul>"; lvl--; } };
+  let html = "", lvl = 0, top = null;  // top: feature line not written yet (it becomes a fold when details follow)
+  // details under a feature are folded — the feature name opens them (user request 2026-11-17)
+  const flush = () => { if (top != null) { html += `<li>${top}`; top = null; } };
+  const close = to => { while (lvl > to) { if (lvl === 2) html += "</ul></details>"; else { flush(); html += "</li></ol>"; } lvl--; } };
   for (const ln of String(text || "").split(/\r?\n/)) {
     const li = /^(\s*)[-*]\s+(.*)$/.exec(ln), h = /^\s*#{1,3}\s+(.*)$/.exec(ln);
-    if (h) { close(0); html += `<h4>${esc(h[1])}</h4>`; }
+    if (h) { close(0); html += `<h4>${pnInline(h[1])}</h4>`; }
     else if (li && li[1].length >= 2) {
-      if (lvl === 0) { html += "<ul><li>"; lvl = 1; }
-      if (lvl === 1) { html += "<ul>"; lvl = 2; }
-      html += `<li>${esc(li[2])}</li>`;
+      if (lvl === 0) { html += "<ol>"; lvl = 1; top = ""; }
+      if (lvl === 1) { html += `<li class="fold"><details><summary>${top || ""}</summary><ul>`; top = null; lvl = 2; }
+      html += `<li>${pnInline(li[2])}</li>`;
     } else if (li) {
       close(1);
-      html += lvl === 1 ? "</li>" : "<ul>";
-      lvl = 1;
-      html += `<li>${esc(li[2])}`;
-    } else { close(0); if (ln.trim()) html += `<p>${esc(ln)}</p>`; }
+      if (lvl === 1) { flush(); html += "</li>"; } else { html += "<ol>"; lvl = 1; }  // features numbered 1 2 3 (user request), details not
+      top = pnInline(li[2]);
+    } else { close(0); if (ln.trim()) html += `<p>${pnInline(ln)}</p>`; }
   }
   close(0);
   return html;
