@@ -104,7 +104,36 @@ async function ltChStart(took) {
   LT.coolKey = SHELL.now ? keyOf(SHELL.now) : "";
   ltMembers(); ltSendReqs();
   if (took && SHELL.now) { if (!SHELL.upcoming.length) SHELL.plan(SHELL.now); ltSendQueue(); return ltBroadcast(); }
+  if (ltChRestore(conf)) return;
   SHELL.pinned = []; SHELL.plan(null); SHELL.next(true);
+}
+/* 마지막 사람이 나가도 1분 동안은 이어지는 것처럼 (user request 2026-11-17): the last listener leaving (나가기 · closing ·
+   reloading) leaves a snapshot here (localStorage — no server, so only this browser can pick it up); whoever opens the
+   channel again from here within 1 min goes on where it would be now: same song at the position time has moved it to
+   (song over meanwhile → the next one from its start — other songs' lengths aren't known), same queue · requests · cooldowns.
+   Older than 1 min = the channel was gone: a fresh shuffle. */
+const LT_CH_SNAP = "lt.chSnap", LT_CH_KEEP = 60 * 1000;  // 1 min (user request 2026-11-17, was 5)
+const ltChSig = conf => JSON.stringify(conf.groups || []);
+function ltChSnapSave() {
+  const conf = ltChConf();
+  if (!ltChHost() || !conf || !SHELL.now) return;
+  const pack = it => it.vocadb ? +it.vocadb : null;
+  const s = {at: Date.now(), sig: ltChSig(conf), now: pack(SHELL.now), pos: audio.currentTime || 0, dur: audio.duration || 0, run: !audio.paused,
+    pinned: SHELL.pinned.map(pack).filter(Boolean), upcoming: SHELL.upcoming.slice(0, 300).map(pack).filter(Boolean), reqs: LT.reqs, cool: LT.cool};
+  try { localStorage.setItem(LT_CH_SNAP, JSON.stringify(s)); } catch (e) {}
+}
+function ltChRestore(conf) {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(LT_CH_SNAP) || "null"); localStorage.removeItem(LT_CH_SNAP); } catch (e) {}
+  if (!s || Date.now() - s.at > LT_CH_KEEP || s.sig !== ltChSig(conf)) return false;
+  const get = l => (l || []).map(id => VDB.itemById(id)).filter(it => it && canPlay(it));
+  const now = s.now && VDB.itemById(s.now), pos = s.pos + (s.run ? (Date.now() - s.at) / 1000 : 0);
+  LT.reqs = s.reqs || []; LT.cool = s.cool || {}; ltSendReqs();
+  SHELL.pinned = get(s.pinned); SHELL.upcoming = get(s.upcoming);
+  if (!SHELL.upcoming.length) SHELL.plan(now);
+  if (now && canPlay(now) && s.dur && pos < s.dur - 3) { SHELL.resumeAt(now, pos); SHELL.load(now, true, "next"); }
+  else SHELL.next(true);
+  return true;
 }
 /* guest: the channel's list, made here from the same filter (shown read-only; kept for taking over) */
 async function ltChGuestPl() {
@@ -310,6 +339,7 @@ function ltHostPeer(code, left) {
   peer.on("open", () => {
     if (LT.peer !== peer) return;
     const took = LT.role === "guest";  // channel: a guest takes over
+    LT.resumeTry = 0;
     LT.role = "host"; LT.code = code; LT.status = ""; LT.lostAt = 0; LT.retryAt = 0; LT.host = null; SHELL.follow = false;
     ltRescan("", 1500);  // after the lobby slot is taken, my room shows in the list
     ltMembers();
@@ -341,6 +371,8 @@ function ltHostPeer(code, left) {
     if (LT.role !== "host") {  // 방을 열기 전
       if (LT.chOn && e.type === "unavailable-id") { peer.destroy(); return ltGuestPeer(LT_CH); }  // someone holds the channel → join them
       if (LT.chOn && LT.role === "guest") { peer.destroy(); return ltGuestLost(); }  // taking over failed: try again
+      // back from an update reload: the old page may still hold the code for a moment → try the same code again
+      if (e.type === "unavailable-id" && LT.resumeTry > 0) { LT.resumeTry--; peer.destroy(); return setTimeout(() => { if (LT.resumeTry >= 0 && !LT.role) ltHostPeer(code, -1); }, 2000); }
       if (e.type === "unavailable-id" && left > 0) { peer.destroy(); return ltHostPeer(ltNewCode(), left - 1); }  // 번호가 겹침 → 다른 번호
       ltLeave(true); LT.status = ltErrText(e); return ltRender();
     }
@@ -489,6 +521,8 @@ function ltGuestPeer(code) {
   const fail = msg => {
     if (LT.peer !== peer) return;
     if (LT.role === "guest") return ltGuestLost();
+    // back from an update reload: the host may be reloading too — try again a few times
+    if (LT.resumeTry > 0) { LT.resumeTry--; LT.peer = null; try { peer.destroy(); } catch (e) {} return setTimeout(() => { if (!LT.role && !LT.peer) ltGuestPeer(code); }, 3000); }
     if (LT.chOn && LT.chTry++ < 4) { LT.peer = null; try { peer.destroy(); } catch (e) {} return setTimeout(ltChClaim, 800); }  // channel host just left: take it
     ltLeave(true); LT.status = msg; ltRender();
   };
@@ -510,7 +544,7 @@ function ltGuestPeer(code) {
       }
       if (LT.host !== c) {  // first word from the host → in
         clearTimeout(t);
-        LT.role = "guest"; LT.code = code; LT.host = c; LT.status = ""; LT.lastHeard = Date.now(); LT.lostAt = 0;
+        LT.role = "guest"; LT.code = code; LT.host = c; LT.status = ""; LT.lastHeard = Date.now(); LT.lostAt = 0; LT.resumeTry = 0;
         ltRescan("", 0);
         SHELL.follow = true;  // 곡이 끝나도 혼자 다음 곡으로 넘어가지 않음 (방장이 넘김)
         LT.align = 4;  // first time in: line up tightly once the song sounds
@@ -539,6 +573,12 @@ function ltGuestGot(m) {
   if (m.t === "handover") {  // channel: the host left — the one named takes over at once, the rest a little later
     LT.host = null; LT.lostAt = LT.lostAt || Date.now(); LT.status = "채널을 이어받는 중…"; ltRender();
     return ltChRetrySoon(m.to === LT.uid ? 700 : 2500 + Math.random() * 1500);
+  }
+  if (m.t === "reload") {  // host is reloading for an update: try again a few seconds later (ltKeep), same room
+    const c = LT.host; ltGuestLost(); LT.retryAt = Date.now() + 4000;
+    LT.status = "방장이 새 버전으로 새로고침하는 중… 곧 다시 이어집니다"; ltRender();
+    try { c.close(); } catch (e) {}
+    return;
   }
   if (m.t === "bye") { const code = LT.code; ltLeave(true); LT.status = "방장이 방을 닫았습니다"; return ltRescan(code, 800); }
   if (m.t === "members") { LT.members = m.list || []; LT.title = m.title || ""; LT.open = m.open !== false; return ltRender(); }
@@ -614,9 +654,12 @@ function ltErrText(e) {
 }
 function ltLeave(quiet) {
   LT.titleEdit = false;
+  if (ltChHost() && !LT.conns.size) ltChSnapSave();  // the last one out of the channel: 1 min to come back to it
   if (LT.role === "host" && LT.chOn && LT.conns.size) {  // channel: someone still listening takes it over (first one in)
     const to = [...LT.conns.values()][0].uid;
     LT.conns.forEach((_, c) => ltSend(c, {t: "handover", to}));
+  } else if (LT.role === "host" && LT.reloading) {  // update reload: the room comes back with the same code — guests wait
+    LT.conns.forEach((_, c) => ltSend(c, {t: "reload"}));
   } else if (LT.role === "host") { LT.conns.forEach((_, c) => ltSend(c, {t: "bye"})); clearTimeout(ltAnnT); ltAnnounce({t: "gone", code: LT.code, at: Date.now()}); }
   ltLobbyStop();
   const peer = LT.peer;
@@ -647,6 +690,8 @@ function ltKeep() {
     // and stayed in the member list for minutes)
     LT.conns.forEach((v, c) => { if (now - v.seen > 20000 && (!c.open || now - v.seen > LT_SILENT)) { LT.conns.delete(c); try { c.close(); } catch (e) {} gone = true; } });
     if (gone) ltMembers();
+    if (ltChHost() && !LT.conns.size) ltChSnapSave();  // alone in the channel: kept fresh in case the tab dies (crash · killed app)
+    else if (ltChHost()) try { localStorage.removeItem(LT_CH_SNAP); } catch (e) {}  // others here carry it on — an old one would be wrong
     const p = LT.peer;
     if (!LT.chOn && !LT.lobby && p && p.open && now >= LT.lobbyAt) { LT.lobbyAt = now + 30000; ltLobby(0); }  // lost / full slots: try again now and then
     if (p && (p.destroyed || p.disconnected) && now >= LT.retryAt) {
@@ -1266,5 +1311,35 @@ function ltFromLink() {
 }
 addEventListener("hashchange", ltFromLink);
 ltFromLink();
+
+/* 새 버전 새로고침 (user request 2026-11-17): the room must not break — the host tells guests "reload" (not "bye") and,
+   back on the page, opens the same code again; a guest joins the same room again (same uid → not a duplicate name);
+   the channel just rejoins (someone else holds it meanwhile). Listeners may drop out for a moment (user: fine).
+   version_check.js calls ltBeforeReload; kept in sessionStorage (same tab only) for 2 min. */
+const LT_RESUME_KEY = "lt.resume";
+function ltBeforeReload() {
+  if (!LT.role) return;
+  LT.reloading = true;
+  // the host keeps the requests too (user request 2026-11-17) — the queued ones come back with the queue (qSaveForReload)
+  try { sessionStorage.setItem(LT_RESUME_KEY, JSON.stringify({role: LT.role, code: LT.code, me: LT.me, pw: LT.pw, open: LT.open, title: LT.title, ch: LT.chOn, uid: LT.uid,
+    reqs: LT.role === "host" && !LT.chOn ? LT.reqs : [], cool: LT.chOn ? {} : LT.cool, at: Date.now()})); } catch (e) {}
+}
+function ltResume() {
+  let r = null;
+  try { r = JSON.parse(sessionStorage.getItem(LT_RESUME_KEY) || "null"); sessionStorage.removeItem(LT_RESUME_KEY); } catch (e) {}
+  if (!r || !r.code || Date.now() - r.at > 120000) return;
+  LT.uid = r.uid || LT.uid;
+  const go = async () => {
+    if (document.querySelector("dialog.offdlg[open]") || ($("loadBox") && !$("loadBox").hidden)) return setTimeout(go, 500);
+    if (LT.role) return;  // already in a room some other way
+    if (r.ch) return ltChJoin();
+    LT.me = r.me || ltName(); LT.pw = r.pw || ""; LT.open = r.open !== false; LT.title = r.title || ""; LT.resumeTry = 6;
+    LT.status = r.role === "host" ? "방을 다시 여는 중…" : "방에 다시 들어가는 중…"; ltRender();
+    try { await ltLoadPeerJs(); } catch (e) { LT.resumeTry = 0; LT.status = e.message; return ltRender(); }
+    if (r.role === "host") { LT.reqs = r.reqs || []; LT.cool = r.cool || {}; ltHostPeer(r.code, -1); } else ltGuestPeer(r.code);
+  };
+  setTimeout(go, 300);
+}
+ltResume();
 ltRender();
 setTimeout(ltScan, 1500);

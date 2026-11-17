@@ -54,6 +54,25 @@ const PL = {
     return q.map(x => typeof x === "number" ? VDB.itemById(x) : liveItem(x)).filter(Boolean);
   },
 };
+/* queue kept over an update reload (user request 2026-11-17: 직접 넣은 곡 · 다음 곡 · 지난 곡 stay as they were) —
+   sessionStorage (this tab only), read once at start (offlineOpened). Our DB songs as VocaDB id, others as the item */
+const QSAVE_KEY = "player.qsave";
+const qPack = it => it.vocadb && VDB.rowById.has(String(it.vocadb)) ? +it.vocadb : plStrip(it);
+const qUnpack = l => (l || []).map(x => typeof x === "number" ? VDB.itemById(x) : liveItem(x)).filter(it => it && canPlay(it));
+function qSaveForReload(q) {
+  try { sessionStorage.setItem(QSAVE_KEY, JSON.stringify({pinned: q.pinned.map(qPack), upcoming: q.upcoming.map(qPack), history: q.history.map(qPack), at: Date.now()})); } catch (e) {}
+}
+function qRestoreAfterReload(playing) {
+  let s = null;
+  try { s = JSON.parse(sessionStorage.getItem(QSAVE_KEY) || "null"); sessionStorage.removeItem(QSAVE_KEY); } catch (e) {}
+  if (!s || Date.now() - s.at > 30 * 60 * 1000) return;
+  const k = playing ? keyOf(playing) : "", pinned = qUnpack(s.pinned), upcoming = qUnpack(s.upcoming);
+  // the song the page came back with was the next one: take it out once (pinned first, as next() would)
+  const drop = l => { const i = l.findIndex(x => keyOf(x) === k); if (i >= 0) { l.splice(i, 1); return true; } return false; };
+  if (k && !drop(pinned)) drop(upcoming);
+  SHELL.pinned = pinned; SHELL.upcoming = upcoming; SHELL.history = qUnpack(s.history).slice(-10);
+  SHELL.qemit();
+}
 async function loadLibrary() {
   // the load bar (GitHub download progress) must close even when this is not the first open
   try { LIB = await api("/api/library"); } catch (e) { $("libInfo").textContent = e.message; return; } finally { hideLoad(); }
@@ -1447,7 +1466,7 @@ function nudge(d) {
   if (SHELL.now && keyOf(SHELL.now) === keyOf(cur)) SHELL.setOffset(offset);  // 위 고정 가사도 같이
   clearTimeout(offTimer);
   const s = song;
-  offTimer = setTimeout(() => post("/api/sync/save", {site: s.site, name: s.name, offset}).catch(e => uiAlert(e.message)), 600);
+  offTimer = setTimeout(() => SHELL.sending(() => post("/api/sync/save", {site: s.site, name: s.name, offset})).catch(e => uiAlert(e.message)), 600);
 }
 $("offMinus").onclick = () => nudge(-0.2);
 $("offPlus").onclick = () => nudge(0.2);
@@ -1520,12 +1539,23 @@ $("btnEditSave").onclick = async () => {
     for (let k = i; k < j; k++) T[k] = +(a + (b - a) * (k - i + 1) / (j - i + 1)).toFixed(2);
     i = j;
   }
-  try { song = await post("/api/sync/save", {site: song.site, name: song.name, times: T, matched: editOk, offset: 0}); }
-  catch (e) { uiAlert(e.message); return; }
-  stopEdit(); times = song.sync.times; offset = 0; syncShell();
-  // the song's list mark is already updated (LOCAL.synced) — re-downloading the whole list (MBs on GitHub) left the load bar up
-  renderLyrics(); renderSyncChip(); renderList();
+  // user request 2026-11-17: spinner + "서버에 전송중..." on 저장, 취소 locked, the song doesn't move on until it's sent
+  sendingBtn($("btnEditSave"), true); $("btnEditCancel").disabled = true;
+  await SHELL.sending(async () => {
+    try { song = await post("/api/sync/save", {site: song.site, name: song.name, times: T, matched: editOk, offset: 0}); }
+    catch (e) { uiAlert(e.message); return; }
+    finally { sendingBtn($("btnEditSave"), false); $("btnEditCancel").disabled = false; }
+    stopEdit(); times = song.sync.times; offset = 0; syncShell();
+    // the song's list mark is already updated (LOCAL.synced) — re-downloading the whole list (MBs on GitHub) left the load bar up
+    renderLyrics(); renderSyncChip(); renderList();
+  });
 };
+/* sending state of a button that posts to the server (user request 2026-11-17: 신고 전송 · 싱크 저장) */
+function sendingBtn(b, on) {
+  if (on) { b.dataset.label = b.textContent; b.innerHTML = '<span class="sendspin" aria-hidden="true"></span>서버에 전송중...'; }
+  else if (b.dataset.label != null) { b.textContent = b.dataset.label; delete b.dataset.label; }
+  b.disabled = on; b.classList.toggle("sending", on);
+}
 
 /* ================= 원곡 영상 칸: 재생 중인 온라인 곡의 중계 플레이어(니코니코·유튜브)가 곧 영상 =================
    재생기(play_engine.js)가 중계 플레이어를 이 칸 위에 겹쳐 보임 (placeVideo). 영상을 숨기면 칸만 접음 — 소리는 그대로 */
@@ -1614,34 +1644,38 @@ let reportIt = null;  // 신고할 곡 (처음엔 지금 재생 중인 곡)
 // "신곡 추가 요청": no song is picked — the song search box becomes the requested song name.
 const REPORT_REQ = "신곡 추가 요청";
 const reportReq = () => $("reportKind").value === REPORT_REQ;
-// 기능제안 · 텍스트 대치 제안 (user request 2026-11-15): suggestions — a song is optional
+// 텍스트 대치 제안 · 개선 (user request 2026-11-15): suggestions — a song is optional (기능제안 removed 2026-11-17; 개선 takes its place)
 const REPORT_REPL = "텍스트 대치 제안";
-const reportIdea = () => ["기능제안", REPORT_REPL].includes($("reportKind").value);
+const reportIdea = () => ["개선", REPORT_REPL].includes($("reportKind").value);
 const reportRepl = () => $("reportKind").value === REPORT_REPL;
+let reportBusy = false;  // sending: the window stays open, 취소 locked (user request 2026-11-17)
 function reportCanSend() {
+  if (reportBusy) return;
   $("reportSend").disabled = !!(LOCAL.gh && !LOCAL.gh.write)  // 읽기만 되는 깃허브 토큰이면 보낼 수 없음
+    || !$("reportKind").value  // 종류 is required (user request 2026-11-17)
     || !$("reportWho").value.trim() || (reportReq() ? !$("reportQ").value.trim() : !reportIt && !reportIdea())
     || (reportRepl() && !$("reportFrom").value.trim());  // 텍스트 대치: 바꿀 글자는 꼭
 }
+// the picked song shows as the one picked row of the results list (user request 2026-11-17: no separate pre-picked field)
 function setReportSong(it) {
   reportIt = it;
   const playing = it && SHELL.now && keyOf(SHELL.now) === keyOf(it);
-  $("reportSong").innerHTML = it ? `${titleHtml(it)} <span class="hint">${esc(shortName(it.artist || ""))}${playing ? ` · 재생 위치 ${fmt(audio.currentTime)}` : ""}</span>`
-    : '<span class="hint">곡을 고르세요</span>';
+  $("reportList").innerHTML = it ? `<div class="ri sel">✓ ${titleHtml(it)} <span class="hint">${esc(shortName(it.artist || ""))}${playing ? ` · 재생 위치 ${fmt(audio.currentTime)}` : ""}</span></div>` : "";
   reportCanSend();
 }
 function reportKindChanged() {
   const req = reportReq();
   $("reportRepl").hidden = !reportRepl();
-  $("reportSongLabel").innerHTML = req ? "요청할 곡" : reportIdea() ? '관련된 곡 <span class="hint">(없어도 됨 — 곡과 상관없는 제안은 그대로 보내기)</span>'
-    : '어느 곡인가요 <span class="hint">(지금 재생 중인 곡 — 다른 곡이면 아래에서 찾아 고르기)</span>';
-  $("reportSong").hidden = req;
+  $("reportReqNote").hidden = !req;
+  $("reportSongLabel").innerHTML = req ? "요청할 곡" : reportIdea() ? '관련된 곡 <span class="hint">(없어도 됨)</span>' : "어느 곡인가요";
+  $("reportNow").hidden = req;
   $("reportQ").type = req ? "text" : "search";
   $("reportQ").placeholder = req ? "요청할 곡명 (제목·가수 — 영상 주소도 좋아요)" : "다른 곡 찾기 (제목·원제·가수)";
-  $("reportQ").value = ""; $("reportList").innerHTML = "";
-  setReportSong(req ? null : SHELL.now || cur);  // request: the picked song is cleared
-  if (req) $("reportQ").focus();
+  $("reportQ").value = "";
+  if (req) { setReportSong(null); $("reportQ").focus(); }  // request: the picked song is cleared
+  else setReportSong(reportIt);
 }
+$("reportNow").onclick = () => { const it = SHELL.now || cur; if (!it) return uiAlert("재생 중인 곡이 없습니다."); $("reportQ").value = ""; setReportSong(it); };
 $("reportKind").addEventListener("change", reportKindChanged);
 $("reportFrom").addEventListener("input", reportCanSend);
 /* 그림 붙이기 (user request 2026-11-15): 최대 5장 — Ctrl+V · 창에 끌어 놓기 · 파일 고르기. 보내기 전에 줄여서 (긴 변 1600px JPEG)
@@ -1722,10 +1756,9 @@ $("reportWho").addEventListener("input", () => { store.set("reportWho", $("repor
 let reportDiag = "";  // diagnostic log attached to a stall report (play_engine.js diag)
 function openReport(pre = {}) {
   $("reportWho").value = store.get("reportWho", "");
-  if (pre.kind) $("reportKind").value = pre.kind;
-  else if (reportReq() || $("reportKind").value === REPORT_STALL) $("reportKind").selectedIndex = 0;
+  $("reportKind").value = pre.kind || "";  // nothing picked at first (user request 2026-11-17)
+  reportIt = pre.it || null;
   reportKindChanged();
-  if (pre.it) setReportSong(pre.it);
   $("reportText").value = pre.text || "";
   $("reportFrom").value = $("reportTo").value = "";
   reportImgs = []; renderReportImages();
@@ -1737,7 +1770,7 @@ function openReport(pre = {}) {
   const ro = LOCAL.gh && !LOCAL.gh.write;
   $("reportSend").title = ro ? "읽기만 되는 토큰" : "";
   $("reportDlg").showModal();
-  $("reportText").focus();  // sender = the start nickname (field hidden — user request 2026-11-17)
+  $("reportKind").focus();  // sender = the start nickname (field hidden — user request 2026-11-17)
 }
 $("btnReport").onclick = () => openReport();
 $("sReport").onclick = () => openReport();  // 곡 검색 창 위에 열림 (dialog top layer)
@@ -1759,8 +1792,9 @@ $("reportQ").addEventListener("input", () => {
   const show = (hits, more) => {
     $("reportList").innerHTML = hits.map((it, i) => `<div class="ri" data-i="${i}">${titleHtml(it)} <span class="hint">${esc(shortName(it.artist || ""))}${it.deleted ? " · 삭제됨" : ""}${it.api ? " · VocaDB" : ""}</span></div>`).join("")
       + (more ? '<div class="hint">우리 DB 에서 찾는 중…</div>' : "") || (raw ? '<div class="hint">맞는 곡이 없습니다</div>' : "");
-    $("reportList").onclick = e => { const r = e.target.closest(".ri"); if (!r) return; setReportSong(LOCAL.remember(hits[+r.dataset.i])); $("reportQ").value = ""; $("reportList").innerHTML = ""; };
+    $("reportList").onclick = e => { const r = e.target.closest(".ri[data-i]"); if (!r) return; $("reportQ").value = ""; setReportSong(LOCAL.remember(hits[+r.dataset.i])); };
   };
+  if (!raw) { clearTimeout(reportFind.timer); return setReportSong(reportIt); }  // empty box: back to the picked song
   const local = raw ? allItems().filter(it => FKIND.text[1](it, fold(raw))).slice(0, 20) : [];
   show(local, !!raw && ONLINE);
   if (!raw || !ONLINE) return;
@@ -1768,14 +1802,17 @@ $("reportQ").addEventListener("input", () => {
   reportFind.timer = setTimeout(() => findSongs(raw, local).then(hits => { if (seq === reportSeq) show(hits, false); }), 400);
 });
 const reportFind = {timer: 0};
-$("reportCancel").onclick = () => $("reportDlg").close();
+$("reportCancel").onclick = () => { if (!reportBusy) $("reportDlg").close(); };
+$("reportDlg").addEventListener("cancel", e => { if (reportBusy) e.preventDefault(); });  // Esc can't close it while sending
 $("reportSend").onclick = async () => {
+  if (!$("reportKind").value) return;
   const it = reportReq() ? null : reportIt, req = reportReq() ? $("reportQ").value.trim() : "";
   if (!it && !req && !reportIdea()) return;
   // user request: reporting a deleted song is allowed, but ask first
   if (it && it.deleted && !await uiConfirm("해당 곡은 삭제됐습니다. 신고하시겠습니까?", "예")) return;
   const playing = it && SHELL.now && keyOf(SHELL.now) === keyOf(it);
-  $("reportSend").disabled = true;
+  reportBusy = true; sendingBtn($("reportSend"), true); $("reportCancel").disabled = true;
+  const done = () => { reportBusy = false; sendingBtn($("reportSend"), false); $("reportCancel").disabled = false; };
   try {
     nameHistAdd($("reportWho").value);
     await post("/api/report", {kind: $("reportKind").value, text: $("reportText").value, who: $("reportWho").value.trim(), request: req,
@@ -1784,7 +1821,8 @@ $("reportSend").onclick = async () => {
       // phone app: every report carries the playback log (user report 2026-11-16: S24 went silent after a page change — not seen elsewhere)
       diag: $("reportKind").value === REPORT_STALL ? reportDiag : APP.on ? playerDiag().split("\n").slice(-120).join("\n") : "", images: reportImgs,
       ...(reportRepl() ? {replace: {from: $("reportFrom").value.trim(), to: $("reportTo").value.trim()}} : {})});
-  } catch (e) { reportCanSend(); uiAlert(e.message); return; }
+  } catch (e) { done(); reportCanSend(); uiAlert(e.message); return; }
+  done();
   $("reportDlg").close();
   uiAlert("신고를 보냈습니다. 고맙습니다!");
 };
@@ -1902,6 +1940,7 @@ async function offlineOpened() {
   const rit = res && find(res.k), it = rit && canPlay(rit) ? rit : find(store.get("last", ""));
   showLoad("재생목록 여는 중…", 1);
   if (it && canPlay(it) && !SHELL.now) { if (it === rit) SHELL.resumeAt(it, res.t); play(it, it === rit, ""); }
+  qRestoreAfterReload(rit && it === rit ? rit : null);  // after an update reload: the queue as it was
   setTimeout(hideLoad, 150);
   if (typeof pnCheck === "function") setTimeout(() => pnCheck(true), 400);  // 패치노트: a new one pops up once (patch_notes.js)
 }

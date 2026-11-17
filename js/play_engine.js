@@ -522,10 +522,24 @@ function makePlayer(el) {
   /* ---- 끝·못 튼 곡 ---- */
   audio.volume = store.get("vol", 0.8);
   audio.addEventListener("volumechange", () => store.set("vol", audio.volume));
-  audio.addEventListener("ended", () => {
+  /* user request 2026-11-17: while a sync save is being sent the song never moves on — an end during the send waits,
+     and the next song plays once the send is done (P.sending wraps the send) */
+  let endedWhileSending = false;
+  const onEnd = () => {
     if (P.editing) return;  // 플레이어에서 싱크를 직접 맞추는 중이면 넘어가지 않음
+    if (P.holdEnd && P.holdEnd()) return;  // update waiting for this song's end (version_check.js): it reloads instead
     if (P.follow) return;  // 같이듣기 손님: 방장이 다음 곡으로 넘김 (listen_together.js)
     if (P.repeat === "one") { audio.currentTime = 0; audio.play(); } else P.next(true);
+  };
+  let sendingN = 0;
+  P.sending = async fn => {
+    sendingN++;
+    try { return await fn(); }
+    finally { if (!--sendingN && endedWhileSending) { endedWhileSending = false; onEnd(); } }
+  };
+  audio.addEventListener("ended", () => {
+    if (sendingN) { endedWhileSending = true; return; }
+    onEnd();
   });
   /* 온라인 곡을 못 틀면 (원곡 영상 삭제·비공개·퍼가기 금지 등) 화면 가운데 창에 남기고 다음 곡으로 — 멈추지 않고 계속 재생.
      창은 확인을 누를 때까지 떠 있고, 그사이 또 못 튼 곡은 같은 창 목록에 쌓임. 틀려던 곡이면 넘어감 (곡을 골랐거나 ▶ 를 누름 —
@@ -577,7 +591,9 @@ function makePlayer(el) {
      tab reloads or is restored, not shared with a new tab); on start-up the screen resumes it (P.takeResume). Paused = forget. */
   const RESUME_KEY = "player.resume", RESUME_MAX = 30 * 60 * 1000;
   let resumeSeek = null;  // {it, t}: the next P.load of that song starts there
+  let resumeFixed = false;  // P.resumeNext set what to play after the reload — keep it
   function saveResume() {
+    if (resumeFixed) return;
     try {
       if (P.now && !audio.paused && !P.follow && !P.editing)
         sessionStorage.setItem(RESUME_KEY, JSON.stringify({k: keyOf(P.now), t: audio.currentTime || 0, at: Date.now()}));
@@ -592,6 +608,11 @@ function makePlayer(el) {
     let r = null;
     try { r = JSON.parse(sessionStorage.getItem(RESUME_KEY) || "null"); sessionStorage.removeItem(RESUME_KEY); } catch (e) {}
     return r && r.k && Date.now() - r.at < RESUME_MAX ? r : null;
+  };
+  // update reload after the current song (version_check.js): the page comes back playing this song from the start
+  P.resumeNext = it => {
+    resumeFixed = true;
+    try { if (it) sessionStorage.setItem(RESUME_KEY, JSON.stringify({k: keyOf(it), t: 0, at: Date.now()})); else sessionStorage.removeItem(RESUME_KEY); } catch (e) {}
   };
   P.resumeAt = (it, t) => { resumeSeek = t > 3 ? {it, t: Math.max(0, t - 1)} : null; diag("resume", it.title, `t=${Math.round(t)}`); };
 

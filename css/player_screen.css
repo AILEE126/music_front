@@ -164,11 +164,19 @@ body.simple .item .thumb{display:none}  /* 간단 표시: 목록 썸네일 숨�
 #reportDlg .rlabel[hidden]{display:none}  /* 보내는 사람 = the start nickname (2026-11-17) */
 #reportDlg .rlabel{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);margin-bottom:8px}
 #reportDlg select,#reportQ,#reportWho{width:100%;box-sizing:border-box}
-.rsong{padding:6px 10px;border-radius:8px;background:var(--chip);color:var(--text)}
+#reportDlg .req,.rreq{color:#ff4d4f}  /* required mark · 신곡 추가 요청 note (user request 2026-11-17) */
+.rreq{margin:2px 0 0;font-size:12px}.rreq[hidden],#reportNow[hidden]{display:none}
+.rqrow{display:flex;gap:6px}.rqrow #reportQ{flex:1;min-width:0}
+#reportNow{flex:none;background:#fff;color:#111;border-color:#ccc}  /* 현재 곡: white (user request 2026-11-17) */
+#reportNow:hover{background:#eee}
 .rlist{max-height:180px;overflow:auto}
 .rlist .ri{padding:4px 8px;border-radius:6px;cursor:pointer;color:var(--text)}
 .rlist .ri:hover{background:var(--chip)}
-#reportText{width:100%;height:60px;min-height:48px;resize:vertical;box-sizing:border-box}  /* user request 2026-11-15: half as tall */
+.rlist .ri.sel{background:var(--chip);cursor:default}
+#reportText{width:100%;height:auto;min-height:48px;resize:vertical;box-sizing:border-box}  /* user request 2026-11-17: 5 lines (rows=5) */
+/* 서버에 전송중... (user request 2026-11-17: 신고 전송 · 싱크 저장) */
+button.sending{display:inline-flex;align-items:center;gap:6px;opacity:1}
+.sendspin{width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite;flex:none}
 /* 텍스트 대치 제안 · 그림 붙이기 (user request 2026-11-15) */
 #reportRepl[hidden]{display:none}
 .rrepl{display:flex;gap:6px;align-items:center}.rrepl input{flex:1;min-width:0}.rrepl span{color:var(--muted)}
@@ -932,6 +940,9 @@ body.m .songmeta{order:2}
 .pn-n{border-bottom:1px solid var(--line);padding:8px 0}
 .pn-n summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none}
 .pn-n summary::-webkit-details-marker{display:none}
+/* one fold per note (user request 2026-11-17): ▸ / ▾ */
+.pn-n summary::before{content:"▸";display:inline-block;width:12px;color:var(--muted);transition:transform .15s}
+.pn-n[open] summary::before{transform:rotate(90deg)}
 .pn-n summary span{color:var(--muted);font-size:12px}
 .pn-new{font-style:normal;font-size:10px;font-weight:700;padding:1px 6px;border-radius:9px;background:#ef4444;color:#fff}
 .pn-b{font-size:13px;line-height:1.55;padding-top:4px}
@@ -944,6 +955,10 @@ body.m .songmeta{order:2}
 .pn-b ol ul{margin:2px 0 4px;padding-left:18px}
 .pn-b ol ul li{font-size:13px;font-weight:400;color:var(--muted)}
 .pn-b p{margin:2px 0}
+/* 서버 · 웹 chips before a detail (user request 2026-11-17) */
+.pchip{display:inline-block;font-size:10.5px;font-weight:700;line-height:1;padding:3px 6px;border-radius:9px;margin-right:6px;vertical-align:1px;color:#fff}
+.pchip.sv{background:#2563eb}
+.pchip.web{background:#16a34a}
 .pn-b li.fold summary{cursor:pointer}
 .pn-b li.fold summary::marker{color:var(--muted)}
 .pn-b li.fold details:not([open]) summary::after{content:" 펼치기";font-size:11px;font-weight:400;color:var(--muted)}

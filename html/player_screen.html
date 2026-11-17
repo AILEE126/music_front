@@ -110,7 +110,7 @@
         <button class="ib mode" id="btnPlayQueue" title="재생 대기열 (다음에 틀 곡 · 지난 곡)" hidden></button>
         <span class="volpop"><button class="ib vol" id="btnMute" title="음소거 / 해제"></button><input type="range" class="bar-range" id="vol" min="0" max="1" step="0.01" value="0.8" title="음량"></span><!-- user request 2026-11-15: slider always shown right of the speaker · speaker = mute toggle -->
         <div class="songmeta" id="songMeta" hidden><div class="cats"><span class="b sync" id="syncChip">싱크 없음</span></div></div><!-- 싱크 표시 = first tag chip (user request 2026-11-15, was in the lyrics toolbar) -->
-        <button id="btnReport" title="곡의 문제 알리기 (싱크·가사·곡 정보·재생 등) · 기능제안 · 텍스트 대치 제안 — 음원 관리 › 오류 신고에 남음">오류신고 · 기능제안 · 텍스트 대치 제안</button><!-- user request: small underlined text at the right end · 기능제안 · 텍스트 대치 제안 2026-11-15 -->
+        <button id="btnReport" title="곡의 문제 알리기 (싱크·가사·곡 정보·재생 등) · 텍스트 대치 제안 — 음원 관리 › 오류 신고에 남음">오류신고 · 텍스트 대치 제안</button><!-- user request: small underlined text at the right end · 기능제안 · 텍스트 대치 제안 2026-11-15 -->
       </div>
     </div>
 
@@ -157,7 +157,7 @@
 <dialog id="mSetDlg" class="msetdlg"><!-- 폰 설정 (아래 메뉴 '설정', user request 2026-11-15) — mobile_view.js -->
   <div class="dlg-head hx">설정<button class="ib dlgx" data-set="close" title="닫기 (Esc)" aria-label="닫기">✕</button></div>
   <div class="dlg-body">
-    <button data-set="report">오류신고 · 기능제안 · 텍스트 대치 제안</button>
+    <button data-set="report">오류신고 · 텍스트 대치 제안</button>
     <button data-set="overlay">가사 · 오버레이 설정</button>
     <div class="msetsec">화면 크기</div>
     <div class="mset mzoom"><input type="range" id="mZoom" min="100" max="160" step="5" value="100" aria-label="화면 크기"><b id="mZoomVal">100%</b></div>
@@ -177,7 +177,7 @@
 
 
 <dialog id="searchDlg"><!-- 곡 검색 (user request 2026-11-14): VocaDB API + our songs — results are played or put in the playlist -->
-  <div class="dlg-head">곡 검색<span class="grow"></span><button id="sReport" class="rptlink" title="곡의 문제 알리기 (싱크·가사·곡 정보·재생 등) · 기능제안 · 텍스트 대치 제안 — 음원 관리 › 오류 신고에 남음">오류신고 · 기능제안 · 텍스트 대치 제안</button><!-- user request 2026-11-15: same button as the player's, in the search popup too --><button class="ib" id="sClose" title="닫기 (Esc)">✕</button></div>
+  <div class="dlg-head">곡 검색<span class="grow"></span><button id="sReport" class="rptlink" title="곡의 문제 알리기 (싱크·가사·곡 정보·재생 등) · 텍스트 대치 제안 — 음원 관리 › 오류 신고에 남음">오류신고 · 텍스트 대치 제안</button><!-- user request 2026-11-15: same button as the player's, in the search popup too --><button class="ib" id="sClose" title="닫기 (Esc)">✕</button></div>
   <div class="dlg-body">
     <div class="srow">
       <input type="search" id="sQ" placeholder="제목·원제·가수·프로듀서 (Enter)" autocomplete="off" spellcheck="false">
@@ -221,21 +221,24 @@
 <audio id="audioLocal" preload="metadata"></audio>
 
 <dialog id="reportDlg">
-  <div class="dlg-head">오류신고 · 기능제안 · 텍스트 대치 제안</div>
+  <div class="dlg-head">오류신고 · 텍스트 대치 제안</div>
   <div class="dlg-body">
     <label class="rlabel" hidden>보내는 사람<input type="text" id="reportWho" placeholder="이름 (다음에도 그대로)" autocomplete="off" spellcheck="false" maxlength="40"></label>
     <!-- user request 2026-11-15: kinds shortened to items (details go in the text) · 안 보는 동안 곡이 멈춤 stays for the automatic stall report only -->
-    <label class="rlabel">종류<select id="reportKind">
-      <option>가사</option><option>싱크</option><option>텍스트 대치 제안</option><option>버그</option><option>기능제안</option><option>개선</option>
+    <!-- user request 2026-11-17: required (red *), nothing picked at first, 곡 정보 on top, 기능제안 removed -->
+    <label class="rlabel"><span><span class="req">*</span> 종류</span><select id="reportKind">
+      <option value="" disabled hidden>종류를 고르세요</option>
+      <option>곡 정보</option><option>가사</option><option>싱크</option><option>텍스트 대치 제안</option><option>버그</option><option>개선</option>
       <option>신곡 추가 요청</option><option hidden>안 보는 동안 곡이 멈춤</option></select></label>
     <!-- 텍스트 대치 제안 (user request 2026-11-15): which text should become which (곡 제목 · 이름 · 태그 · 가사 …) -->
     <div class="rlabel" id="reportRepl" hidden>바꿀 글자
       <div class="rrepl"><input type="text" id="reportFrom" placeholder="지금 보이는 글자" autocomplete="off" spellcheck="false" maxlength="300"><span>→</span><input type="text" id="reportTo" placeholder="이렇게 바꿔 주세요" autocomplete="off" spellcheck="false" maxlength="300"></div></div>
-    <div class="rlabel"><span id="reportSongLabel">어느 곡인가요 <span class="hint">(지금 재생 중인 곡 — 다른 곡이면 아래에서 찾아 고르기)</span></span>
-      <div class="rsong" id="reportSong"></div>
-      <input type="search" id="reportQ" placeholder="다른 곡 찾기 (제목·원제·가수)" autocomplete="off" spellcheck="false">
-      <div class="rlist" id="reportList"></div></div>
-    <textarea id="reportText" spellcheck="false" placeholder="자세한 내용 (예: 2절부터 가사가 한 줄씩 밀림 · 1:20 쯤부터 재생이 멈춤 · 이런 기능이 있으면 좋겠음)"></textarea>
+    <!-- user request 2026-11-17: no pre-picked song — 현재 곡 (white, end of the search row) puts the playing song in the results as picked -->
+    <div class="rlabel"><span id="reportSongLabel">어느 곡인가요</span>
+      <div class="rqrow"><input type="search" id="reportQ" placeholder="다른 곡 찾기 (제목·원제·가수)" autocomplete="off" spellcheck="false"><button type="button" id="reportNow" title="지금 재생 중인 곡을 고름">현재 곡</button></div>
+      <div class="rlist" id="reportList"></div>
+      <p class="rreq" id="reportReqNote" hidden>* VocaDB에 검색이 되는 곡일경우 빠른 시일 내 추가예정</p></div>
+    <textarea id="reportText" rows="5" spellcheck="false" placeholder="자세한 내용 (예: 2절부터 가사가 한 줄씩 밀림 · 1:20 쯤부터 재생이 멈춤 · 이런 기능이 있으면 좋겠음)"></textarea>
     <!-- 그림 붙이기 (user request 2026-11-15): up to 5 — Ctrl+V or drop onto the dialog, or pick files -->
     <div class="rimgs" id="reportImgs"><div class="rimg-hint">그림 붙이기 (최대 5장) — <kbd>Ctrl</kbd>+<kbd>V</kbd> 로 붙여 넣거나 이 창에 끌어다 놓기 ·
       <button type="button" id="reportImgPick">파일 고르기</button><input type="file" id="reportImgFile" accept="image/*" multiple hidden></div><div class="rimg-list" id="reportImgList"></div></div>

@@ -81,19 +81,42 @@ function vcShow(sha) {
       : APP.on ? "지금 받으면 바뀐 화면이 나와요. (앱은 다시 설치하지 않아도 됩니다)"
       : again ? "새로고침했는데도 아직 예전 화면이에요 — 몇 분 뒤 다시 새로고침하거나 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> 를 눌러 주세요."
       : "지금 새로고침하면 바뀐 화면이 나와요. (안 바뀌면 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>)"}</span>
-    <span class="vc-btns"><button class="primary" id="vcReload">👉 ${APP.on ? "업데이트" : "강력 새로고침"}</button><button id="vcLater">나중에</button></span>`;
+    <span class="vc-btns"><button class="primary" id="vcReload">👉 현재 곡까지만 재생 후 ${APP.on ? "업데이트" : "강력 새로고침"}</button></span>`;
+  // user request 2026-11-17: no 나중에 button · the button hides the notice and reloads once the current song is over
   document.body.appendChild(box);
   try { box.showPopover(); } catch (e) { box.classList.add("vc-fallback"); }
-  // asks again on the next newer version (stale used to block every later check, so it never came back)
-  $("vcLater").onclick = () => { try { box.hidePopover(); } catch (e) {} box.remove(); VC.stale = false; };
-  $("vcReload").onclick = async () => {
-    $("vcReload").disabled = true; $("vcReload").textContent = "받는 중…";
-    if (APP.on) return location.replace("/index.html?update=1");  // the app's loader downloads the new files and opens them
-    try { sessionStorage.setItem("vcTried", sha); } catch (e) {}
-    // hard refresh: re-download every file into the browser cache, then reload
-    await Promise.all(vcFiles().map(f => fetch(f.url, {cache: "reload"}).catch(() => {})));
-    location.reload();
+  $("vcReload").onclick = () => {
+    try { box.hidePopover(); } catch (e) {} box.remove();
+    vcAfterSong(sha);
   };
+}
+/* reload when the current song is over: its end (the next song is played after the reload — P.resumeNext) or the song
+   changing (a 같이듣기 guest follows the host). Nothing playing → now. The 같이듣기 room survives (ltBeforeReload). */
+function vcAfterSong(sha) {
+  const playing = SHELL.now && (SHELL.follow ? typeof ltIntent === "function" && ltIntent() : !audio.paused);
+  if (!playing) return vcReload(sha);
+  const key = keyOf(SHELL.now);
+  let done = false;
+  // in OPEN CHANNEL the channel brings its own song back (ltChStart) — nothing of the channel's is resumed here
+  const go = it => { if (done) return; done = true; if (it || LT.chOn) SHELL.resumeNext(LT.chOn ? null : it); vcReload(sha); };
+  SHELL.holdEnd = () => {  // song over: don't start the next one here — the page comes back playing it
+    if (SHELL.follow) return false;
+    const nx = SHELL.repeat === "one" ? SHELL.now : SHELL.pinned[0] || SHELL.upcoming[0];
+    if (!nx) return false;  // next not known yet → let it move on, the change below reloads
+    go(nx); return true;
+  };
+  SHELL.subscribe(() => { if (SHELL.now && keyOf(SHELL.now) !== key) go(SHELL.follow ? null : SHELL.now); });
+}
+async function vcReload(sha) {
+  if (typeof ltBeforeReload === "function") ltBeforeReload();
+  // my own queue stays (user request 2026-11-17) — in the channel it is the one kept aside; a guest follows the host's
+  if (typeof qSaveForReload === "function" && !SHELL.follow) qSaveForReload(LT.chSave || {pinned: SHELL.pinned, upcoming: SHELL.upcoming, history: [...SHELL.history, ...(SHELL.now ? [SHELL.now] : [])]});
+  else if (typeof qSaveForReload === "function" && LT.chSave) qSaveForReload(LT.chSave);
+  if (APP.on) return location.replace("/index.html?update=1");  // the app's loader downloads the new files and opens them
+  try { sessionStorage.setItem("vcTried", sha); } catch (e) {}
+  // hard refresh: re-download every file into the browser cache, then reload
+  await Promise.all(vcFiles().map(f => fetch(f.url, {cache: "reload"}).catch(() => {})));
+  location.reload();
 }
 
 setTimeout(() => vcCheck(true), 4000);

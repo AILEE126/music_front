@@ -11,7 +11,8 @@ const pnUnread = () => PN.notes.filter(n => n.id > pnSeen());
 const pnName = () => document.querySelector(".side-head h1");
 
 /* body text → html: '## x' sub title · '- x' item · other lines plain (same rules as the manage screen) */
-const pnInline = t => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");  // **글자** → bold
+const pnInline = t => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")  // **글자** → bold
+  .replace(/^\[(서버|웹)\]\s*/, (m, w) => `<span class="pchip ${w === "서버" ? "sv" : "web"}">${w}</span>`);  // where: 서버 blue · 웹 green (user request 2026-11-17)
 function pnHtml(text) {
   // '- x' item · '  - x' (indented) detail under the item above (user request 2026-11-17: feature + its details)
   let html = "", lvl = 0, top = null;  // top: feature line not written yet (it becomes a fold when details follow)
@@ -23,7 +24,7 @@ function pnHtml(text) {
     if (h) { close(0); html += `<h4>${pnInline(h[1])}</h4>`; }
     else if (li && li[1].length >= 2) {
       if (lvl === 0) { html += "<ol>"; lvl = 1; top = ""; }
-      if (lvl === 1) { html += `<li class="fold"><details><summary>${top || ""}</summary><ul>`; top = null; lvl = 2; }
+      if (lvl === 1) { html += `<li class="fold"><details open><summary>${top || ""}</summary><ul>`; top = null; lvl = 2; }
       html += `<li>${pnInline(li[2])}</li>`;
     } else if (li) {
       close(1);
@@ -69,8 +70,8 @@ function pnShow(all) {
   wrap.className = "pn-wrap";
   wrap.innerHTML = `<div class="pn-back"></div><div class="pn-box" role="dialog" aria-modal="true" aria-label="패치노트">
     <div class="pn-head"><b>패치노트</b><button class="ib pn-x" title="닫기" aria-label="닫기">✕</button></div>
-    <div class="pn-list">${list.map((n, i) => note(n, i === 0 || unread.has(n.id))).join("") || '<p class="pn-none">아직 패치노트가 없습니다.</p>'}
-      ${older.length ? `<div class="pn-old">지난 패치노트</div>${older.map(n => note(n, false)).join("")}` : ""}</div></div>`;
+    <div class="pn-list">${list.map((n, i) => note(n, true)).join("") || '<p class="pn-none">아직 패치노트가 없습니다.</p>'}
+      ${older.length ? `<div class="pn-old">지난 패치노트</div>${older.map(n => note(n, true)).join("")}` : ""}</div></div>`;
   document.body.appendChild(wrap);
   PN.open = true; pnDot();
   const box = wrap.querySelector(".pn-box"), back = wrap.querySelector(".pn-back");
