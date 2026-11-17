@@ -12,7 +12,7 @@ const pnName = () => document.querySelector(".side-head h1");
 
 /* body text → html: '## x' sub title · '- x' item · other lines plain (same rules as the manage screen) */
 const pnInline = t => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")  // **글자** → bold
-  .replace(/^\[(서버|웹)\]\s*/, (m, w) => `<span class="pchip ${w === "서버" ? "sv" : "web"}">${w}</span>`);  // where: 서버 blue · 웹 green (user request 2026-11-17)
+  .replace(/^\[(서버|웹)\]\s*/, (m, w) => w === "서버" ? '<span class="pchip sv">서버</span>' : "");  // only 서버 gets a chip — 웹 not shown (user request 2026-11-17)
 function pnHtml(text) {
   // '- x' item · '  - x' (indented) detail under the item above (user request 2026-11-17: feature + its details)
   let html = "", lvl = 0, top = null;  // top: feature line not written yet (it becomes a fold when details follow)
