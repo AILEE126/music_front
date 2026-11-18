@@ -1,0 +1,141 @@
+/* 곡 검색 창 — 검색 실행 · 정렬 · 결과 목록 · 다른 창용 곡 찾기 (findSongs). 필터는 filter_panel.js.
+   player_screen.js 를 나눈 조각 (user request 2026-11-18) */
+/* ================= 곡 검색 창 (user request 2026-11-14) =================
+   our DB only (export/db — the tables on GitHub; user request 2026-11-14: no VocaDB API, so every match can be played):
+   전체 곡 (every collected song) · 노래방 곡만 · 가사·싱크 있는 곡. Results: ▶ play now · ＋ playlist · ⤵ next · 결과 모두 = every match */
+const S = {items: [], q: ""};
+const S_SCOPES = ["all", "kara", "ours"];
+if (!S_SCOPES.includes(store.get("sScope", "all"))) store.set("sScope", "all");  // was 'vocadb' (VocaDB 전체)
+for (const id of ["sScope", "sSort"]) { $(id).value = store.get(id, $(id).value); $(id).onchange = () => { store.set(id, $(id).value); if (id === "sScope") { renderSortOptions(); renderFilterOptions(); } runSearch(); }; }
+/* the window first, the slow part after (user request 2026-11-15: building the song list took a while with nothing on
+   screen) — a spinner over the window meanwhile, also while the song list is still being read (VDB.full) */
+function withBusy(dlg, work) {
+  dlg.classList.add("busy");
+  setTimeout(async () => {  // a moment to draw the window first
+    try { await searchBase(); await work(); } finally { dlg.classList.remove("busy"); }
+  }, 40);
+}
+function openSearch() {
+  sfDefaultGroup();  // a group is always there to put conditions in (user request 2026-11-14)
+  $("searchDlg").showModal();
+  $("sQ").focus(); $("sQ").select();
+  withBusy($("searchDlg"), async () => { await warmCats(yieldUI); renderSortOptions(); renderFilterOptions(); if (!S.items.length) runSearch(); });
+}
+$("btnSearch").onclick = openSearch;
+$("sClose").onclick = () => $("searchDlg").close();
+$("searchDlg").addEventListener("click", e => { if (e.target === $("searchDlg")) $("searchDlg").close(); });  // outside the box
+$("sGo").onclick = () => runSearch();
+let sTimer = 0;
+$("sQ").addEventListener("input", () => { clearTimeout(sTimer); sTimer = setTimeout(runSearch, 200); });  // as you type (local, no request)
+/* small song finder for the report dialog and the listen-together request box: the songs given (already known) first,
+   then matches from our whole DB — no duplicates */
+async function findSongs(q, known = [], max = 40) {
+  const v = fold(q), seen = new Set(), out = [];
+  // in steps — the whole DB in one go stalled the screen while typing
+  if (v) await searchBase();
+  const db = v ? (await chunkFilter(VDB.all(), it => FKIND.text[1](it, v), yieldUI)).sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, max) : [];
+  for (const it of [...known, ...db]) if (!seen.has(keyOf(it))) { seen.add(keyOf(it)); out.push(it); }
+  return out.slice(0, max);
+}
+/* the scope's songs: 전체 곡 = our whole DB · 노래방 곡만 · 가사·싱크 있는 곡 = our songs —
+   kept until the scope or the song data changes (same array → the categories · sorted order below are reused) */
+let scopeMemo = {};
+const scopeItems = () => {
+  const sc = $("sScope").value, all = VDB.all(), cur = VDB.curated;
+  if (scopeMemo.sc !== sc || scopeMemo.all !== all || scopeMemo.cur !== cur)
+    scopeMemo = {sc, all, cur, its: sc === "kara" ? cur.filter(it => it.karaoke) : sc === "ours" ? cur.filter(it => !!(it.lyrics || it.sync)) : all};
+  return scopeMemo.its;
+};
+/* 검색이 화면을 멈추지 않게 (user request 2026-11-16: 필터를 걸고 뺄 때마다 화면이 잠깐 멈춤 — 목록 칸에만 도는 표시):
+   정렬은 범위·정렬이 바뀔 때만 (정렬해 둔 범위 곡을 거르면 순서가 그대로라 다시 정렬할 일 없음) · 카테고리도 범위가 바뀔 때만 ·
+   거르기 · 정렬은 조금씩 나눠 하면서 화면에 차례를 넘김. 하는 사이 다시 바꾸면 하던 건 버림 (searchGen) */
+const STALE = {};
+let searchGen = 0, sortMemo = new WeakMap();  // scope songs → {key: sort, out: sorted}
+/* give the screen a turn (input · drawing · the player's timers) — not setTimeout: clamped to 4 ms, and far slower in a hidden
+   tab. Not scheduler.yield either (user request 2026-11-18, heat · lag): it puts the rest ahead of every other task, so a
+   search or the 6 s warm-up held back the player's timers (lyrics · video box) — a posted message waits in line with them */
+const yieldUI = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); });
+function searchTick(gen) {
+  let last = performance.now();
+  return async () => {
+    if (performance.now() - last > 12) { await yieldUI(); last = performance.now(); }
+    if (gen !== searchGen) throw STALE;
+  };
+}
+/* stable merge sort that yields (Array.sort of 14만 곡 by title takes about a second in one go) */
+async function sortAsync(a, cmp, tick) {
+  const n = a.length, R = 32;
+  let src = a.slice(), dst = new Array(n), ops = 0;  // ops: comparisons since the last tick
+  for (let s = 0; s < n; s += R) {
+    const e = Math.min(s + R, n);
+    for (let i = s + 1; i < e; i++) { const x = src[i]; let j = i - 1; while (j >= s && cmp(src[j], x) > 0) { src[j + 1] = src[j]; j--; ops++; } src[j + 1] = x; ops++; }
+    if (ops > 2048) { ops = 0; await tick(); }
+  }
+  for (let w = R; w < n; w *= 2) {
+    for (let s = 0; s < n; s += 2 * w) {
+      const m = Math.min(s + w, n), e = Math.min(s + 2 * w, n);
+      let i = s, j = m, k = s;
+      while (i < m && j < e) { dst[k++] = cmp(src[j], src[i]) < 0 ? src[j++] : src[i++]; if (++ops > 2048) { ops = 0; await tick(); } }
+      while (i < m) dst[k++] = src[i++];
+      while (j < e) dst[k++] = src[j++];
+    }
+    [src, dst] = [dst, src];
+  }
+  return src;
+}
+async function sortedScope(tick) {
+  const its = scopeItems(), key = $("sSort").value, m = sortMemo.get(its);
+  if (m && m.key === key) return m.out;
+  const out = await sortAsync(its, ourCmp(), tick);
+  sortMemo.set(its, {key, out});
+  return out;
+}
+/* 재생 가능 세기: 곡마다 영상 주소 풀이는 한 번만 (deleted 는 그때그때) */
+const refsN = new WeakMap();
+const playableFast = it => it.site !== "stream" ? canPlay(it) : !it.deleted && (refsN.has(it) ? refsN.get(it) : (refsN.set(it, streamRefs(it).length), refsN.get(it))) > 0;
+/* 목록 칸의 도는 표시 — 금방 끝나면 안 보이게 조금 뒤에 */
+let busyTimer = 0;
+function listBusy(on) {
+  const b = $("sBusy"); if (!b) return;  // page from before the 2026-11-16 html (cached) — no marker, search still works
+  clearTimeout(busyTimer);
+  if (on) busyTimer = setTimeout(() => { b.hidden = false; }, 120); else b.hidden = true;
+}
+/* keep: stay where the list is (user request 2026-11-14: a song action — e.g. '현재 필터에 추가' — never jumps to the top) */
+async function runSearch(keep) {
+  const gen = ++searchGen, tick = searchTick(gen);
+  listBusy(true);
+  await searchBase();  // typed before the song list was all read
+  const q = $("sQ").value.trim(), v = fold(q);
+  S.q = q;
+  try {
+    let its = await filterGroupsAsync(await sortedScope(tick), FG.filter(fReal), tick);
+    if (v) its = await chunkFilter(its, it => FKIND.text[1](it, v), tick);
+    const nPlay = (await chunkFilter(its, playableFast, tick)).length;
+    S.items = its;
+    if (!keep) $("sList").scrollTop = 0;
+    // 검색결과 N곡 · 재생 가능 M곡 (user request 2026-11-15: songs without a video are found but can't go in the playlist)
+    renderSearch(`검색결과 ${its.length.toLocaleString()}곡 · 재생 가능 ${nPlay.toLocaleString()}곡${q ? ` — "${q}"` : ""}`);
+  } catch (e) { if (e !== STALE) throw e; }
+  finally { if (gen === searchGen) listBusy(false); }
+}
+function renderSearch(info) {
+  const st = $("sList").scrollTop;  // runSearch already put it at 0 when it should go to the top
+  $("sInfo").textContent = info;
+  $("sMakePl").disabled = !S.items.some(canPlay);
+  const inPl = new Set(SHELL.queue.map(keyOf)), show = S.items.slice(0, 300), inF = new Set(fSongIds());
+  $("sList").innerHTML = show.map((it, i) => {
+    // no karaoke numbers in the results (user request 2026-11-15: 노래방 모드 shows them)
+    // 우리 곡 표시 · 곡 종류 · 보컬 인원수 — 하위 태그 색이 있으면 그 색 (user request 2026-11-15: 인원수도 태그로 보이게)
+    const own = it.api ? "" : it.sync === "ok" ? tagChipHtml("flag", "싱크 있음", "싱크", "src", "우리 데이터가 있는 곡")
+      : it.lyrics ? tagChipHtml("flag", "우리 가사 있음", "가사", "src", "우리 데이터가 있는 곡") : `<span class="b src" title="우리 데이터가 있는 곡">노래방</span>`;
+    const tk = it.type ? VDB_TYPE_KO[it.type] || it.type : "", vc = vcountOf(it);
+    return `<div class="sitem${canPlay(it) ? "" : " gone"}" data-i="${i}">${coverHtml(it, "thumb")}
+      <div class="meta"><div class="t">${titleHtml(it)}</div>
+        <div class="a">${esc(shortName(it.artist || ""))}</div>
+        <div class="tags">${own}${tk ? tagChipHtml("type", tk, tk, "", "곡 종류") : ""}${vc ? tagChipHtml("vcount", vc, vcountLabel(vc), "", "보컬 인원수") : ""}${it.date ? `<span class="d">${esc(it.date)}</span>` : ""}</div></div>
+      <div class="sacts">${inPl.has(keyOf(it)) ? `<span class="sin" title="재생목록에 있는 곡">✓</span>` : ""}${inF.has(songId(it)) ? `<span class="sin f" title="필터에 넣은 곡">${FILT_SVG}</span>` : ""}`
+        + `<button class="ib smore" data-a="more" title="곡 옵션" aria-label="곡 옵션">${MORE_SVG}</button></div></div>`;
+  }).join("") + (S.items.length > show.length ? `<div class="hint">… ${(S.items.length - show.length).toLocaleString()}곡 더 ('상위 … 곡 재생목록 만들기' 는 이 곡들까지 셈)</div>` : "")
+    || `<div class="empty">맞는 곡이 없습니다.</div>`;
+  $("sList").scrollTop = st;
+}

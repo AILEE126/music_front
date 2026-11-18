@@ -1,5 +1,5 @@
 /* 플레이어(서버 없이 html 을 바로 엶)가 우리 곡(노래방·가사·싱크)·한글 이름·가사·싱크·영상 연결·오버레이 파일·오류 신고를 읽고 쓰는 곳 (LOCAL).
-   곡 검색은 VocaDB API (vocadb_api.js) — 전체 곡 목록은 받지 않음 (user request 2026-11-14).
+   곡 목록·곡 검색은 우리 DB (export/db — vocadb_api.js), VocaDB API 는 가사만.
    읽는 곳 둘 중 하나:
    · 깃허브에서 열기: 비공개 저장소를 토큰으로 (GitHub API — 폴더를 고르지 않아 회사 보안 프로그램에 안 걸림). 저장은 그 저장소에 커밋
    · 폴더 고르기 (서버 PC 만): 처음 한 번 고른 Server\data 폴더(곡 정보 파일만 — csv·json·txt)에서 계속 읽고 씀 — 브라우저 폴더 권한
@@ -14,8 +14,8 @@ const CRLF = "\r\n", LF = "\n";
 const GH_API = "https://api.github.com";
 const DATA_REPO_DIR = "Server/data/";  // data folder in the repo / program folder (moved out of WEB so WEB = player code only)
 const DATA_BRANCH = "data";  // branch holding Server/data (server: Server/web_api/data_git_publish.py)
-// No full song list and no old files any more (user request 2026-11-14): songs come from the VocaDB API (vocadb_api.js);
-// from the data branch only the files the server makes from its tables — export/db/ (master · karaoke · songs · lyrics/<id>).
+// No old files any more (user request 2026-11-14): from the data branch only the files the server makes from its tables —
+// export/db/ (master · karaoke · songs · lyrics/<id> …, read by vocadb_api.js).
 // Server: music_backend Server/vocadb/table_export.py
 /* 깃허브 API 로 보낼 파일 내용 (base64 — 한글이 깨지지 않게 UTF-8 바이트로) */
 function b64utf8(text) {
@@ -76,7 +76,7 @@ const LOCAL = {
     repo = String(repo || "").trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/$/, "");
     token = String(token || "").trim();
     if (repo.split("/").length !== 2 || !token) throw new Error("저장소(아이디/저장소)와 토큰을 넣으세요.");
-    this.progress("깃허브에 연결하는 중…", 0.05);
+    this.progress("깃허브에 연결하는 중…");
     let r;
     try { r = await fetch(`${GH_API}/repos/${repo}`, {headers: {Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json"}, cache: "no-store"}); }
     catch (e) { throw new Error("깃허브에 연결하지 못했습니다. 인터넷·회사 보안 프로그램을 확인하세요."); }
@@ -185,29 +185,8 @@ const LOCAL = {
     } catch (e) {}
     return 0;
   },
-  /* 화면 가운데 로딩 막대에 알림 (플레이어 화면이 progress 를 바꿔 끼움) — label, 0~1 (null: 얼마나 남았는지 모름) */
-  progress(label, frac) {},
-  /* 큰 파일 읽기 + 받은 만큼 알림 (from~to 구간을 채움). 깃허브는 받는 중인 크기를 보며, 전체 크기를 모르면 받은 MB 만 */
-  async readTextP(path, label, from, to) {
-    if (!this.gh) { this.progress(label + "…", from); return this.readText(path); }  // 서버·폴더: 금방 읽음
-    const r = await this.ghFetch(path, {raw: true});
-    const total = +r.headers.get("Content-Length") || 0, gz = /gzip|br|deflate/.test(r.headers.get("Content-Encoding") || "");
-    if (!r.body || !r.body.getReader) return r.text();
-    const rd = r.body.getReader(), parts = [];
-    let got = 0;
-    for (;;) {
-      const {done, value} = await rd.read();
-      if (done) break;
-      parts.push(value); got += value.length;
-      const mb = (got / 1048576).toFixed(1);
-      const f = total && !gz && got <= total ? got / total : null;
-      this.progress(`${label}… ${mb}MB${f != null ? ` / ${(total / 1048576).toFixed(1)}MB` : ""}`, f != null ? from + (to - from) * f : null);
-    }
-    const buf = new Uint8Array(got);
-    let o = 0;
-    for (const p of parts) { buf.set(p, o); o += p.length; }
-    return new TextDecoder().decode(buf);
-  },
+  /* 여는 중 알림 (플레이어 화면이 바꿔 끼움 — 짧은 글 한 줄) */
+  progress(label) {},
   async readText(path) {
     if (this.gh) return (await this.ghFetch(path, {raw: true})).text();
     return (await (await this.file(path)).getFile()).text();
@@ -275,8 +254,8 @@ const LOCAL = {
     const body = opt.body ? JSON.parse(opt.body) : {};
     const post = (opt.method || "GET") === "POST";
     if (!post && u.pathname === "/api/library") return this.library();
-    // 곡 하나에 대한 요청인데 우리 곡을 아직 안 읽음: 한 번 읽어 둠
-    if ((q.name || body.name) && !this.items.size) await (this.itemsP = this.itemsP || this.library().finally(() => { this.itemsP = null; }));
+    // 곡 하나에 대한 요청인데 곡 목록을 여는 중: 그걸 기다림
+    if ((q.name || body.name) && this.libP) await this.libP.catch(() => {});
     if (!post && u.pathname === "/api/lyrics") return this.lyrics(q.site, q.name);
     if (!post && u.pathname === "/api/stream/views") return this.streamViews(q.name);
     if (post && u.pathname === "/api/report") return this.saveReport(body);
@@ -315,28 +294,25 @@ const LOCAL = {
     return {views: ref && ref.kind === "nico" ? await nicoViews(ref.id) : null};
   },
   item(site, name) {
-    let it = this.items.get(site + "/" + name);
-    // a collected song without lyrics of ours is made from the song list on demand (VDB.itemById) and was never registered
-    // here — its lyrics failed with this error (user report 2026-11-16, playlist songs after the DB update)
-    const m = !it && site === "stream" && /^vocadb_(\d+)$/.exec(name), v = m && VDB.itemById(m[1]);
-    if (v) it = this.remember(v);
+    // our DB songs: always the item VDB made (one object per song, also for blocks read after the screen opened —
+    // user report 2026-11-16: playlist songs failed here when only remembered ones were looked up)
+    const m = site === "stream" && /^vocadb_(\d+)$/.exec(name);
+    const it = (m && VDB.itemById(m[1])) || this.items.get(site + "/" + name);
     if (!it) throw new Error("곡을 찾을 수 없습니다.");
     return it;
   },
   /* songs met outside our list (VocaDB search · playlist · listen together) — lyrics · reports look them up by name */
   remember(it) { if (it && !this.items.has(it.site + "/" + it.name)) this.items.set(it.site + "/" + it.name, it); return it; },
 
-  /* 우리 곡·이름은 표에서만 (user request 2026-11-14 — 예전 파일은 안 읽음): export/db 의 master · karaoke · songs (vocadb_api.js) */
-  async library() {
-    this.progress("우리 곡(노래방·가사·싱크)·한글 이름 읽는 중…", 0.3);
-    const items = await VDB.load();
-    for (const it of items) {
-      this.items.set(it.site + "/" + it.name, it);
-      Object.assign(it, this.synced.get(it.site + "/" + it.name) || {});  // 이번에 서버 없이 맞춘 싱크
-    }
-    if (typeof warmSearch === "function") { this.progress("곡 검색 준비 중…", 0.9); await warmSearch(); }  // player_screen.js (no stall on the first search)
-    if (typeof ltChReady === "function") setTimeout(ltChReady, 0);  // 같이듣기: OPEN CHANNEL is known now (filter.json channel)
-    return {items, sync_ready: true};
+  /* 우리 곡·이름은 표에서만 (user request 2026-11-14 — 예전 파일은 안 읽음): export/db (vocadb_api.js).
+     Only what the first screen needs (user request 2026-11-18): the small files + the blocks of these songs (ids — the last
+     song); the screen then runs VDB.loadRest() in the background */
+  library(ids = []) {
+    return this.libP = (async () => {
+      await VDB.load();
+      await VDB.ensure(ids);
+      return {items: VDB.curated, sync_ready: true};
+    })();
   },
 
   /* 가사: 우리 가사 (export/db/lyrics/<VocaDB 번호>.json — 서버가 가사 표·싱크 표에서 만듦) → 없으면 VocaDB 가사 (API).
@@ -380,8 +356,7 @@ const LOCAL = {
         .then(gz => new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).json()).catch(() => ({})));
       const s = (await this._readBlocks.get(b))[String(id)];
       if (!s || s.r.length !== v.g.length) return v;
-      const sha = new Uint8Array(await crypto.subtle.digest("SHA-1", new TextEncoder().encode(v.g.map(x => x[0]).join("\n"))));
-      if ([...sha].map(x => x.toString(16).padStart(2, "0")).join("").slice(0, 16) !== s.h) return v;
+      if (await sha16(v.g.map(x => x[0]).join("\n")) !== s.h) return v;
       let ri = v.roles.indexOf("r");
       const g = v.g.map(xs => xs.slice()), roles = v.roles.slice(), langs = (v.langs || roles.map(() => "")).slice();
       if (ri < 0) { ri = 1; roles.splice(1, 0, "r"); langs.splice(1, 0, ""); g.forEach(xs => xs.splice(1, 0, "")); }
@@ -487,8 +462,10 @@ function pyJson(obj, eol = /Windows/.test(navigator.userAgent) ? CRLF : LF) {
   }, 1).replace(/"\\u0001(.*?)\\u0001"/g, "$1").replace(/\n/g, eol);
 }
 /* 가사 묶음 확인값: 서버 lyrics_hash 와 같음 (원문 줄들을 줄바꿈으로 이은 글의 SHA-1 앞 16자리) */
-async function lyricsHash(groups) {
-  const buf = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(groups.map(g => g.orig).join("\n")));
+const lyricsHash = groups => sha16(groups.map(g => g.orig).join("\n"));
+/* first 16 hex of SHA-1 (the server's lyrics_hash · reading h) */
+async function sha16(text) {
+  const buf = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(text));
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
 }
 /* the hash a sync of this lyrics doc must carry: our lyrics file → the server's (its sync); VocaDB lyrics → made from the lines
@@ -497,8 +474,4 @@ async function syncHash(d) {
   return d.sync && d.lyrics_kind !== "vocadb" ? d.sync.lyrics_hash : lyricsHash(d.groups);
 }
 
-function nowText() {  // '2026-11-08 15:20:03' (서버 메모 시각과 같은 모양)
-  const d = new Date(), z = n => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`;
-}
 

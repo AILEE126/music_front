@@ -216,37 +216,69 @@ function passGroups(it, groups) {
 function countBy(listOfLists) {
   const m = new Map();
   for (const xs of listOfLists) for (const x of xs) m.set(x, (m.get(x) || 0) + 1);
-  return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko"));
+  return sortCounts(m);
 }
+/* {value: count} → [[value, count]] most first, then 가나다 */
+const KO_COLLATE = new Intl.Collator("ko").compare;
+const sortCounts = m => [...m.entries()].sort((a, b) => b[1] - a[1] || KO_COLLATE(a[0], b[0]));
 /* 곡들에서 고를 수 있는 카테고리 [{id, label, k: 조건 종류, rows: [[값, 곡 수]], lab: 값 표시}] — 가나다순 · 값이 하나도 없는 카테고리는 뺌.
    가사·싱크 상태도 카테고리 하나 (online: 온라인 곡이면 가사 상태는 빼고 싱크 상태만).
    태그: 노래방 목록은 값만(한국·일본), 그 밖 태그는 분류(tagGroupOf)마다 카테고리 하나 —
    음성 합성 엔진·아티스트는 보컬·프로듀서 카테고리와 같아서 뺌 */
+/* counted in one pass over the songs (add), the categories made at the end (done) — filterCatsAsync gives the screen its
+   turns in between (user request 2026-11-18: counting 25만 곡 at once stalled the player 1.5 s) */
+function filterCatsCounter(online) {
+  const m = {ini: new Map(), singer: new Map(), vcount: new Map(), vkind: new Map(), composer: new Map(), kara: new Map(), tags: new Map(),
+             cat: new Map(), year: new Map(), state: new Map(), flag: new Map()};
+  const inc = (map, x) => map.set(x, (map.get(x) || 0) + 1);
+  const states = Object.keys(STATES).filter(k => !online || !/^(lyrics|nolyrics|src:)/.test(k));  // 온라인: 싱크 상태만 (가사는 그때 읽음)
+  return {
+    add(it) {
+      inc(m.ini, it._ini);
+      for (const x of it._singers) inc(m.singer, x);
+      const vc = vcountOf(it); if (vc) inc(m.vcount, vc);
+      inc(m.vkind, vkindOf(it));
+      for (const x of it._composers) inc(m.composer, x);
+      for (const t of it.tags || []) if (ONOFF_LISTS.includes(t)) inc(m.kara, t);
+      for (const t of it.tags || []) if (!ONOFF_LISTS.includes(t)) inc(m.tags, t);
+      for (const c of it.categories || []) inc(m.cat, c);
+      if (it._year) inc(m.year, it._year);
+      for (const k of states) if (FKIND.state[1](it, k)) inc(m.state, k);
+      for (const f of it.flags || []) inc(m.flag, f);
+    },
+    done() {
+      const cats = [], add = (id, label, k, rows, lab = x => x) => { if (rows.length) cats.push({id, label, k, rows, lab}); };
+      const order = new Map(INITIALS.map((x, i) => [x, i]));  // 제목 첫 글자 (ㄱ~ㅎ · A~Z · 0-9 · 기호 순)
+      add("ini", "가나다", "ini", sortCounts(m.ini).sort((a, b) => order.get(a[0]) - order.get(b[0])));
+      add("singer", "보컬", "singer", sortCounts(m.singer), shortName);
+      add("vcount", "보컬 인원수", "vcount", sortCounts(m.vcount).sort((a, b) => parseInt(a[0]) - parseInt(b[0])), vcountLabel);
+      add("vkind", "보컬 종류", "vkind", VKINDS.filter(v => m.vkind.has(v)).map(v => [v, m.vkind.get(v)]));
+      add("composer", "프로듀서", "composer", sortCounts(m.composer), shortName);
+      add("kara", "노래방", "kara", ONOFF_LISTS.filter(t => m.kara.has(t)).map(t => [t, m.kara.get(t)]), t => t === "한국" || t === "일본" ? `${t} 전체` : t);  // 한국·일본 목록 + 브랜드
+      const groups = new Map();
+      for (const [k, n] of sortCounts(m.tags)) { const g = tagGroupOf(k); if (/^(음성 합성 엔진|아티스트)$/.test(g)) continue; (groups.get(g) || groups.set(g, []).get(g)).push([k, n]); }
+      for (const [g, rows] of groups) add("tag:" + g, g || "태그", "tag", rows);
+      add("cat", "나무위키 분류", "cat", sortCounts(m.cat));
+      add("year", "투고년도", "year", sortCounts(m.year).sort((a, b) => b[0].localeCompare(a[0])), k => k + "년");
+      add("state", "가사·싱크 상태", "state", states.filter(k => m.state.has(k)).map(k => [k, m.state.get(k)]), k => STATES[k]);
+      add("flag", "곡 상태", "flag", FLAGS.filter(f => m.flag.has(f)).map(f => [f, m.flag.get(f)]));
+      return cats.sort((a, b) => a.label.localeCompare(b.label, "ko"));  // 대분류는 가나다순
+    },
+  };
+}
 function filterCats(its, online) {
-  const cats = [], add = (id, label, k, rows, lab = x => x) => { if (rows.length) cats.push({id, label, k, rows, lab}); };
-  const ini = countBy(its.map(it => [it._ini])), order = new Map(INITIALS.map((x, i) => [x, i]));  // 제목 첫 글자 (ㄱ~ㅎ · A~Z · 0-9 · 기호 순)
-  add("ini", "가나다", "ini", ini.sort((a, b) => order.get(a[0]) - order.get(b[0])));
-  add("singer", "보컬", "singer", countBy(its.map(it => it._singers)), shortName);
-  add("vcount", "보컬 인원수", "vcount", countBy(its.map(it => vcountOf(it) ? [vcountOf(it)] : [])).sort((a, b) => parseInt(a[0]) - parseInt(b[0])), vcountLabel);
-  const vk = new Map(countBy(its.map(it => [vkindOf(it)])));
-  add("vkind", "보컬 종류", "vkind", VKINDS.filter(v => vk.has(v)).map(v => [v, vk.get(v)]));
-  add("composer", "프로듀서", "composer", countBy(its.map(it => it._composers)), shortName);
-  const kara = new Map(countBy(its.map(it => (it.tags || []).filter(t => ONOFF_LISTS.includes(t)))));  // 한국·일본 목록 + 브랜드
-  add("kara", "노래방", "kara", ONOFF_LISTS.filter(t => kara.has(t)).map(t => [t, kara.get(t)]), t => t === "한국" || t === "일본" ? `${t} 전체` : t);
-  const tags = countBy(its.map(it => (it.tags || []).filter(t => !ONOFF_LISTS.includes(t))));
-  const groups = new Map();
-  for (const [k, n] of tags) { const g = tagGroupOf(k); if (/^(음성 합성 엔진|아티스트)$/.test(g)) continue; groups.set(g, [...(groups.get(g) || []), [k, n]]); }
-  for (const [g, rows] of groups) add("tag:" + g, g || "태그", "tag", rows);
-  add("cat", "나무위키 분류", "cat", countBy(its.map(it => it.categories || [])));
-  add("year", "투고년도", "year", countBy(its.map(it => it._year ? [it._year] : [])).sort((a, b) => b[0].localeCompare(a[0])), k => k + "년");
-  add("state", "가사·싱크 상태", "state", stateRows(its, online), k => STATES[k]);
-  const fl = new Map(countBy(its.map(it => it.flags || [])));
-  add("flag", "곡 상태", "flag", FLAGS.filter(f => fl.has(f)).map(f => [f, fl.get(f)]));
-  return cats.sort((a, b) => a.label.localeCompare(b.label, "ko"));  // 대분류는 가나다순
+  const c = filterCatsCounter(online);
+  for (const it of its) c.add(it);
+  return c.done();
+}
+async function filterCatsAsync(its, online, tick) {
+  const c = filterCatsCounter(online);
+  for (let i = 0; i < its.length; i++) { c.add(its[i]); if (!(i & 2047)) await tick(); }
+  return c.done();
 }
 /* 카테고리 기호 (user request 2026-11-14): 카테고리 이름(label) → 기호 한 곳에서 관리. 그릴 때만 붙임 (이름·저장값은 그대로).
    컬러 이모지는 눈에 안 들어와서 (user request) 글자색 한 가지로 그려지는 단순한 기호 — U+FE0E: 이모지 그림으로 바꾸지 말고 글자로.
-   태그 분류(장르·테마 …)는 VocaDB 분류의 한글 이름 (player_screen.js TAG_CAT_KO) — 새 분류가 생기면 여기 한 줄 더, 없으면 # */
+   태그 분류(장르·테마 …)는 VocaDB 분류의 한글 이름 (filter_panel.js TAG_CAT_KO) — 새 분류가 생기면 여기 한 줄 더, 없으면 # */
 const CAT_ICON = {
   "가나다": "ㄱ", "보컬": "♪", "보컬 인원수": "Ⅲ", "프로듀서": "✎", "노래방": "♫", "나무위키 분류": "▤", "투고년도": "◷", "가사·싱크 상태": "✓", "곡 상태": "◇", "곡 종류": "◉", "보컬 종류": "◐", "같은 곡 정렬": "⇅", "같은 곡 자르기": "✂",
   "장르": "◆", "테마": "◈", "분위기": "☁", "악기": "♩", "곡 구성": "▦", "보컬 관련": "✧", "원작": "❖", "시리즈": "⟳", "애니메이션": "▶",
@@ -254,8 +286,5 @@ const CAT_ICON = {
   "디자인": "✿", "이벤트": "⚑", "매체": "▣", "역할": "☰", "언어": "◎",
 };
 const catIcon = label => (CAT_ICON[label] || "#") + "︎";
-/* 가사·싱크 상태 [[값, 곡 수]] — 온라인 스트리밍은 가사를 그때 읽으므로 가사 상태는 빼고 싱크 상태만 */
-const stateRows = (its, online) => Object.keys(STATES).filter(k => !online || !/^(lyrics|nolyrics|src:)/.test(k))
-  .map(k => [k, its.filter(it => FKIND.state[1](it, k)).length]).filter(([, n]) => n);
 /* 싱크를 만들 곡: 온라인은 싱크 생성 대상(syncable) · mp3 는 가사는 있는데 싱크가 없는 곡 (직접 맞춘 곡은 빼고) */
 const needSync = it => it.site === "stream" ? !!it.syncable : !!(it.lyrics && it.sync !== "ok" && it.method !== "manual");

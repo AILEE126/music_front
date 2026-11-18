@@ -1,0 +1,95 @@
+/* 원곡 영상 칸 (크기 · 댓글 버튼) · 썸네일 크게 보기·저장.
+   player_screen.js 를 나눈 조각 (user request 2026-11-18) */
+/* ================= 원곡 영상 칸: 재생 중인 온라인 곡의 중계 플레이어(니코니코·유튜브)가 곧 영상 =================
+   재생기(play_engine.js)가 중계 플레이어를 이 칸 위에 겹쳐 보임 (placeVideo). 영상을 숨기면 칸만 접음 — 소리는 그대로 */
+const VID = {on: store.get("video", false)};
+/* 간단 표시 (이름 밑 '기본 | 간단' 스위치): 재생목록 썸네일 · 오른쪽 위 썸네일을 숨기고 영상도 접음 (영상 켜기 설정은 그대로 — 간단 표시를 끄면 다시 보임)
+   · 가사·오버레이도 보컬 색 없이 일반 글자색 (파트 표시는 그대로 — player_screen.css · play_engine.js sendNow) */
+let SIMPLE = !!store.get("simple", false);
+function applySimple() {
+  document.body.classList.toggle("simple", SIMPLE);
+  $("btnSimple").classList.toggle("on", SIMPLE); $("btnSimple").setAttribute("aria-pressed", SIMPLE);
+  $("btnVideo").disabled = SIMPLE;
+  // 간단 (user request 2026-11-15): 노래방 · 노래방 모드 buttons off and icon only (CSS) — a mode left on is turned off · the filter folds
+  for (const b of [$("btnKara"), $("btnKaraMode"), document.querySelector('#mNav [data-nav="kara"]')]) if (b) b.disabled = SIMPLE;
+  if (SIMPLE && typeof KARA !== "undefined") { if (KARA.mode) KARA.setMode(false); if ($("karaDlg").open) $("karaDlg").close(); }
+  if (SIMPLE) plfFold = true;  // 간단 on folds it; 간단 off leaves it as it is
+  renderPlFilter();
+  $("btnVideo").title = SIMPLE ? "간단 표시 중에는 영상을 접습니다 (왼쪽 위 '간단'을 끄면 보임)" : "원곡 영상 보기 · 숨기기 (인터넷 필요) · 끌면 영상 높이 조절";
+}
+$("btnSimple").onclick = () => { SIMPLE = !SIMPLE; store.set("simple", SIMPLE); applySimple(); showVideo(); renderRows(true); SHELL.notify(); };  // 썸네일이 빠져 줄 높이가 바뀜 → 다시 잼 · 오버레이 글자색도 바로
+applySimple();
+/* 라이트 모드 (제목 줄 오른쪽 끝 달/해 버튼): html[data-theme=light] 로 색 토큰을 바꿈 — 기억함 (첫 그림 전 적용은 player_screen.html <head>) */
+function applyTheme(t) {
+  if (t === "light") document.documentElement.dataset.theme = "light"; else delete document.documentElement.dataset.theme;
+  $("btnTheme").title = t === "light" ? "어두운 화면으로" : "밝은 화면으로";
+}
+$("btnTheme").onclick = () => { const t = store.get("theme", "dark") === "light" ? "dark" : "light"; store.set("theme", t); applyTheme(t); };
+applyTheme(store.get("theme", "dark"));
+function showVideo() {
+  const on = VID.on && !!cur && !SIMPLE, playing = !!cur && !!SHELL.now && keyOf(SHELL.now) === keyOf(cur);
+  const live = on && playing && audio.bridged && !audio.error;
+  $("btnVideo").classList.toggle("on", VID.on);
+  $("videoBox").hidden = !on;
+  $("nowCover").hidden = !cur || !hasCover(cur) || on || SIMPLE;  // 영상 모드에서는 썸네일을 영상 자리에 · 간단 표시는 숨김
+  SHELL.placeVideo(live ? $("videoFrame") : null);
+  $("btnCmt").hidden = !(live && audio.kind === "nico");  // 니코니코 영상이 보일 때만
+  $("btnCmt").classList.toggle("on", audio.comments);
+  if (!on || live) { $("videoFrame").innerHTML = ""; return; }
+  // 영상이 없을 때: 썸네일을 꽉 차게 + 맨 위 가운데에 까닭
+  const msg = cur.site === "local" ? "오프라인 곡(mp3 폴더)은 영상이 없습니다."
+    : !playing ? "재생 중인 곡의 영상만 보입니다 — 재생목록이나 곡 검색에서 곡을 누르면 재생합니다."
+    : audio.error ? audio.error.reason || "원곡 영상을 재생할 수 없습니다." : "원곡 영상을 여는 중…";
+  const bg = hasCover(cur) ? `style="background-image:url('${esc(coverUrl(cur))}')"` : "";
+  $("videoFrame").innerHTML = `<div class="vfallback" ${bg}><div class="vmsg">${esc(msg)}
+    ${cur.video ? `<a href="${esc(cur.video)}" target="_blank" rel="noopener">원곡 페이지 ↗</a>` : ""}</div></div>`;
+}
+/* Video tab (user request): a short click folds/unfolds the video, a drag (video shown) sets its height —
+   the video keeps 16:9, so it shrinks/grows with it. Kept as a share of the window height (--vid-f, 10–85%)
+   so it still fits after a window resize. The old grip bar under the video was removed. */
+const VID_F = f => { f = Math.min(.85, Math.max(.1, f)); document.documentElement.style.setProperty("--vid-f", f); return f; };
+{
+  const saved = store.get("videoH", null);
+  if (saved) VID_F(saved);
+  const tab = $("btnVideo");
+  let drag = null;
+  tab.addEventListener("pointerdown", e => {
+    if (SIMPLE || e.button !== 0) return;
+    drag = {y: e.clientY, h: $("videoFrame").getBoundingClientRect().height, moved: false};
+    tab.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  tab.addEventListener("pointermove", e => {
+    if (!drag) return;
+    if (!drag.moved && Math.abs(e.clientY - drag.y) < 4) return;  // under 4px = a click
+    if ($("videoBox").hidden) return;  // nothing to resize while folded
+    drag.moved = true; tab.classList.add("drag");
+    drag.f = VID_F((drag.h + e.clientY - drag.y) / innerHeight);
+    dispatchEvent(new Event("resize"));  // the bridge player over the video follows at once (play_engine placeNow)
+  });
+  const end = (e, cancel) => {
+    if (!drag) return;
+    const d = drag; drag = null; tab.classList.remove("drag");
+    if (d.moved) { if (d.f) store.set("videoH", d.f); return; }
+    if (!cancel) { VID.on = !VID.on; store.set("video", VID.on); showVideo(); }  // short click: fold / unfold
+  };
+  tab.addEventListener("pointerup", e => end(e, false));
+  tab.addEventListener("pointercancel", e => end(e, true));
+  tab.addEventListener("keydown", e => { if (e.key === "Enter" && !SIMPLE) { e.preventDefault(); VID.on = !VID.on; store.set("video", VID.on); showVideo(); } });
+}
+$("btnCmt").onclick = () => { audio.comments = !audio.comments; showVideo(); };
+$("songMeta").addEventListener("click", e => { if (e.target.id === "tagsMore" && cur) { store.set("tagsOpen", !store.get("tagsOpen", false)); renderMeta(cur); } });
+for (const ev of ["sourcechange", "emptied", "error", "loadedmetadata"]) on(audio, ev, showVideo);  // 중계 플레이어가 바뀜·뜸·못 틂
+cleanups.push(() => SHELL.placeVideo(null));  // 화면을 떠나면 영상 칸이 없어짐 → 접음 (소리는 그대로)
+
+/* ================= 썸네일: 누르면 크게, 오른쪽 클릭하면 저장 ================= */
+$("nowCover").onclick = () => { if (!cur || !hasCover(cur)) return; $("coverBig").src = coverUrl(cur); $("coverDlg").showModal(); };
+$("coverDlg").onclick = () => $("coverDlg").close();
+function saveCover(e) {
+  e.preventDefault();
+  if (!cur || !hasCover(cur)) return;
+  const png = false;  // 썸네일은 jpg 로 저장해 둠
+  const a = Object.assign(document.createElement("a"), {href: coverUrl(cur), download: `${(cur.title || "썸네일").replace(/[\\/:*?"<>|]/g, "_")}.${png ? "png" : "jpg"}`});
+  document.body.appendChild(a); a.click(); a.remove();
+}
+$("nowCover").addEventListener("contextmenu", saveCover);
+$("coverBig").addEventListener("contextmenu", saveCover);

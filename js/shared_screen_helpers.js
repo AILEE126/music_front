@@ -3,6 +3,13 @@
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const fmt = s => !isFinite(s) || s < 0 ? "0:00" : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+/* '2026-11-08 15:20:03' — local time (the server's memo times look the same) */
+function nowText(d = new Date()) {
+  const z = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`;
+}
+/* 화면 축소(--ui-zoom) 비율: 마우스 좌표·잰 위치는 창 기준, style 의 px 는 줄인 문서 기준 → 이 값으로 나눔 */
+const uiZoom = () => document.documentElement.getBoundingClientRect().width / document.documentElement.offsetWidth || 1;
 /* 화면별 작은 기억값 (접힘 상태·음량 등). 개인 창·저장 차단이면 그냥 기본값 */
 const store = {
   get(k, d) { try { const v = localStorage.getItem(STORE_PREFIX + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -160,7 +167,7 @@ function ctxMenu(e, items) {
   });
   document.body.appendChild(m);
   // 화면 축소(--ui-zoom): 마우스 좌표는 창 기준, left/top 은 줄인 문서 기준 → 비율로 나눔
-  const f = document.documentElement.getBoundingClientRect().width / document.documentElement.offsetWidth || 1;
+  const f = uiZoom();
   const x = Math.min(e.clientX, innerWidth - m.offsetWidth * f - 4), y = Math.min(e.clientY, innerHeight - m.offsetHeight * f - 4);
   m.style.left = Math.max(0, x) / f + "px"; m.style.top = Math.max(0, y) / f + "px";
   if (x + m.offsetWidth * f * 2 > innerWidth) m.classList.add("flip");  // 하위 메뉴가 오른쪽 끝을 넘으면 왼쪽으로

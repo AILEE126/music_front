@@ -268,7 +268,7 @@
 <script>
 const STORE_PREFIX = "player.";  // 브라우저 저장값 이름 앞머리
 </script>
-<div id="sMenu" class="smenu" popover></div><!-- 곡 검색 결과의 ⋯ 곡 옵션 (user request 2026-11-15): web = menu by the button · phone = sheet from the bottom (player_screen.js) -->
+<div id="sMenu" class="smenu" popover></div><!-- 곡 검색 결과의 ⋯ 곡 옵션 (user request 2026-11-15): web = menu by the button · phone = sheet from the bottom (filter_panel.js) -->
 <script src="../js/shared_screen_helpers.js"></script>
 <script src="../js/app_bridge.js"></script>
 <script src="../js/offline_folder.js"></script>
@@ -277,7 +277,14 @@ const STORE_PREFIX = "player.";  // 브라우저 저장값 이름 앞머리
 <script src="../js/play_engine.js"></script>
 <script src="../js/song_filter.js"></script>
 <script src="../js/vocadb_api.js"></script>
-<script src="../js/player_screen.js"></script>
+<script src="../js/player_screen.js"></script><!-- the player screen, split by feature (keep this order — player_start.js last of them) -->
+<script src="../js/playlist_panel.js"></script>
+<script src="../js/search_dialog.js"></script>
+<script src="../js/filter_panel.js"></script>
+<script src="../js/lyrics_view.js"></script>
+<script src="../js/video_box.js"></script>
+<script src="../js/report_dialog.js"></script>
+<script src="../js/player_start.js"></script>
 <script src="../js/mobile_view.js"></script>
 <script src="../js/listen_together.js"></script>
 <script src="../js/karaoke_random.js"></script>

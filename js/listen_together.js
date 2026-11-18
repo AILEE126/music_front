@@ -27,7 +27,7 @@
      아무도 없으면 멈춤. 채널에서는 아무도 재생을 조작하지 못하고 (방장 역할도), 곡 신청은 바로 대기열에 들어감 (한 사람이 신청한 뒤
      2곡이 지나야 다시 신청). 같이듣기 단추의 방 수에 늘 들어가고, 열린 방이 채널 하나뿐이면 숫자 대신 빨간 'ONAIR' · 채널의 필터는 공개하지 않음 ('OPEN CHANNEL' 태그만, 저장 불가)
    서버가 없는 화면이라 브라우저끼리 바로 잇는 WebRTC(PeerJS — 번호로 서로 찾는 일만 PeerJS 공개 서버)를 씀.
-   player_screen.js 다음에 읽음 (SHELL·audio·keyOf·LIB·OFFDIR·ONLINE 을 씀) */
+   player_screen.js · player_start.js 다음에 읽음 (SHELL·audio·keyOf·LIB·OFFDIR·ONLINE 을 씀) */
 const LT_PEERJS = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
 const LT_PREFIX = "ailee126-noinjeong-lt-";  // PeerJS id = 이 앞머리 + 번호
 const LT_SLOTS = 8;  // room list: each open room also holds one "lobby-<n>" id that answers who/what (no server to list rooms)
@@ -57,9 +57,8 @@ const ltChHost = () => LT.chOn && LT.role === "host";
 const ltCoolLeft = uid => LT.cool[uid] || 0;
 /* the channel's songs: our whole DB through its filter, playable only */
 async function ltChSongs(groups) {
-  let last = performance.now();
-  const tick = async () => { if (performance.now() - last > 12) { await yieldUI(); last = performance.now(); } };
-  return (await filterGroupsAsync(VDB.all(), groups, tick)).filter(canPlay);
+  await searchBase();  // the whole song list (read in the background after the screen opened)
+  return (await filterGroupsAsync(VDB.all(), groups, bgTick())).filter(canPlay);  // background: the player's timers keep running
 }
 async function ltChJoin() {
   const conf = ltChConf();
@@ -225,7 +224,6 @@ function ltTurn() {
   })();
 }
 const ltNewCode = () => String(crypto.getRandomValues(new Uint32Array(1))[0] % 900000 + 100000);
-const ltLink = code => (APP.on ? APP.publicUrl : location.href.split("#")[0]) + "#lt=" + code;  // 폰 앱: its own address is not shareable
 /* 재생하려는 중인가 (온라인 곡은 뜨는 동안 paused 라 재생 의도로 봄) */
 const ltIntent = () => audio.bridged ? !!audio.autoplay : !audio.paused;
 const ltStrip = it => Object.fromEntries(Object.entries(it).filter(([k]) => !k.startsWith("_")));
@@ -295,7 +293,7 @@ function ltPlMsg() {
   // channel: no list — 10만 곡 넘는 id 목록은 PeerJS 로 안 건너감 (test 2026-11-17); guests make it from the same filter
   if (LT.chOn) return {t: "pl", plf: null, ch: true};  // the channel's filter is never shown or sent (user request 2026-11-17)
   // viewAll: not narrowed by 재생목록에서 찾기
-  return {t: "pl", plf: PLF, list: viewAll.map(it => it.vocadb && VDB.rowById.has(String(it.vocadb)) ? +it.vocadb
+  return {t: "pl", plf: PLF, list: viewAll.map(it => it.vocadb && VDB.has(it.vocadb) ? +it.vocadb
     : it.site === "local" ? {site: "local", name: it.name, title: it.title, artist: it.artist || ""} : ltStrip(it))};
 }
 let ltPlSig = "", ltPlT = 0;
@@ -311,7 +309,11 @@ function ltPlChanged() {  // called by renderList (player_screen.js) — sent on
   }, 300);
 }
 /* guest: show the host's playlist instead of mine (mine comes back on leaving) */
-function ltShowPl(list) {
+let ltPlN = 0;
+async function ltShowPl(list) {
+  const n = ++ltPlN;
+  await VDB.ensure((list || []).filter(x => typeof x === "number"));  // blocks not read yet (the screen opens before them)
+  if (n !== ltPlN) return;  // a newer list came meanwhile
   guestPl = (list || []).map(x => typeof x === "number" ? VDB.itemById(x) : x && x.site === "local" ? x : liveItem(x)).filter(Boolean);
   renderList();
 }
@@ -684,6 +686,7 @@ function ltLeave(quiet) {
   }
   LT.chOn = false; LT.chList = null; LT.cool = {}; LT.coolKey = "";
   ltPlSig = "";
+  ltPlN++;  // a host list still being read is dropped
   if (guestPl) { guestPl = null; renderList(); }  // back to my own playlist
   if (peer) setTimeout(() => { try { peer.destroy(); } catch (e) {} }, 300);  // "bye" 가 먼저 나가게
   if (!quiet) LT.status = "";
@@ -820,7 +823,7 @@ function ltScan(again) {
       if (fin) return; fin = true; LTS.unavail = null;
       if (!LTS.busy) return res();
       const slotsOpen = [...open].filter(i => i !== "ch").length;  // the channel isn't a room (no answer = keep what we knew)
-      LTS.busy = false; LTS.rooms = [...found.values()]; LTS.miss = slotsOpen; LTS.err = err; LTS.done = ltNow();
+      LTS.busy = false; LTS.rooms = [...found.values()]; LTS.miss = slotsOpen; LTS.err = err; LTS.done = nowText();
       // no slot answered at all, not even "empty": the link to the PeerJS server is dead → a fresh peer next time
       if (slotsOpen === LT_SLOTS) { ltScanPeerDrop(); LTS.miss = 0; LTS.err = "같이듣기 연결 서버에서 답이 없습니다 — 잠시 뒤 새로고침해 주세요"; }
       ltRender();
@@ -869,10 +872,6 @@ function ltRescan(dropCode, delay) {
   ltRender();
   setTimeout(() => ltScan(true), delay);
 }
-function ltNow() {
-  const d = new Date(), z = n => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`;
-}
 /* the room-list peer also takes a free watch-<n> id so hosts can tell this screen about rooms at once (none free → random id) */
 function ltWatchPeer(i, done) {
   const p = LTS.peer = i < LT_WATCH ? new Peer(ltWatchId(i), ltPeerOpts()) : new Peer(ltPeerOpts());
@@ -894,12 +893,12 @@ function ltWatchGot(m) {
   if (!m || !m.code) return;
   if (m.code === LT_CH) {  // OPEN CHANNEL came alive / emptied — a card slower than the 'gone' after it is dropped (test 2026-11-17)
     if ((m.at || 0) < (LTS.chAt || 0)) return;
-    LTS.chAt = m.at || 0; LTS.ch = m.t === "room" ? m : null; LTS.done = ltNow(); return ltRender();
+    LTS.chAt = m.at || 0; LTS.ch = m.t === "room" ? m : null; LTS.done = nowText(); return ltRender();
   }
   const rooms = (LTS.rooms || []).filter(r => r.code !== m.code);
   if (m.t === "room") rooms.push(m);
   else if (m.t !== "gone") return;
-  LTS.rooms = rooms; LTS.done = ltNow(); ltRender();
+  LTS.rooms = rooms; LTS.done = nowText(); ltRender();
 }
 function ltScanPeerDrop() { const p = LTS.peer; LTS.peer = null; if (p) try { p.destroy(); } catch (e) {} }
 /* OPEN CHANNEL row: always first, above the paged rooms (user request 2026-11-17 — looks always open) */
@@ -950,7 +949,7 @@ const LT_ROOM_ROW = 52;  // a room row + its gap (css px) until a drawn row can 
 function ltRoomPage() {
   const d = $("listenDlg");
   if (!document.body.classList.contains("m") || !d.open) return 3;
-  const f = document.documentElement.getBoundingClientRect().width / document.documentElement.offsetWidth || 1;
+  const f = uiZoom();
   const body = d.querySelector(".dlg-body"), pager = $("ltRoomPager");
   const room = (body.getBoundingClientRect().bottom - $("ltRooms").getBoundingClientRect().top) / f - pager.offsetHeight - 24;
   const row = $("ltRooms").querySelector(".ltroom"), rowH = row ? row.offsetHeight + 6 : LT_ROOM_ROW;
@@ -981,7 +980,6 @@ $("ltRefresh").onclick = () => { LTS.retry = 0; ltScan(); };
   const MAX = 120, GO = 70, REST = 56, SIZE = 36;  // css px: furthest pull · let go past this = refresh · held here while looking
   const slow = matchMedia("(prefers-reduced-motion:reduce)");
   let s = null, busy = false;
-  const zoom = () => document.documentElement.getBoundingClientRect().width / document.documentElement.offsetWidth || 1;
   const draw = (y, ms = 0) => {
     const tr = ms && !slow.matches ? `transform ${ms}ms cubic-bezier(.2,.7,.3,1),opacity ${ms}ms` : "none";
     list.style.transition = ind.style.transition = tr;
@@ -1001,7 +999,7 @@ $("ltRefresh").onclick = () => { LTS.retry = 0; ltScan(); };
   }, {passive: true});
   body.addEventListener("touchmove", e => {
     if (!s) return;
-    const z = zoom(), dx = (e.touches[0].clientX - s.x) / z, dy = (e.touches[0].clientY - s.y) / z;
+    const z = uiZoom(), dx = (e.touches[0].clientX - s.x) / z, dy = (e.touches[0].clientY - s.y) / z;
     if (!s.on) {
       if (dy < 8) { if (dy < -4 || Math.abs(dx) > 8) s = null; return; }  // scrolling up or a side swipe: not mine
       if (Math.abs(dx) > dy || body.scrollTop > 0) { s = null; return; }
@@ -1336,7 +1334,7 @@ function ltFromLink() {
   history.replaceState(null, "", location.href.split("#")[0]);  // reload doesn't join again
   const code = m[1];
   const go = () => {
-    if (document.querySelector("dialog.offdlg[open]") || ($("loadBox") && !$("loadBox").hidden)) return setTimeout(go, 500);
+    if (document.querySelector("dialog.offdlg[open]") || !VDB.idx) return setTimeout(go, 500);  // until the song list opened
     ltOpenDlg();
     if (ltNeedName()) return;
     ltJoin(code);
@@ -1364,7 +1362,7 @@ function ltResume() {
   if (!r || !r.code || Date.now() - r.at > 120000) return;
   LT.uid = r.uid || LT.uid;
   const go = async () => {
-    if (document.querySelector("dialog.offdlg[open]") || ($("loadBox") && !$("loadBox").hidden)) return setTimeout(go, 500);
+    if (document.querySelector("dialog.offdlg[open]") || !VDB.idx) return setTimeout(go, 500);  // until the song list opened
     if (LT.role) return;  // already in a room some other way
     if (r.ch) return ltChJoin();
     LT.me = r.me || ltName(); LT.pw = r.pw || ""; LT.open = r.open !== false; LT.title = r.title || ""; LT.resumeTry = 6;

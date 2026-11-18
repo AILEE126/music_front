@@ -1,6 +1,6 @@
 /* Our song DB in the player (user request 2026-11-14: song search reads only our DB — the tables on GitHub, export/db —
    never the VocaDB API, so a search of 98만 곡 can still be played as a whole):
-   · rowById = every collected song (data table rows) · all() = them as player items, built on first use
+   · every collected song (data table rows, read in blocks — the screen opens before all are read) · all() = them as player items
    · curated = our songs (lyrics · sync of ours, or on a karaoke list — karaoke.json = karaoke table): '노래방 곡만' · '가사·싱크 있는 곡'
    · master.json: Korean names and the filter's values (보컬 · 프로듀서 · 태그 with its VocaDB category)
    The VocaDB API is left only for lyrics (lyricsDoc). */
@@ -54,57 +54,121 @@ function vdbDerive(it) {
   it.score = it.score ?? null;
 }
 
+/* {cols, rows} table file → row objects */
+const tableRows = t => t.rows.map(r => Object.fromEntries(t.cols.map((c, i) => [c, r[i]])));
+
 const VDB = {
-  names: {artist: {}, tag: {}, title: {}}, curated: [], byId: new Map(), seen: new Map(), _all: null,
+  curated: [], _all: null,
   /* our data — tables only (user request 2026-11-14), written by the server (music_backend vocadb/table_export.py):
      export/db/master.json (names · filter values) · karaoke.json (numbers) · songs/ (EVERY collected song, gzip blocks) */
   master: {vocal: [], producer: [], artist: [], tag: [], title: []},  // [{id, name (shown), src (VocaDB name), cat}]
-  rowById: new Map(),  // VocaDB id → data row (object) — the whole collected song list (user request 2026-11-14: taken at start)
-  /* songs/index.json + its blocks. A block is kept in this browser (IndexedDB) under its content hash, so after the first
-     open only blocks the server changed are downloaded (GitHub sends files uncompressed — the blocks are gzip themselves) */
-  async loadSongs() {
-    const dir = `${LOCAL.out}/db/songs`, idx = await LOCAL.readJson(`${dir}/index.json`, null);
-    if (!idx) return null;
-    const cache = idbKV("music-songs"), src = LOCAL.name;
-    let done = 0;
-    const one = async b => {
-      const key = `${src}|${b.f}`, hit = await cache("get", key).catch(() => null);
-      let text = hit && hit.h === b.h ? hit.text : null;
-      if (text == null) {
-        const gz = await LOCAL.readBytes(`${dir}/${b.f}`);
-        text = await new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
-        cache("put", key, {h: b.h, text}).catch(() => {});
-      }
-      LOCAL.progress(`곡 목록 읽는 중… ${++done}/${idx.files.length}`, 0.3 + 0.5 * done / idx.files.length);
-      return JSON.parse(text);
-    };
-    const parts = [];
-    for (let i = 0; i < idx.files.length; i += 6) parts.push(...await Promise.all(idx.files.slice(i, i + 6).map(one)));  // 6 at a time
-    return {cols: idx.cols, rows: parts.flat()};
-  },
+  /* Loading in two steps (user request 2026-11-18: the screen first, the rest in the background with no progress bar —
+     1M songs took ~1 min and ~1.5 GB if read whole at start):
+     · load(): the small files (index · karaoke · filter) — then the screen opens; ensure(ids) reads just the blocks
+       those songs live in (the last song)
+     · loadRest(): every other block + master, quietly; then curated · all() exist and `done` is true (VDB.full resolves).
+     Rows stay as the parsed arrays (no object per row) and are dropped once all() made the items. */
+  rowById: new Map(),  // VocaDB id → data row array (cols: this.col) — until all() has made every item
+  items: new Map(),  // VocaDB id → player item, made once (the same object everywhere: playlist · search · curated)
+  done: false, full: null, _fullOk: null,  // full: resolves when every block is read (newFull — set below)
+  /* a song of our DB (loaded or not yet) */
+  has(id) { id = String(id); return this.items.has(id) || this.rowById.has(id) || (this.kara && this.kara.has(id)); },
+  get total() { return this._all ? this._all.length : this.idx ? this.idx.files.reduce((a, b) => a + b.n, 0) : 0; },
   async load() {
     const rd = f => LOCAL.readJson(`${LOCAL.out}/db/${f}`, null);
-    const [mst, kara, songs, flt] = await Promise.all([rd("master.json"), rd("karaoke.json"), this.loadSongs(), rd("filter.json")]);
+    const [idx, kara, flt] = await Promise.all([rd("songs/index.json"), rd("karaoke.json"), rd("filter.json")]);
     this.filter = flt;  // 음원 관리 › 필터 (user request 2026-11-14): category order · symbols · 필터 프리셋 추천 — missing → built-in defaults
-    const miss = [!mst && "master.json", !kara && "karaoke.json", !songs && "songs/index.json"].filter(Boolean);
+    const miss = [!kara && "karaoke.json", !idx && "songs/index.json"].filter(Boolean);
     if (miss.length) throw new Error(`${LOCAL.out}/db 에 ${miss.join(", ")} 이 없습니다. 서버에서 내보내기·올리기를 하세요.`);
-    const rows = t => t.rows.map(r => Object.fromEntries(t.cols.map((c, i) => [c, r[i]])));
-    this.master = {vocal: [], producer: [], artist: [], tag: [], title: []};
-    this.names = {artist: {}, tag: {}, title: {}};
-    for (const m of rows(mst)) {
-      const shown = m.ko || m.name, e = {id: +m.id, name: shown, src: m.name, cat: m.cat};
-      (this.master[m.kind] || (this.master[m.kind] = [])).push(e);
-      if (m.ko) this.names[m.kind === "tag" || m.kind === "title" ? m.kind : "artist"][m.id] = m.ko;
+    this.idx = idx;
+    this.col = Object.fromEntries(idx.cols.map((c, i) => [c, i]));
+    this.kara = new Map(tableRows(kara).map(k => [String(k.vocadb_id), k]));
+    this.rowById = new Map(); this.items = new Map(); this.blockP = new Map(); this.textP = new Map();
+    this.curated = []; this._all = null;
+    if (this.done) this.newFull();  // opened again (another token): wait for the new list — anyone waiting on the old one too
+    this.done = false;
+  },
+  newFull() { this.full = new Promise(r => { this._fullOk = r; }); },
+  /* songs/<block>.json.gz — kept in this browser (IndexedDB) under its content hash, so after the first open only blocks
+     the server changed are downloaded (GitHub sends files uncompressed — the blocks are gzip themselves) */
+  blockText(b) {
+    if (!this.textP.has(b.f)) this.textP.set(b.f, (async () => {
+      const cache = idbKV("music-songs"), key = `${LOCAL.name}|${b.f}`, hit = await cache("get", key).catch(() => null);
+      if (hit && hit.h === b.h) return hit.text;
+      const gz = await LOCAL.readBytes(`${LOCAL.out}/db/songs/${b.f}`);
+      const text = await new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+      cache("put", key, {h: b.h, text}).catch(() => {});
+      return text;
+    })());
+    return this.textP.get(b.f);
+  },
+  block(b) {  // read (blockText) + parse into rowById, once
+    if (!this.blockP.has(b.f)) this.blockP.set(b.f, this.blockText(b).then(text => {
+      const id = this.col.vocadb_id;
+      for (const r of JSON.parse(text)) this.rowById.set(String(r[id]), r);
+      this.textP.delete(b.f);
+    }));
+    return this.blockP.get(b.f);
+  },
+  blockOf(id) { const f = `${Math.floor(+id / this.idx.block)}.json.gz`; return this.idx.files.find(b => b.f === f); },
+  /* the blocks these songs live in (before the rest is read) */
+  async ensure(ids) {
+    if (this.done) return;
+    const bs = new Set(ids.filter(x => /^\d+$/.test(String(x))).map(x => this.blockOf(x)).filter(Boolean));
+    await Promise.all([...bs].map(b => this.block(b)));
+  },
+  /* the rest, in the background: 4 blocks downloading ahead, parsed one at a time with the screen's turn in between (yieldUI) */
+  async loadRest() {
+    const mst = LOCAL.readJson(`${LOCAL.out}/db/master.json`, null);
+    const todo = this.idx.files.filter(b => !this.blockP.has(b.f));
+    todo.slice(0, 4).forEach(b => this.blockText(b));
+    for (let i = 0; i < todo.length; i++) {
+      if (todo[i + 4]) this.blockText(todo[i + 4]);
+      await this.block(todo[i]);
+      await yieldUI();
     }
-    const kmap = new Map(rows(kara).map(k => [String(k.vocadb_id), k]));
-    this.kara = kmap;
-    this.rowById = new Map(rows(songs).map(r => [String(r.vocadb_id), r]));
-    this.seen = new Map(); this._all = null;
-    // our songs = with lyrics / sync of ours (ours) or on a karaoke list
-    this.curated = [...this.rowById.values()].filter(r => r.ours || kmap.has(String(r.vocadb_id))).map(r => this.fromRow(r, kmap.get(String(r.vocadb_id))));
-    for (const [id, k] of kmap) if (!this.curated.some(it => it.vocadb === id)) this.curated.push(this.fromKara(k));  // karaoke song without a data row yet
-    this.byId = new Map(this.curated.map(it => [String(it.vocadb), it]));
-    return this.curated;
+    await Promise.all(this.blockP.values());  // blocks ensure() started
+    const m = await mst;
+    this.master = {vocal: [], producer: [], artist: [], tag: [], title: []};
+    for (const r of m ? tableRows(m) : []) (this.master[r.kind] || (this.master[r.kind] = [])).push({id: +r.id, name: r.ko || r.name, src: r.name, cat: r.cat});
+    // our songs = with lyrics / sync of ours (ours) or on a karaoke list (+ karaoke songs without a data row yet)
+    const ours = this.col.ours, cur = [];
+    for (const [id, r] of this.rowById) if (r[ours] || this.kara.has(id)) cur.push(this.itemById(id));
+    this.done = true;  // from here a karaoke song without a row is made from its karaoke row
+    for (const id of this.kara.keys()) if (!this.rowById.has(id)) cur.push(this.itemById(id));
+    this.curated = cur;
+    this._fullOk();
+  },
+  /* VocaDB id → player item (made once) — null when not in our DB, or its block isn't read yet */
+  itemById(id) {
+    id = String(id);
+    let it = this.items.get(id);
+    if (it) return it;
+    const r = this.rowById.get(id), k = this.kara.get(id);
+    if (r) {
+      it = this.fromRow(Object.fromEntries(this.idx.cols.map((c, i) => [c, r[i]])), k);
+      if (!r[this.col.ours] && !k) it.api = true;  // not one of our songs (badges: no 가사·싱크·노래방)
+    } else if (k && this.done) it = this.fromKara(k);
+    else return null;
+    this.items.set(id, it);
+    return it;
+  },
+  /* every song in our DB as player items ('전체 곡') — empty until the rest is read. Made in steps by makeAll: async callers
+     await it first (made all at once here took 3 s over 25만 곡) */
+  all() {
+    if (!this.done) return [];
+    if (!this._all) { for (const id of this.rowById.keys()) this.itemById(id); this._allDone(); }
+    return this._all;
+  },
+  async makeAll(tick) {
+    if (this._all || !this.done) return;
+    let n = 0;
+    for (const id of this.rowById.keys()) { this.itemById(id); if (!(++n & 2047)) await tick(); }
+    if (!this._all) this._allDone();
+  },
+  _allDone() {
+    this._all = [...this.items.values()];
+    this.rowById = new Map();  // every row is an item now — the arrays can go (memory)
   },
   /* karaoke table row → numbers · lists (the old item shape: nums {TJ…}, list tags 한국 / 일본 + brands, ord namu / japan) */
   karaInfo(k) {
@@ -153,23 +217,6 @@ const VDB = {
     if (!r.ok) throw new Error(`VocaDB 응답 ${r.status}`);
     return r.json();
   },
-  /* VocaDB id → player item: our curated item, else the collected song's row (made once, then kept) — null when not in our DB */
-  itemById(id) {
-    id = String(id);
-    if (this.byId.has(id)) return this.byId.get(id);
-    if (this.seen.has(id)) return this.seen.get(id);
-    const r = this.rowById.get(id);
-    if (!r) return null;
-    const it = this.fromRow(r, null);
-    it.api = true;  // not one of our songs (badges: no 가사·싱크·노래방)
-    this.seen.set(id, it);
-    return it;
-  },
-  /* every song in our DB as player items ('전체 곡') — collected rows + karaoke songs without a data row yet */
-  all() {
-    if (!this._all) this._all = [...[...this.rowById.keys()].map(id => this.itemById(id)), ...this.curated.filter(it => !this.rowById.has(it.vocadb))];
-    return this._all;
-  },
   /* lyrics of a VocaDB song from the API → the compact doc the player expands (vdbLyrics) — or null.
      Original first (Japanese preferred), romanized / Korean translation under each line when the line counts match;
      other translations (English …) as role 'x' — hidden unless '다른 언어' is on (user request 2026-11-14) */
@@ -195,3 +242,4 @@ const VDB = {
       src: [`VocaDB https://vocadb.net/S/${id}`, ...used.map(l => `${l.source || "?"}${l.url ? " " + l.url : ""} (${l.translationType}${(l.cultureCodes || []).length ? " · " + l.cultureCodes.join(",") : ""})`)]};
   },
 };
+VDB.newFull();

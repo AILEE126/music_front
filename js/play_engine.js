@@ -36,7 +36,7 @@ const canPlay = it => !!it && (it.site === "local" || (it.site === "stream" && !
 const DIAG = store.get("diag", []);
 let diagSave = 0;
 function diag(...a) {
-  const d = new Date(), hms = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${d.toTimeString().slice(0, 8)}`;
+  const hms = nowText().slice(5);  // MM-DD HH:MM:SS
   DIAG.push(`${hms} ${document.hidden ? "H" : "V"} ${a.join(" ")}`);
   if (DIAG.length > 400) DIAG.splice(0, DIAG.length - 400);
   clearTimeout(diagSave); diagSave = setTimeout(() => store.set("diag", DIAG), 500);
@@ -486,13 +486,19 @@ function makePlayer(el) {
   addPlayQueue(P);  // 재생 목록·대기열·대기열 창
 
   /* ---- 영상 칸에 겹치기 ---- */
-  let place = null;
+  let place = null, placed = "";
+  /* the host's look — written only when it changes (this runs 4 times a second: rewriting the same style each time kept
+     the page busy — user request 2026-11-18, phones got hot) */
+  function setHost(cls, css = "") {
+    if (placed === cls + css) return;
+    placed = cls + css; host.className = cls; host.style.cssText = css;
+  }
   function placeNow() {
     let r = null;
     // 폰 화면이 꺼짐: 영상 칸을 1px 로 접음 → 작은 플레이어라 유튜브·니코니코가 낮은 화질로 받음 (user request 2026-11-15, battery)
-    if (APP.screenOff) { host.className = "folded"; host.style.cssText = ""; return; }
+    if (APP.screenOff) return setHost("folded");
     // the screen decides the video box is out of sight (phone: player screen slid down / a page over it — mobile_view.js)
-    if (P.videoHidden && P.videoHidden()) { host.className = "folded"; host.style.cssText = ""; return; }
+    if (P.videoHidden && P.videoHidden()) return setHost("folded");
     try {
       if (place && place.isConnected && audio.bridged) {
         const b = place.getBoundingClientRect(), w = place.ownerDocument.defaultView;
@@ -506,13 +512,14 @@ function makePlayer(el) {
         }
       }
     } catch (e) { r = null; }  // 영상 칸이 있던 화면이 사라짐 (다른 화면으로 넘어감)
-    if (!r) { host.className = "folded"; host.style.cssText = ""; return; }
+    if (!r) return setHost("folded");
     // 이 문서가 화면 축소(--ui-zoom)돼 있으면 style 의 px 도 그 비율로 줄어 보임 → 잰 크기를 그 비율로 나눔
     const hz = probe.getBoundingClientRect().width / 100 || 1;
-    host.className = "shown";
-    host.style.cssText = `left:${r.left / hz}px;top:${r.top / hz}px;width:${r.width / hz}px;height:${r.height / hz}px`;
+    const px = v => Math.round(v / hz * 10) / 10 + "px";
+    setHost("shown", `left:${px(r.left)};top:${px(r.top)};width:${px(r.width)};height:${px(r.height)}`);
   }
-  setInterval(() => { if (!APP.screenOff) placeNow(); }, 250);
+  setInterval(() => { if (!APP.screenOff && !document.hidden) placeNow(); }, 250);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) placeNow(); });
   addEventListener("appscreen", () => { placeNow(); sendNow(true); });  // 영상 칸이 움직이거나(스크롤·창 크기·목록 접기) 화면이 바뀌면 따라감
   addEventListener("resize", placeNow);
   audio.addEventListener("sourcechange", placeNow);
@@ -523,8 +530,9 @@ function makePlayer(el) {
      묶음이 바뀔 때·재생/멈춤 때 + 5초마다(화면이 켜져 있다는 표시 — 끄면 오버레이가 숨김).
      발음·번역 줄은 플레이어의 '발음'·'번역' 체크 그대로 (같은 브라우저 저장값) */
   let nowLast = "", lyrIdx = -2;
+  const overlayOn = () => APP.on || LOCAL.ovOn;  // nobody to tell otherwise (the PC overlay was never used here)
   function sendNow(beat = false) {
-    if (!LOCAL.ready || APP.screenOff) return;  // 폰 화면이 꺼짐: 가사 위치를 안 봄 (켜지면 appscreen 에서 바로 보냄)
+    if (!LOCAL.ready || APP.screenOff || !overlayOn()) return;  // 폰 화면이 꺼짐: 가사 위치를 안 봄 (켜지면 appscreen 에서 바로 보냄)
     const it = P.now, L = P.lyr, i = P.lyrIndex(), g = L && L.times && i >= 0 ? L.groups[i] : null;
     const d = {title: it ? titleOf(it) : "", artist: it ? shortName(it.artist || "") : "", playing: !audio.paused,
       show_r: store.get("showR", true), show_t: store.get("showT", true), colors: g && !store.get("simple", false) ? (g.vc || []) : [],  // 간단 표시: 보컬 색 없이 흰색
@@ -536,7 +544,7 @@ function makePlayer(el) {
     post("/api/now", d).catch(() => {});  // 못 써도 재생은 그대로
   }
   setInterval(() => sendNow(true), 5000);
-  setInterval(() => { if (!audio.paused && !APP.screenOff) { const i = P.lyrIndex(); if (i !== lyrIdx) { lyrIdx = i; sendNow(); } } }, 200);
+  setInterval(() => { if (!audio.paused && !APP.screenOff && overlayOn()) { const i = P.lyrIndex(); if (i !== lyrIdx) { lyrIdx = i; sendNow(); } } }, 200);
   ["play", "pause"].forEach(ev => audio.addEventListener(ev, () => sendNow()));
 
   /* ---- 다음 곡 미리 띄워 두기: 지금 곡이 4초쯤 흐른 뒤 다음에 틀 온라인 곡 (한 곡 반복·다음 곡 없음이면 안 함) ---- */
@@ -610,7 +618,7 @@ function makePlayer(el) {
   /* ---- 안 보는 동안 멈춘 곡 알리기 ----
      User report: songs stop while the player isn't watched. Chromium defers media in a frame created while the tab is hidden
      (each Niconico song = new embed frame). The screen opens an error report with
-     the diagnostic log (player_screen.js — the browser-settings popup was removed, user request). A real stall is the signal:
+     the diagnostic log (report_dialog.js — the browser-settings popup was removed, user request). A real stall is the signal:
      a song started while hidden (not minimized) that never played until the tab came back → P.stallSubs. */
   let stallWatch = null;
   P.stallSubs = new Set();
@@ -663,7 +671,7 @@ function makePlayer(el) {
   P.resumeAt = (it, t) => { resumeSeek = t > 3 ? {it, t: Math.max(0, t - 1)} : null; diag("resume", it.title, `t=${Math.round(t)}`); };
 
   async function noteFail(it, reason) {
-    const d = new Date(), ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const ymd = nowText().slice(0, 10);
     const sent = store.get("failReported", {}) || {};
     if (sent[keyOf(it)] === ymd) return;  // same song: one report a day from this browser
     const text = /삭제|비공개/.test(reason) ? "원곡 영상 링크 삭제됨 — 재생 불가" : `재생 못 함 — ${reason}`;
@@ -687,7 +695,7 @@ function failDialog() {
   d.querySelector("button").onclick = () => { d.close(); list.innerHTML = ""; if (F.onClear) F.onClear(); };
   d.addEventListener("cancel", e => e.preventDefault());
   F.add = (it, reason, skipped) => {
-    const t = new Date(), hm = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+    const hm = nowText().slice(11, 16);
     list.insertAdjacentHTML("beforeend", `<li><span class="w">${hm}</span><span class="m">${titleHtml(it)}${it.artist ? ` <span class="r">${esc(shortName(it.artist))}</span>` : ""}
       <div class="r">${esc(reason)}${skipped ? " → 다음 곡으로 넘어감" : ""}</div></span></li>`);
     if (!d.open) d.showModal();

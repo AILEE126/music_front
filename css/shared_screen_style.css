@@ -82,8 +82,6 @@ a.ctxi:hover,button.ctxi:hover,.ctxsub:hover>.ctxi{background:var(--accent-soft)
 .ovset .dlg-body>label b{font-weight:600}
 .ovset .muted{font-size:12px;opacity:.75;margin:6px 0}
 .ovset select{max-width:100%}
-.ovset .ovrun{display:flex;align-items:center;gap:10px;margin:8px 0}
-.ovset .ovrun b.on{color:var(--ok,#5ad08a)}
 /* 오버레이 켜기/끄기 단추 (켜져 있으면 초록) */
 .ovpow{white-space:nowrap}
 .ovpow.on{color:var(--ok,#5ad08a);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ok,#5ad08a) 60%,transparent)}

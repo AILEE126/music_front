@@ -1,6 +1,6 @@
 /* SNS 공유 카드 (user request 2026-11-18): X(트위터) · 디스코드에 링크를 붙이면 유튜브 링크처럼 큰 카드가 뜨게 —
    썸네일 위에 곡 제목 · 일본어 제목 · 프로듀서 · 엔진(보컬)을 얹은 그림, 링크를 누르면 사이버노인정에서 그 곡을 바로 재생
-   (재생목록에는 넣지 않음 — player_screen.js offlineOpened 가 shareTake() 로 받음).
+   (재생목록에는 넣지 않음 — player_start.js offlineOpened 가 shareTake() 로 받음).
    Both sites read the card from <meta> tags of the linked page without running JS, so every shared song needs a static page:
    the player draws the card on a canvas (1200×630) and commits s/<VocaDB id>/index.html + card.jpg to a separate public
    GitHub Pages repo. Its key is in the private data branch, Server/data/share_card.json

@@ -120,12 +120,15 @@
     $("miniPlay").textContent = audio.paused ? "▶︎" : "❚❚";  // not ⏸︎ — an orange emoji on Samsung (player_screen.js)
     body.classList.toggle("mbar", has);  // the bar takes its room above the bottom menu only when a song is there
   }
-  new MutationObserver(render).observe(document.querySelector(".now"), {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["src", "hidden"]});
+  // only the title · artist · cover (the whole .now box also changed with the play time every second)
+  const mo = new MutationObserver(render), opt = {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["src", "hidden"]};
+  ["nowTitle", "nowArtist", "nowCover"].forEach(id => mo.observe($(id), opt));
   ["play", "pause", "emptied", "sourcechange"].forEach(ev => audio.addEventListener(ev, render));
+  let progShown = "";
   setInterval(() => {
-    if (APP.screenOff) return;  // phone screen off: nothing to draw
-    const d = audio.duration;
-    $("miniProg").style.width = d > 0 && isFinite(d) ? `${Math.min(100, audio.currentTime / d * 100)}%` : "0";
+    if (APP.screenOff || document.hidden || !body.classList.contains("mbar")) return;  // nothing on screen to draw
+    const d = audio.duration, p = d > 0 && isFinite(d) ? Math.min(1, audio.currentTime / d).toFixed(3) : "0";
+    if (p !== progShown) $("miniProg").style.transform = `scaleX(${progShown = p})`;
   }, 500);
   render();
   // room card = a bar right above the mini bar (user request 2026-11-15): its room is kept free under the list (CSS --mroom)
