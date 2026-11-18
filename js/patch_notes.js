@@ -16,20 +16,27 @@ const pnInline = t => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")  // **글자
 function pnHtml(text) {
   // '- x' item · '  - x' (indented) detail under the item above (user request 2026-11-17: feature + its details)
   let html = "", lvl = 0, top = null;  // top: feature line not written yet (it becomes a fold when details follow)
+  // '@캡처' pictures go under the feature, outside its fold — always shown, details folded or not (user request 2026-11-19)
+  let pics = "";
+  const outPics = () => { html += pics; pics = ""; };
   // details under a feature are folded — the feature name opens them (user request 2026-11-17)
   const flush = () => { if (top != null) { html += `<li>${top}`; top = null; } };
-  const close = to => { while (lvl > to) { if (lvl === 2) html += "</ul></details>"; else { flush(); html += "</li></ol>"; } lvl--; } };
+  const close = to => { while (lvl > to) { if (lvl === 2) { html += "</ul></details>"; outPics(); } else { flush(); outPics(); html += "</li></ol>"; } lvl--; } };
   for (const ln of String(text || "").split(/\r?\n/)) {
     const li = /^(\s*)[-*]\s+(.*)$/.exec(ln), h = /^\s*#{1,3}\s+(.*)$/.exec(ln);
     const shot = /^\s*@캡처\s+([\w-]+\.(?:jpg|png))\s*$/.exec(ln);  // picture of the changed screen part (user request 2026-11-18)
     if (h) { close(0); html += `<h4>${pnInline(h[1])}</h4>`; }
-    else if (shot || li && li[1].length >= 2) {
+    else if (shot) {
       if (lvl === 0) { html += "<ol>"; lvl = 1; top = ""; }
-      if (lvl === 1) { html += `<li class="fold"><details open><summary>${top || ""}</summary><ul>`; top = null; lvl = 2; }
-      html += shot ? `<li class="pn-shot"><img data-shot="${esc(shot[1])}" alt="바뀐 화면"></li>` : `<li>${pnInline(li[2])}</li>`;
+      pics += `<div class="pn-shot"><img data-shot="${esc(shot[1])}" alt="바뀐 화면"></div>`;
+    } else if (li && li[1].length >= 2) {
+      if (lvl === 0) { html += "<ol>"; lvl = 1; top = ""; }
+      // a feature's details start folded (user request 2026-11-19)
+      if (lvl === 1) { html += `<li class="fold"><details><summary>${top || ""}</summary><ul>`; top = null; lvl = 2; }
+      html += `<li>${pnInline(li[2])}</li>`;
     } else if (li) {
       close(1);
-      if (lvl === 1) { flush(); html += "</li>"; } else { html += "<ol>"; lvl = 1; }  // features numbered 1 2 3 (user request), details not
+      if (lvl === 1) { flush(); outPics(); html += "</li>"; } else { html += "<ol>"; lvl = 1; }  // features numbered 1 2 3 (user request), details not
       top = pnInline(li[2]);
     } else { close(0); if (ln.trim()) html += `<p>${pnInline(ln)}</p>`; }
   }
@@ -44,7 +51,7 @@ function pnShots(root) {
     const f = img.dataset.shot;
     if (!PN_SHOT.has(f)) PN_SHOT.set(f, LOCAL.readBytes(`${LOCAL.data}patch_shots/${f}`)
       .then(b => URL.createObjectURL(new Blob([b], {type: f.endsWith(".png") ? "image/png" : "image/jpeg"}))).catch(() => ""));
-    PN_SHOT.get(f).then(u => { if (u) img.src = u; else img.closest("li")?.remove(); });
+    PN_SHOT.get(f).then(u => { if (u) img.src = u; else img.closest(".pn-shot")?.remove(); });
     img.onclick = () => img.classList.toggle("big");
   }
 }

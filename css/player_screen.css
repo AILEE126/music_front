@@ -984,7 +984,7 @@ body.m .songmeta{order:2}
 .pn-b ol ul li{font-size:13px;font-weight:400;color:var(--muted)}
 .pn-b p{margin:2px 0}
 /* '@캡처' picture of the changed screen part (user request 2026-11-18) — click = full size */
-.pn-b li.pn-shot{list-style:none;margin:6px 0 8px -18px}
+.pn-b .pn-shot{margin:6px 0 8px}  /* under the feature, outside its fold — always shown (2026-11-19) */
 .pn-shot img{display:block;max-width:100%;max-height:320px;border-radius:8px;box-shadow:0 0 0 1px var(--line);cursor:zoom-in;background:var(--line)}
 .pn-shot img:not([src]){width:240px;height:120px}
 .pn-shot img.big{max-height:none;cursor:zoom-out}
