@@ -6,14 +6,12 @@
 const sfItems = scopeItems;
 /* 필터 그룹 [{x: 제외 그룹, m: '＋ 그룹'·'− 제외' 버튼으로 만든 그룹, c: [{k: 종류, v: 값}]}] — 그룹 안 조건은 모두 맞아야(교집합),
    포함 그룹끼리는 하나라도 맞으면 보임(합집합), 제외 그룹의 조건에 모두 맞는 곡은 빠짐. fCur: 새 조건이 들어갈 그룹.
-   버튼으로 그룹을 만들지 않았으면(m 없음) 조건을 고를 때마다 그 조건 하나만으로 거름 (앞 조건은 바뀜).
-   예전 태그(f.chips: 태그마다 포함·제외)는 태그 하나짜리 그룹으로 옮김 · m 이 생기기 전에 저장한 조건 여럿짜리 그룹은 직접 만든 것으로 봄 */
+   버튼으로 그룹을 만들지 않았으면(m 없음) 조건을 고를 때마다 그 조건 하나만으로 거름 (앞 조건은 바뀜). */
 /* 기본 필터 (user request 2026-11-16, was 곡 종류 오리지널 only): [곡 종류 오리지널 또는 커버 · 보컬 종류 엔진 또는 섞임] —
    음원 관리 › 필터 › 기본 필터 (filter.json default) 가 있으면 그것. 아무것도 안 고른 때 · ↺ 뒤의 필터이고,
    새 그룹('＋ 그룹' · '− 제외')은 그 첫 포함 그룹의 조건으로 시작함 */
 /* + 같은 곡 정렬 · 자르기 (user request 2026-11-16, song_filter.js filterGroups): 같은 노래는 재생되는 · 원곡 · 인기 · 먼저 나온 한 곡만 */
 // 2026-11-18 (user request: 그 곡의 가장 원조인 보카로 버전): + 리믹스 · 리마스터, 원작자 먼저 → 먼저 나온 순 → 인기순 (= filter_settings.DEFAULT_FILTER)
-const F_SORT_OLD = ["재생 가능", "긴 버전 먼저", "원곡 먼저", "인기순", "먼저 나온 순"];
 const F_DEFAULT_DEF = [{x: false, c: [{k: "type", v: ["오리지널", "커버", "리믹스", "리마스터"]}, {k: "vkind", v: ["엔진", "섞임"]},
   {k: "same_sort", v: ["재생 가능", "긴 버전 먼저", "원작자 먼저", "먼저 나온 순", "인기순"]}, {k: "same_cut", v: "1"}]}];
 const fDefault = () => JSON.parse(JSON.stringify(VDB.filter && (VDB.filter.default || []).length ? VDB.filter.default : F_DEFAULT_DEF)).map(g => ({...g, m: true}));
@@ -69,37 +67,11 @@ function fAddDefault(g) {  // one-per-group kinds (곡 종류 · 같은 곡 정�
   g.m = true;
   return n;
 }
-let FG = (store.get("f.groups", null) || store.get("f.chips", []).map(c => ({x: !!c.x, c: [{k: c.k, v: c.v}]})))
-  .map(g => "m" in g ? g : {...g, m: g.c.length > 1}).map(withType);
-/* an old built-in default left as it was (one group: 곡 종류 오리지널 only · 2: + 보컬 종류, before 같은 곡) → the new default, once
-   (user request 2026-11-16) */
-if (store.get("f.defV", 0) < 3) {
-  const was = [JSON.stringify([{k: "type", v: "오리지널"}]), JSON.stringify([{k: "type", v: ["오리지널", "커버"]}, {k: "vkind", v: ["엔진", "섞임"]}])];
-  if (FG.length === 1 && was.includes(JSON.stringify(FG[0].c))) { FG = fDefault(); store.set("f.groups", FG); }
-  store.set("f.defV", 3);
-}
-/* 4: + 긴 버전 먼저 (user request 2026-11-17) — the 2026-11-16 default left as it was → the new one, once */
-if (store.get("f.defV", 0) < 4) {
-  const was = JSON.stringify([{k: "type", v: ["오리지널", "커버"]}, {k: "vkind", v: ["엔진", "섞임"]},
-    {k: "same_sort", v: F_SORT_OLD.filter(v => v !== "긴 버전 먼저")}, {k: "same_cut", v: "1"}]);
-  if (FG.length === 1 && JSON.stringify(FG[0].c) === was) { FG = fDefault(); store.set("f.groups", FG); }
-  store.set("f.defV", 4);
-}
-/* 5: 원조 보카로 버전 (user request 2026-11-18) — groups still on the old same-song order get the new one (+ 리마스터), once */
-if (store.get("f.defV", 0) < 5) {
-  let hit = false;
-  for (const g of FG) {
-    const s = g.c.find(c => c.k === "same_sort"), t = g.c.find(c => c.k === "type");
-    if (!s || JSON.stringify(s.v) !== JSON.stringify(F_SORT_OLD)) continue;
-    s.v = [...F_DEFAULT_DEF[0].c[2].v]; hit = true;
-    if (t && Array.isArray(t.v) && !t.v.includes("리마스터")) t.v = [...t.v, ...(t.v.includes("리믹스") ? [] : ["리믹스"]), "리마스터"];
-  }
-  if (hit) store.set("f.groups", FG);
-  store.set("f.defV", 5);
-}
-let fCur = Math.min(store.get("f.cur", 0), FG.length - 1);
+/* not kept in the browser (user request 2026-11-18): the search window opens fresh every time (searchReset) —
+   a filter to keep goes in 저장된 필터 */
+let FG = [], fCur = 0;
 samePlayable = it => canPlay(it);  // 같은 곡 정렬 '재생 가능' = 재생목록에 넣을 수 있는 곡
-function saveChips(keepScroll) { sfDefaultGroup(); store.set("f.groups", FG); store.set("f.cur", fCur); renderFilterOptions(); runSearch(keepScroll); }
+function saveChips(keepScroll) { sfDefaultGroup(); renderFilterOptions(); runSearch(keepScroll); }
 function addChip(k, v) {  // v: 값 하나 또는 [값, …] (그중 하나라도)
   if (!v || (Array.isArray(v) && !v.length)) return;
   if (Array.isArray(v) && v.length === 1) v = v[0];
@@ -156,7 +128,7 @@ function editChip(gi, ci) {
   fCur = gi; fEdit = {g: gi, c: ci};
   if ($("fPanel").hidden) { $("fPanel").hidden = false; store.set("sfOpen", true); }
   $("fSolo").checked = c.k === "solo";
-  store.set("f.kind", condCat(c)); store.set("f.cur", fCur);
+  store.set("f.kind", condCat(c));
   renderFilterOptions();
   openDD("fVal", [].concat(c.v));
 }
@@ -225,7 +197,6 @@ function setFilterOpen(open) {
     const keep = FG[fCur];
     FG = FG.filter(fReal);
     fCur = Math.max(0, FG.includes(keep) ? FG.indexOf(keep) : FG.length - 1);
-    store.set("f.groups", FG); store.set("f.cur", fCur);
   }
   else sfDefaultGroup();
   $("fPanel").hidden = !open; store.set("sfOpen", open); renderFilterOptions();
@@ -391,7 +362,7 @@ function addValues(vs) {
 $("fChips").addEventListener("click", e => {
   const gEl = e.target.closest(".fgroup"); if (!gEl) return;
   const gi = +gEl.dataset.g, chip = e.target.closest(".fchip");
-  if (chip && chip.dataset.def) { e.stopPropagation(); FG[gi].d = !FG[gi].d; store.set("f.groups", FG); return renderFilterOptions(); }  // fold only — the filter is the same
+  if (chip && chip.dataset.def) { e.stopPropagation(); FG[gi].d = !FG[gi].d; return renderFilterOptions(); }  // fold only — the filter is the same
   if (e.target.closest(".gx")) { FG.splice(gi, 1); if (fCur >= gi) fCur = Math.max(0, fCur - 1); }
   else if (chip && e.target.closest("button")) FG[gi].c.splice(+chip.dataset.c, 1);
   else if (chip) { e.stopPropagation(); return editChip(gi, +chip.dataset.c); }  // the page's outside-click would close the list it opens

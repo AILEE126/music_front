@@ -568,7 +568,9 @@ a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.
 .songmeta .b.inner.ko,.songmeta .b.inner.ja{color:var(--vc);background:color-mix(in srgb,var(--vc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vc) 55%,transparent)}
 /* 불러오는 중 (곡 검색 · 노래방 창 — the window shows at once, this spins until its list is ready) */
 @keyframes spin{to{transform:rotate(360deg)}}
-dialog.busy::after{content:"";position:absolute;inset:0;z-index:50;background:color-mix(in srgb,var(--card) 55%,transparent)}
+/* + a line under the spinner (user request 2026-11-18: opened right after a reload, it spun with no word of why) */
+dialog.busy::after{content:"곡 목록을 불러오는 중…\A초기 한번만 불러와요.";white-space:pre;text-align:center;line-height:1.6;position:absolute;inset:0;z-index:50;background:color-mix(in srgb,var(--card) 55%,transparent);
+  display:grid;grid-template-rows:calc(55% - 30px);align-content:end;justify-items:center;align-items:start;color:var(--muted);font-size:13px;font-weight:600}  /* lines start 30px under the spinner's center (top 45%) */
 dialog.busy::before{content:"";position:absolute;left:50%;top:45%;z-index:51;width:38px;height:38px;margin:-19px 0 0 -19px;border:4px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
 /* 같이듣기: a room is open → a soft music waveform (equalizer bars, half see-through) along the bottom — user request 2026-11-15
    (the SVG animates its own bars; it repeats across the button) */

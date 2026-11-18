@@ -15,11 +15,22 @@ function withBusy(dlg, work) {
     try { await searchBase(); await work(); } finally { dlg.classList.remove("busy"); }
   }, 40);
 }
+/* the window opens fresh every time (user request 2026-11-18): no search text · 전체 곡 · 인기순 · 기본 필터 from the server
+   (노래방 모드: its preset) · filter panel open. A filter to keep goes in 저장된 필터 */
+function searchReset() {
+  closeDD(); closeFSet();
+  $("sQ").value = "";
+  for (const [id, v] of [["sScope", "all"], ["sSort", "RatingScore"]]) { store.set(id, v); $(id).value = v; }
+  store.set("f.kind", "singer");
+  FG = KARA.mode ? JSON.parse(JSON.stringify(KARA.presetGroups())).map(g => withType({...g, m: true})) : fDefault(); fCur = 0;
+  $("fPanel").hidden = false; store.set("sfOpen", true);
+  S.items = []; $("sList").innerHTML = ""; $("sInfo").textContent = "";  // the last results don't show while the new search runs
+}
 function openSearch() {
-  sfDefaultGroup();  // a group is always there to put conditions in (user request 2026-11-14)
+  searchReset();
   $("searchDlg").showModal();
-  $("sQ").focus(); $("sQ").select();
-  withBusy($("searchDlg"), async () => { await warmCats(yieldUI); renderSortOptions(); renderFilterOptions(); if (!S.items.length) runSearch(); });
+  $("sQ").focus();
+  withBusy($("searchDlg"), async () => { await warmCats(yieldUI); renderSortOptions(); renderFilterOptions(); runSearch(); });
 }
 $("btnSearch").onclick = openSearch;
 $("sClose").onclick = () => $("searchDlg").close();
