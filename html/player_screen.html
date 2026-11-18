@@ -53,7 +53,7 @@
           </div>
           <div class="ltpwask" id="ltPwAsk" hidden>
             <span><b id="ltPwFor"></b> 비밀번호를 넣어 주세요</span>
-            <div class="ltrow"><input type="password" id="ltPwIn" placeholder="비밀번호" autocomplete="off" maxlength="20"><button class="primary" id="ltPwGo">들어가기</button><button id="ltPwNo">그만두기</button></div>
+            <div class="ltrow"><input type="text" id="ltPwIn" class="masked" placeholder="비밀번호" autocomplete="off" spellcheck="false" maxlength="20"><button class="primary" id="ltPwGo">들어가기</button><button id="ltPwNo">그만두기</button></div>
           </div>
           <p class="ltstatus" id="ltStatus" hidden></p>
           <div class="ltsec">
@@ -281,6 +281,7 @@ const STORE_PREFIX = "player.";  // 브라우저 저장값 이름 앞머리
 <script src="../js/listen_together.js"></script>
 <script src="../js/karaoke_random.js"></script>
 <script src="../js/patch_notes.js"></script>
+<script src="../js/collect_alert.js"></script><!-- 자동 수집 알림 (2026-11-18): admin players only -->
 <script src="../js/version_check.js"></script>
 </body>
 </html>

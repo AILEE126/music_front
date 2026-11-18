@@ -199,7 +199,7 @@ body.m #listenDlg .dlg-body>.ltsec:last-child{flex:1;display:flex;flex-direction
 body.m .ltpager.ltroompager{margin-top:auto}
 .ltpager.ltroompager button:disabled{opacity:.35}
 #listenDlg button{white-space:nowrap;flex:none}
-#listenDlg input[type=text],#listenDlg input[type=password]{height:32px;box-sizing:border-box;text-align:left}
+#listenDlg input[type=text]{height:32px;box-sizing:border-box;text-align:left}
 .ltfield{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
 .ltfield[hidden]{display:none}
 .ltlabel{font-size:13px;color:var(--muted)}
@@ -243,6 +243,9 @@ body.m #listenDlg .dlg-body{overscroll-behavior-y:contain}
 #ltTitle{flex:1;min-width:0}
 #ltNewPw{width:7.5em}
 #ltPwIn{width:10em}
+/* user request 2026-11-18: no type=password anywhere — the browser saved nickname+token as a login and filled them into
+   the 신청곡 box / room password. Masked text boxes are never saved or autofilled (room creation password stays visible). */
+input.masked{-webkit-text-security:disc;text-security:disc}
 .ltrooms{list-style:none;margin:0;padding:0}  /* 5 a page — no inner scroll (user request 2026-11-15) */
 .ltrooms .ltempty{color:var(--muted);font-size:12.5px;padding:4px 2px}
 .ltrooms:empty{display:none}
@@ -519,6 +522,11 @@ body:not(.simple) .khn{color:color-mix(in srgb,var(--bc) var(--tint-k),var(--tin
 .fchip .k{flex:none;white-space:nowrap;color:var(--muted);font-size:10.5px;margin-right:4px}
 .fchip .v{min-width:0;overflow-wrap:anywhere;padding:1px 0}  /* long values wrap, never cut (user request 2026-11-15) */
 .fgroup.exc .fchip .v{text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--err) 70%,transparent)}
+/* 곡 조건 with several songs: one song per line in a small scrolling list (user request 2026-11-18) */
+.fchip .v.slist{display:flex;flex-direction:column;max-height:7.6em;overflow:auto;overscroll-behavior:contain;padding:2px 6px 2px 0;line-height:1.5}
+.fchip .v.slist>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fchip:has(.slist){align-items:flex-start;border-radius:10px;padding-top:3px;padding-bottom:3px}
+.fchip:has(.slist) .k{line-height:1.5}
 .fchip button,.fgroup .gx,.fgroup .gh{cursor:pointer}
 /* 기본 필터 chip · dragging conditions between groups (user request 2026-11-17) */
 .fchip.fdef{gap:4px;padding:1px 6px 1px 7px;background:var(--accent);color:var(--accent-text);box-shadow:none;font-weight:700;cursor:pointer}
@@ -979,3 +987,10 @@ body.m .songmeta{order:2}
 .pn-b li.fold details:not([open]) summary::after{content:" 펼치기";font-size:11px;font-weight:400;color:var(--muted)}
 .pn-old{margin-top:12px;font-size:12px;color:var(--muted)}
 .pn-none{color:var(--muted)}
+/* 자동 수집 알림 (2026-11-18, collect_alert.js): admin players only, under the side tools */
+.calert{position:relative;margin:10px 0 0;padding:8px 30px 8px 10px;border:1px solid var(--warn);border-radius:8px;font-size:12px;line-height:1.5;
+  background:color-mix(in srgb,var(--warn) 12%,transparent)}
+.calert b{color:var(--warn)}
+.calert-why{color:var(--muted)}
+.calert-todo{font-weight:600}
+.calert-x{position:absolute;top:4px;right:4px;font-size:12px;padding:2px 6px}

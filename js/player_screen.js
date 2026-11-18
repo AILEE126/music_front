@@ -441,8 +441,10 @@ const sfItems = scopeItems;
    음원 관리 › 필터 › 기본 필터 (filter.json default) 가 있으면 그것. 아무것도 안 고른 때 · ↺ 뒤의 필터이고,
    새 그룹('＋ 그룹' · '− 제외')은 그 첫 포함 그룹의 조건으로 시작함 */
 /* + 같은 곡 정렬 · 자르기 (user request 2026-11-16, song_filter.js filterGroups): 같은 노래는 재생되는 · 원곡 · 인기 · 먼저 나온 한 곡만 */
-const F_DEFAULT_DEF = [{x: false, c: [{k: "type", v: ["오리지널", "커버"]}, {k: "vkind", v: ["엔진", "섞임"]},
-  {k: "same_sort", v: ["재생 가능", "긴 버전 먼저", "원곡 먼저", "인기순", "먼저 나온 순"]}, {k: "same_cut", v: "1"}]}];
+// 2026-11-18 (user request: 그 곡의 가장 원조인 보카로 버전): + 리믹스 · 리마스터, 원작자 먼저 → 먼저 나온 순 → 인기순 (= filter_settings.DEFAULT_FILTER)
+const F_SORT_OLD = ["재생 가능", "긴 버전 먼저", "원곡 먼저", "인기순", "먼저 나온 순"];
+const F_DEFAULT_DEF = [{x: false, c: [{k: "type", v: ["오리지널", "커버", "리믹스", "리마스터"]}, {k: "vkind", v: ["엔진", "섞임"]},
+  {k: "same_sort", v: ["재생 가능", "긴 버전 먼저", "원작자 먼저", "먼저 나온 순", "인기순"]}, {k: "same_cut", v: "1"}]}];
 const fDefault = () => JSON.parse(JSON.stringify(VDB.filter && (VDB.filter.default || []).length ? VDB.filter.default : F_DEFAULT_DEF)).map(g => ({...g, m: true}));
 const fBase = () => { const d = fDefault(); return (d.find(g => !g.x) || d[0]).c; };
 const fNewGroup = x => ({x, m: true, c: fBase()});
@@ -463,6 +465,9 @@ function fDefIdx(g) {
   }
   return out.length ? out : null;
 }
+/* 곡 조건 (user request 2026-11-18): several songs → a small scrolling list, one song per line (like the vocal +N list) */
+const chipVal = c => c.k === "song" && Array.isArray(c.v) && c.v.length > 1
+  ? `<span class="v slist">${c.v.map(v => `<span>${esc(oneLabel(c.k, v))}</span>`).join("")}</span>` : `<span class="v">${esc(chipLabel(c))}</span>`;
 const fDefChip = (g, open, ro) => `<span class="fchip fdef${open ? " open" : ""}"${ro ? ` title="기본 필터: ${esc(fBase().map(chipLabel).join(" · "))}"` : ` draggable="true" data-def="1" title="기본 필터: ${esc(fBase().map(chipLabel).join(" · "))}&#10;누르면 ${open ? "접기" : "펼치기"} · 끌어서 다른 그룹으로 (곡 종류는 그대로)"`}><svg class="fdi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg><span class="k">기본 필터</span>${ro ? "" : DD_CHEV}</span>`;
 /* 조건 끌어 옮기기 (user request 2026-11-17): a condition (or the folded 기본 필터 — all of them) dragged onto another group moves
    there. 곡 종류 never moves (one per group). A one-per-group condition replaces the one already there */
@@ -498,15 +503,28 @@ let FG = (store.get("f.groups", null) || store.get("f.chips", []).map(c => ({x: 
 /* an old built-in default left as it was (one group: 곡 종류 오리지널 only · 2: + 보컬 종류, before 같은 곡) → the new default, once
    (user request 2026-11-16) */
 if (store.get("f.defV", 0) < 3) {
-  const was = [JSON.stringify([{k: "type", v: "오리지널"}]), JSON.stringify(F_DEFAULT_DEF[0].c.slice(0, 2))];
+  const was = [JSON.stringify([{k: "type", v: "오리지널"}]), JSON.stringify([{k: "type", v: ["오리지널", "커버"]}, {k: "vkind", v: ["엔진", "섞임"]}])];
   if (FG.length === 1 && was.includes(JSON.stringify(FG[0].c))) { FG = fDefault(); store.set("f.groups", FG); }
   store.set("f.defV", 3);
 }
 /* 4: + 긴 버전 먼저 (user request 2026-11-17) — the 2026-11-16 default left as it was → the new one, once */
 if (store.get("f.defV", 0) < 4) {
-  const was = JSON.stringify(F_DEFAULT_DEF[0].c.map(c => c.k === "same_sort" ? {...c, v: c.v.filter(v => v !== "긴 버전 먼저")} : c));
+  const was = JSON.stringify([{k: "type", v: ["오리지널", "커버"]}, {k: "vkind", v: ["엔진", "섞임"]},
+    {k: "same_sort", v: F_SORT_OLD.filter(v => v !== "긴 버전 먼저")}, {k: "same_cut", v: "1"}]);
   if (FG.length === 1 && JSON.stringify(FG[0].c) === was) { FG = fDefault(); store.set("f.groups", FG); }
   store.set("f.defV", 4);
+}
+/* 5: 원조 보카로 버전 (user request 2026-11-18) — groups still on the old same-song order get the new one (+ 리마스터), once */
+if (store.get("f.defV", 0) < 5) {
+  let hit = false;
+  for (const g of FG) {
+    const s = g.c.find(c => c.k === "same_sort"), t = g.c.find(c => c.k === "type");
+    if (!s || JSON.stringify(s.v) !== JSON.stringify(F_SORT_OLD)) continue;
+    s.v = [...F_DEFAULT_DEF[0].c[2].v]; hit = true;
+    if (t && Array.isArray(t.v) && !t.v.includes("리마스터")) t.v = [...t.v, ...(t.v.includes("리믹스") ? [] : ["리믹스"]), "리마스터"];
+  }
+  if (hit) store.set("f.groups", FG);
+  store.set("f.defV", 5);
 }
 let fCur = Math.min(store.get("f.cur", 0), FG.length - 1);
 samePlayable = it => canPlay(it);  // 같은 곡 정렬 '재생 가능' = 재생목록에 넣을 수 있는 곡
@@ -613,7 +631,7 @@ function renderFilterOptions() {
       // 곡 종류: 그룹마다 꼭 하나 — 지우기 없이 고르는 칸 모양 (▾), 옮기지 않음 · 다른 조건: 누르면 고치기, × 빼기, 끌어서 다른 그룹으로
       return c.k === "type"
         ? `<span class="fchip req${cls}${on}" data-c="${j}" title="곡 종류 — 그룹마다 꼭 하나 · 누르면 바꾸기"><span class="k">${esc(chipKind(c))}</span><span class="v">${esc(chipLabel(c))}</span>${DD_CHEV}</span>`
-        : `<span class="fchip${cls}${on}" data-c="${j}" draggable="true" title="누르면 이 조건 고치기 · 끌어서 다른 그룹으로"><span class="k">${esc(chipKind(c))}</span><span class="v">${esc(chipLabel(c))}</span><button title="빼기">×</button></span>`; };
+        : `<span class="fchip${cls}${on}" data-c="${j}" draggable="true" title="누르면 이 조건 고치기 · 끌어서 다른 그룹으로"><span class="k">${esc(chipKind(c))}</span>${chipVal(c)}<button title="빼기">×</button></span>`; };
     return `<div class="fgroup${g.x ? " exc" : ""}${i === fCur ? " cur" : ""}" data-g="${i}" title="${i === fCur ? "새 조건이 이 그룹에 들어감" : "누르면 이 그룹 선택"}">`
       + `<button class="gh" title="${g.x ? "제외 그룹 — 누르면 포함으로" : "포함 그룹 — 누르면 제외로"}">${g.x ? "−" : "＋"}</button>`
       + cs.filter(c => c.k === "type" && !isDef(c)).map(c => chip(c)).join("")
@@ -1050,7 +1068,7 @@ function setPlFilter(groups) {
 /* filter groups → read-only group boxes (also used by 같이듣기 for the host's filter) */
 function plfHtml(groups) {
   const grp = g => { const ds = new Set(fDefIdx(g) || []), cs = g.c.filter(c => FKIND[c.k]);
-    const one = c => `<span class="fchip"><span class="k">${esc(chipKind(c))}</span><span class="v">${esc(chipLabel(c))}</span></span>`;
+    const one = c => `<span class="fchip"><span class="k">${esc(chipKind(c))}</span>${chipVal(c)}</span>`;
     return `<div class="fgroup${g.x ? " exc" : ""}"><span class="gh">${g.x ? "−" : "＋"}</span>`  // 기본 필터 folded here as well (2026-11-17)
       + cs.filter(c => c.k === "type" && !ds.has(g.c.indexOf(c))).map(one).join("") + (ds.size ? fDefChip(g, false, true) : "")
       + cs.filter(c => c.k !== "type" && !ds.has(g.c.indexOf(c))).map(one).join("") + "</div>"; };
@@ -1997,7 +2015,7 @@ async function offlineDialog(err = "") {
   // + nickname (user request 2026-11-17) · a read-only token also needs the 1차 지인's nickname, registered on the server
   d.innerHTML = `<div class="dlg-body"><b>깃허브 토큰을 넣어 주세요</b>
       <div class="ghmade">마지막 토큰 생성 <b>${TOKEN_MADE}</b></div>
-      <div class="ghform"><input type="password" id="ghToken" placeholder="깃허브 토큰 (github_pat_…)" autocomplete="off"></div>
+      <div class="ghform"><input type="text" id="ghToken" class="masked" placeholder="깃허브 토큰 (github_pat_…)" autocomplete="off" spellcheck="false"></div>
       <label class="ghform ghfield"><span class="ghlab"><span class="ltreq">*</span>닉네임</span><input type="text" id="ghWho" maxlength="40" autocomplete="off" spellcheck="false"></label>
       <div class="ghform ghfield"><span class="ghlab">대표색상</span><span id="ghClr"></span></div>
       <label class="ghform ghfield" id="ghViaRow" hidden><span class="ghlab"><span class="ltreq">*</span>소개받은 닉네임</span><input type="text" id="ghVia" placeholder="토큰을 준 사람의 닉네임" maxlength="40" autocomplete="off" spellcheck="false"></label>

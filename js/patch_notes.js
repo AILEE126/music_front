@@ -70,8 +70,8 @@ function pnShow(all) {
   wrap.className = "pn-wrap";
   wrap.innerHTML = `<div class="pn-back"></div><div class="pn-box" role="dialog" aria-modal="true" aria-label="패치노트">
     <div class="pn-head"><b>패치노트</b><button class="ib pn-x" title="닫기" aria-label="닫기">✕</button></div>
-    <div class="pn-list">${list.map((n, i) => note(n, true)).join("") || '<p class="pn-none">아직 패치노트가 없습니다.</p>'}
-      ${older.length ? `<div class="pn-old">지난 패치노트</div>${older.map(n => note(n, true)).join("")}` : ""}</div></div>`;
+    <div class="pn-list">${list.map((n, i) => note(n, i === 0)).join("") || '<p class="pn-none">아직 패치노트가 없습니다.</p>'}
+      ${older.length ? `<div class="pn-old">지난 패치노트</div>${older.map(n => note(n, false)).join("")}` : ""}</div></div>`;  // only the newest note open (user request 2026-11-18)
   document.body.appendChild(wrap);
   PN.open = true; pnDot();
   const box = wrap.querySelector(".pn-box"), back = wrap.querySelector(".pn-back");

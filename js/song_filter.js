@@ -48,7 +48,10 @@ const vkindOf = it => it.vkind || "정보 없음";
    그룹마다 따로 (그룹끼리 합치고 빼는 건 그 뒤) — filterGroups. 끝까지 같으면 VocaDB 번호가 작은(먼저 등록된) 곡 */
 /* 긴 버전 먼저 (user request 2026-11-17): VocaDB 'short version' 태그 곡(광고·TV 사이즈 …)은 같은 곡 중 맨 뒤 —
    Tell Your World 는 원곡이 61초 광고판이고 풀버전은 그 리믹스('extended version') */
-const SAME_SORTS = ["재생 가능", "긴 버전 먼저", "원곡 먼저", "인기순", "먼저 나온 순"];
+/* 원작자 먼저 (user request 2026-11-18: '그 곡의 가장 원조인 보카로 버전'): 묶음 맨 위 곡(원곡)의 프로듀서가 참여한 버전 먼저 —
+   원곡이 짧은 버전이면 원작자의 긴 버전(소실 리마스터), 사람 원곡이면 원작자가 낸 보카로 버전. 그다음 '먼저 나온 순'이면
+   원작자 버전 중 가장 먼저 나온 것 (작곡가가 나중 버전에만 참여했어도 그 버전들끼리 차례) */
+const SAME_SORTS = ["재생 가능", "긴 버전 먼저", "원작자 먼저", "원곡 먼저", "인기순", "먼저 나온 순"];
 const isShortVer = it => (it.tags || []).includes("short version");
 const SAME_CUTS = ["1", "2", "3", "5", "10"];
 var samePlayable = it => (it.sources || []).length > 0;  // 플레이어는 canPlay 로 바꿈
@@ -57,25 +60,49 @@ const dateKey = it => it.date || "9999";
 const SAME_CMP = {
   "재생 가능": (a, b) => (samePlayable(b) ? 1 : 0) - (samePlayable(a) ? 1 : 0),
   "긴 버전 먼저": (a, b) => (isShortVer(a) ? 1 : 0) - (isShortVer(b) ? 1 : 0),
+  "원작자 먼저": (a, b) => (b._own ? 1 : 0) - (a._own ? 1 : 0),
   "원곡 먼저": (a, b) => (a.origId ? 1 : 0) - (b.origId ? 1 : 0),
   "인기순": (a, b) => (b.rating || 0) - (a.rating || 0),
   "먼저 나온 순": (a, b) => dateKey(a) < dateKey(b) ? -1 : dateKey(a) > dateKey(b) ? 1 : 0,
 };
 const sameNo = it => +(it.vocadb || 0) || 1e12;
-/* 같은 곡 묶음 열쇠: 원곡 번호를 목록 안에서 끝까지 따라감 (목록에 없는 원곡이면 그 번호 — 형제 커버끼리는 같이 묶임) */
+/* 제목 비교용: 글자·숫자만 */
+const looseTitle = s => String(s || "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+const titleSet = it => [it.def, it.ja, it.en, ...String(it.alt || "").split(",")].map(looseTitle).filter(Boolean);
+/* 같은 노래인가 (user request 2026-11-18): VocaDB 는 답가·패러디도 원곡 번호로 이음 (アドレサンス → サンドリヨン, 弱音ハクの消失 →
+   初音ミクの消失) — 한쪽 이름이 다른 쪽 이름 안에 들어 있어야 같은 노래 ('初音ミクの消失' ↔ '初音ミクの消失 -DEAD END-') */
+function sameSong(it, up) {
+  const a = titleSet(it), b = titleSet(up);
+  const has = (x, y) => y.length > 1 ? x.includes(y) : x === y;
+  return !a.length || !b.length || b.some(t => a.some(s => has(s, t) || has(t, s)));
+}
+/* 같은 곡 묶음 열쇠: 원곡 번호를 목록 안에서 끝까지 따라 올라가, 이 곡과 같은 노래인 가장 위 곡 (アドレサンス 의 커버 →
+   アドレサンス, サンドリヨン 아님 · '初音ミクの消失 (Hommarju Remix)' → '-DEAD END-' 를 지나 初音ミクの消失). 바로 위 원곡이
+   목록에 없으면 그 번호 — 형제 커버끼리는 같이 묶임 */
 function sameFam(it, byId) {
-  let id = String(it.vocadb || it.name), o = it.origId;
-  for (let i = 0; o && i < 20 && o !== id; i++) { id = String(o); const p = byId.get(id); o = p && p.origId; }
-  return id;
+  const self = String(it.vocadb || it.name), seen = new Set([self]);
+  let best = self, o = it.origId;
+  for (let i = 0; o && i < 20 && !seen.has(String(o)); i++) {
+    const id = String(o), p = byId.get(id);
+    seen.add(id);
+    if (!p) { if (!i) best = id; break; }
+    if (sameSong(it, p)) best = id;
+    o = p.origId;
+  }
+  return best;
 }
 const sameIds = new WeakMap();  // 목록(배열) → {VocaDB 번호: 곡}
-/* 묶음 열쇠는 곡마다 한 번만 (it._fam — 곡 데이터를 다시 읽으면 곡도 새로 만들어짐) */
+const peopleSet = s => new Set(String(s || "").split(/\s*[,，、&＆/]\s*/).map(x => x.trim()).filter(Boolean));
+/* 묶음 열쇠는 곡마다 한 번만 (it._fam — 곡 데이터를 다시 읽으면 곡도 새로 만들어짐) · it._own: 묶음 맨 위 곡의 프로듀서가 참여 */
 function sameKeyOf(it, its) {
   if (it._fam !== undefined) return it._fam;
-  if (!it.origId) return it._fam = String(it.vocadb || it.name);
+  if (!it.origId) { it._own = true; return it._fam = String(it.vocadb || it.name); }
   let byId = sameIds.get(its);
   if (!byId) sameIds.set(its, byId = new Map(its.filter(it => it.vocadb).map(it => [String(it.vocadb), it])));
-  return it._fam = sameFam(it, byId);
+  const fam = sameFam(it, byId), root = byId.get(fam);
+  const rp = root ? peopleSet(root.composer) : null;
+  it._own = root === it || (!!rp && [...peopleSet(it.composer)].some(p => rp.has(p)));
+  return it._fam = fam;
 }
 function sameSpec(g) {
   const s = g.c.find(c => c.k === "same_sort"), n = g.c.find(c => c.k === "same_cut");
