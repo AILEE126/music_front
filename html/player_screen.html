@@ -123,7 +123,8 @@
       <div class="seg" title="가사 줄 보이기 · 숨기기"><!-- user request: three joined on/off buttons instead of checkboxes -->
         <label><input type="checkbox" id="showR" checked hidden>발음</label><label><input type="checkbox" id="showT" checked hidden>번역</label><label title="이 줄을 부르는 보컬 (나무위키 가사에 보컬별 색 구분이 있는 곡)"><input type="checkbox" id="showP" checked hidden>파트</label>
       </div>
-      <button id="btnOverlaySet" title="오버레이 켜기·끄기 · 설정: 가사 먼저 보이기 · 가사 오버레이 (tools\lyrics_overlay.bat 로 켜는 바탕 투명 가사 창)">오버레이 <span class="gear">⚙&#xFE0E;</span></button><!-- user request 2026-11-15: one button; 켜기·끄기 moved into the settings window -->
+      <button id="btnOverlay" class="ovpow" title="가사 오버레이 켜기 · 끄기 (바탕 투명 가사 창)">오버레이</button>
+      <button class="ib" id="btnSettings" title="설정 — 오버레이 · 글꼴" aria-label="설정"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button><!-- user request 2026-11-18: 오버레이 on/off its own button again · only the gear at the right end opens the settings (오버레이 · 글꼴) -->
     </div>
 
     <div class="bartab"><button class="tab" id="btnBar" title="가사 도구 접기 · 펴기" aria-label="가사 도구 접기 · 펴기"><svg viewBox="0 0 14 10" aria-hidden="true"><path d="M3 1.5v7M7 1.5v7M11 1.5v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></div><!-- user request: a tab hanging under the lyrics-tool bar folds / unfolds it · stays on the bar, not the sync guide -->
@@ -159,7 +160,7 @@
   <div class="dlg-head hx">설정<button class="ib dlgx" data-set="close" title="닫기 (Esc)" aria-label="닫기">✕</button></div>
   <div class="dlg-body">
     <button data-set="report">오류신고 · 텍스트 대치 제안</button>
-    <button data-set="overlay">가사 · 오버레이 설정</button>
+    <button data-set="overlay">오버레이 · 글꼴 설정</button>
     <div class="msetsec">화면 크기</div>
     <div class="mset mzoom"><input type="range" id="mZoom" min="100" max="160" step="5" value="100" aria-label="화면 크기"><b id="mZoomVal">100%</b></div>
     <div class="msetsec">이어폰</div>
@@ -277,6 +278,7 @@ const STORE_PREFIX = "player.";  // 브라우저 저장값 이름 앞머리
 <script src="../js/play_engine.js"></script>
 <script src="../js/song_filter.js"></script>
 <script src="../js/vocadb_api.js"></script>
+<script src="../js/font_setting.js"></script>
 <script src="../js/player_screen.js"></script><!-- the player screen, split by feature (keep this order — player_start.js last of them) -->
 <script src="../js/playlist_panel.js"></script>
 <script src="../js/search_dialog.js"></script>

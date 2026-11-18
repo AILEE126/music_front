@@ -56,6 +56,7 @@ async function offlineOpened() {
   renderHello();
   LOCAL.userSyncSoon();  // registers the nickname · uploads 저장된 필터 (only when changed)
   LOCAL.ovReopen();  // 이 브라우저에서 오버레이를 쓴 적이 있으면 바로 오버레이와 주고받음
+  fontApply();  // 고른 글꼴 (font_setting.js) — in the background, the screen doesn't wait for font files
   // the song shown first: tab reloaded while a song played (e.g. the browser reloaded it by itself) → go on playing it from
   // there; else the last song, paused. Only its block is read before the screen opens
   const res = SHELL.takeResume(), vid = k => (/\/vocadb_(\d+)$/.exec(k || "") || [])[1];
@@ -152,8 +153,9 @@ async function offlineDialog(err = "") {
 }
 
 /* ================= 가사 오버레이 (programs\WEB\tools\lyrics_overlay.bat — 파워쉘 창, 바탕 투명 · 어느 브라우저든) =================
-   지금 곡·가사 묶음은 재생기(play_engine.js)가 알려 줌. ⚙ 는 오버레이 설정 창 (shared_screen_helpers.js) */
-$("btnOverlaySet").onclick = e => { e.stopPropagation(); openOverlaySettings(); };
+   지금 곡·가사 묶음은 재생기(play_engine.js)가 알려 줌. [오버레이] = 켜기·끄기, ⚙ = 설정 창 (shared_screen_helpers.js) */
+bindOverlayPower($("btnOverlay"), "오버레이");
+$("btnSettings").onclick = e => { e.stopPropagation(); openPlayerSettings(); };
 
 /* ================= 키보드 ================= */
 document.addEventListener("keydown", e => {

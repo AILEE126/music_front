@@ -49,7 +49,7 @@ $EDIT_MS = 8000     # 설정 창이 3초마다 '열려 있음'을 알려 줌 →
 $UTF8 = New-Object Text.UTF8Encoding $false
 
 # ---- 설정 (⚙ 설정 창에서 바꿈 · 위치는 끌어 옮길 때 이 창이 씀) — 서버 web_api\lyrics_overlay_files.py 와 같은 기본값 ----
-$DEFAULTS = @{ x = -1; y = -1; width = 1100; size = 22; outline = 2; opacity = 100; clickthrough = $false; target = 'ffxiv_dx11'; info = $true; editing_at = 0; quit_at = 0; enabled = $true }
+$DEFAULTS = @{ x = -1; y = -1; width = 1100; size = 22; info_size = 12; outline = 2; opacity = 100; clickthrough = $false; target = 'ffxiv_dx11'; info = $true; editing_at = 0; quit_at = 0; enabled = $true; font_ja = ''; font_etc = '' }
 $script:cfg = $DEFAULTS.Clone()
 $script:cfgWrite = [datetime]::MinValue
 function Read-Json($path) { [IO.File]::ReadAllText($path, [Text.Encoding]::UTF8).TrimStart([char]0xFEFF) | ConvertFrom-Json }
@@ -113,9 +113,8 @@ $script:panel = New-Object System.Windows.Controls.StackPanel
 $script:panel.Margin = '10,6,10,6'
 $w.Content = $script:panel
 $script:wa = [System.Windows.SystemParameters]::WorkArea
-function Set-Place {  # 위치·폭·불투명도 (x 가 -1 이면 화면 아래 가운데 — 설정 창의 '위치 처음으로')
+function Set-Place {  # 위치·폭 (x 가 -1 이면 화면 아래 가운데 — 설정 창의 '위치 처음으로') · 불투명도는 줄마다 (Add-Line)
     $w.Width = [Math]::Max(200.0, [double]$script:cfg.width)
-    $w.Opacity = [Math]::Max(0.1, [Math]::Min(1.0, [double]$script:cfg.opacity / 100.0))
     if ($Test) { $w.Left = -30000; $w.Top = -30000; return }
     if ([double]$script:cfg.x -lt 0) { $w.Left = $script:wa.Left + ($script:wa.Width - $w.Width) / 2; $w.Top = $script:wa.Bottom - 260 }
     else { $w.Left = [double]$script:cfg.x; $w.Top = [double]$script:cfg.y }
@@ -155,9 +154,13 @@ function Write-Programs {  # 창이 떠 있는 프로그램 목록 → 설정 �
 }
 
 # ---- 글자: 테두리를 그리기 위해 글자를 도형으로 바꿔 검은 선(두께 = 설정의 테두리) 위에 채움 ----
+# 플레이어가 밝은 화면이면 (now.light — user request 2026-11-18) 흰 테두리 + 어두운 글자, 보컬 색은 플레이어처럼 62% 로 어둡게
+function Get-Light { [bool]($script:now -and $script:now.light) }
+function Get-TextBrush { if (Get-Light) { (New-Object System.Windows.Media.BrushConverter).ConvertFromString('#323238') } else { [System.Windows.Media.Brushes]::White } }
 function New-Brush($colors) {
     $cs = @($colors | Where-Object { $_ -match '^#[0-9a-fA-F]{6}$' })
-    if ($cs.Count -eq 0) { return [System.Windows.Media.Brushes]::White }
+    if (Get-Light) { $cs = @($cs | ForEach-Object { $c = $_; '#' + ((1, 3, 5 | ForEach-Object { '{0:x2}' -f [int]([Convert]::ToInt32($c.Substring($_, 2), 16) * 0.62) }) -join '') }) }
+    if ($cs.Count -eq 0) { return (Get-TextBrush) }
     if ($cs.Count -eq 1) { return (New-Object System.Windows.Media.BrushConverter).ConvertFromString($cs[0]) }
     $g = New-Object System.Windows.Media.LinearGradientBrush
     $g.StartPoint = '0,0'; $g.EndPoint = '0,1'
@@ -167,49 +170,91 @@ function New-Brush($colors) {
     $g
 }
 $script:font = New-Object System.Windows.Media.FontFamily 'Malgun Gothic'
+# kana · kanji with no 일본어 글꼴 picked: Yu Gothic (user request 2026-11-19) — Malgun Gothic draws kana tiny and has only
+# Korean hanja, so kanji and kana came out in different sizes
+$script:fontJa = New-Object System.Windows.Media.FontFamily 'Yu Gothic, Meiryo, Malgun Gothic'
+# 글꼴 (user request 2026-11-18): the player's ⚙ 글꼴 picks — font_ja (kana · kanji, Chinese hanzi too) and font_etc (the rest)
+# name font files the player sent to /font (overlay\fonts, ttf/otf — WPF reads no woff). '' or a missing file = Malgun Gothic
+$script:fontDir = Join-Path (Split-Path $script:CfgFile) 'fonts'
+$script:fontCache = @{}
+function Get-OvFont([string]$file) {
+    if (-not $file) { return $script:font }
+    if ($script:fontCache.ContainsKey($file)) { return $script:fontCache[$file] }
+    $p = Join-Path $script:fontDir $file
+    if (-not (Test-Path $p)) { return $script:font }   # not kept: the player sends it soon
+    $f = $script:font
+    try {
+        $name = @((New-Object System.Windows.Media.GlyphTypeface([Uri]$p)).Win32FamilyNames.Values)[0]
+        $f = New-Object System.Windows.Media.FontFamily((New-Object Uri(($script:fontDir.TrimEnd('\') + '\'))), "./#$name, Malgun Gothic")
+    } catch {}
+    $script:fontCache[$file] = $f
+    $f
+}
+# Japanese runs (same ranges as the player's font_setting.js): drawn with the Japanese pick
+$JA_RE = '(?:[\u3000-\u30FF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]|[\uD840-\uD8BF][\uDC00-\uDFFF])+'
 function Add-Line($text, [double]$size, $brush, [double]$opacity, $weight) {
     $o = [Math]::Max(0.0, [double]$script:cfg.outline)
-    $tf = New-Object System.Windows.Media.Typeface($script:font, [System.Windows.FontStyles]::Normal, $weight, [System.Windows.FontStretches]::Normal)
+    $etc = Get-OvFont ([string]$script:cfg.font_etc); $ja = $(if ([string]$script:cfg.font_ja) { Get-OvFont ([string]$script:cfg.font_ja) } else { $script:fontJa })
+    $tf = New-Object System.Windows.Media.Typeface($etc, [System.Windows.FontStyles]::Normal, $weight, [System.Windows.FontStretches]::Normal)
     $ft = New-Object System.Windows.Media.FormattedText($text, [Globalization.CultureInfo]::CurrentUICulture, [System.Windows.FlowDirection]::LeftToRight, $tf, $size, $brush)
+    if ($ja -ne $etc) { foreach ($m in [regex]::Matches([string]$text, $JA_RE)) { $ft.SetFontFamily($ja, $m.Index, $m.Length) } }
+    # fixed line height (user request 2026-11-19): the font's own was taller for lines with Yu Gothic (Japanese) than Malgun
+    # Gothic ones, so the gap after a Japanese line looked wider; 1.15 × size = tighter and the same for every line
+    $ft.LineHeight = $size * 1.15
     $ft.MaxTextWidth = [Math]::Max(50.0, $w.Width - 20.0 - 2.0 * $o); $ft.TextAlignment = 'Center'
     $geo = $ft.BuildGeometry((New-Object System.Windows.Point($o, $o)))
     $box = New-Object System.Windows.Controls.Grid
-    $box.Width = $ft.MaxTextWidth + 2 * $o; $box.Height = $ft.Height + 2 * $o; $box.Opacity = $opacity; $box.Tag = $text
+    $box.Width = $ft.MaxTextWidth + 2 * $o; $box.Height = $ft.Height + 2 * $o; $box.Tag = $text
+    # 불투명도 (user request 2026-11-18: see-through letters went too dark over black screens): outline + letters turn
+    # see-through as one layer ($grp — like the SNS card's name tag) over an opaque white copy of the letters, so the letters
+    # fade toward white instead of the screen behind; only the outline lets the screen through
+    $a = $opacity * [Math]::Max(0.1, [Math]::Min(1.0, [double]$script:cfg.opacity / 100.0))
+    if ($a -lt 1) {
+        $base = New-Object System.Windows.Shapes.Path
+        $base.Data = $geo; $base.Fill = [System.Windows.Media.Brushes]::White
+        [void]$box.Children.Add($base)
+    }
+    $grp = New-Object System.Windows.Controls.Grid
+    $grp.Opacity = $a
+    [void]$box.Children.Add($grp)
     if ($o -gt 0) {
         $edge = New-Object System.Windows.Shapes.Path
-        $edge.Data = $geo; $edge.Stroke = [System.Windows.Media.Brushes]::Black; $edge.StrokeThickness = 2 * $o; $edge.StrokeLineJoin = 'Round'
-        [void]$box.Children.Add($edge)
+        $edge.Data = $geo; $edge.Stroke = $(if (Get-Light) { [System.Windows.Media.Brushes]::White } else { [System.Windows.Media.Brushes]::Black }); $edge.StrokeThickness = 2 * $o; $edge.StrokeLineJoin = 'Round'
+        [void]$grp.Children.Add($edge)
     }
     $fill = New-Object System.Windows.Shapes.Path
     $fill.Data = $geo; $fill.Fill = $brush
-    [void]$box.Children.Add($fill)
+    [void]$grp.Children.Add($fill)
     [void]$script:panel.Children.Add($box)
 }
 function Show-Now {
     $script:panel.Children.Clear()
     $d = $script:now
     $s = [Math]::Max(6.0, [double]$script:cfg.size)
-    $white = [System.Windows.Media.Brushes]::White
+    $white = Get-TextBrush
     $alive = $d -and ((Get-Epoch) - [double]$d.at) -lt $STALE_MS
     if (-not $alive) {  # 재생 중인 곡이 없음: 설정 창이 열려 있을 때만 위치를 잡을 글자
         if ($script:editing) { Add-Line '가사 오버레이 — 끌어서 옮기세요' $s $white 1 ([System.Windows.FontWeights]::Bold) }
         return
     }
     if ($script:cfg.info -and $d.title) {
-        Add-Line ($(if ($d.artist) { "$($d.title) — $($d.artist)" } else { $d.title })) ($s * 0.55) $white 0.9 ([System.Windows.FontWeights]::SemiBold)
+        # 곡 정보 줄 글자 크기: its own setting (user request 2026-11-19, was size × 0.55)
+        Add-Line ($(if ($d.artist) { "$($d.title) — $($d.artist)" } else { $d.title })) ([Math]::Max(6.0, [double]$script:cfg.info_size)) $white 0.9 ([System.Windows.FontWeights]::SemiBold)
     }
     $brush = New-Brush $d.colors
     foreach ($l in @($d.lines)) {
         if ($l.role -eq 'o') { Add-Line $l.text $s $brush 1 ([System.Windows.FontWeights]::Bold) }
-        elseif ($l.role -eq 'r' -and $d.show_r) { Add-Line $l.text ($s * 0.65) $brush 0.85 ([System.Windows.FontWeights]::SemiBold) }
-        elseif ($l.role -eq 't' -and $d.show_t) { Add-Line $l.text ($s * 0.65) $brush 1 ([System.Windows.FontWeights]::SemiBold) }
+        # every lyric line one size (user request 2026-11-19 — a Korean- or English-only song = the Japanese line's size)
+        elseif ($l.role -eq 'r' -and $d.show_r) { Add-Line $l.text $s $brush 0.85 ([System.Windows.FontWeights]::SemiBold) }
+        elseif ($l.role -eq 't' -and $d.show_t) { Add-Line $l.text $s $brush 1 ([System.Windows.FontWeights]::SemiBold) }
     }
 }
 
 # ---- 플레이어와 주고받는 창구: http://127.0.0.1:47613 (이 PC 안에서만) ----
 # User request: the overlay works by just running the bat — the player never asks for a folder
 # (a page opened from GitHub can't write files here). The page sends here; this writes the same files as before,
-# so the rest of the overlay is unchanged. /now · /ovset (GET/POST) · /ovprograms (an answer = overlay is running).
+# so the rest of the overlay is unchanged. /now · /ovset (GET/POST) · /ovprograms (an answer = overlay is running) ·
+# /fonts · /font (the ⚙ 글꼴 picks' files, 2026-11-18).
 $OV_PORT = 47613
 $script:http = $null
 try { $script:http = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback, $OV_PORT); $script:http.Start() } catch { $script:http = $null }
@@ -222,13 +267,13 @@ function Send-Http($s, [string]$body) {
     $hb = [Text.Encoding]::ASCII.GetBytes($h)
     $s.Write($hb, 0, $hb.Length); if ($b.Length) { $s.Write($b, 0, $b.Length) }
 }
-function Read-Http($s) {  # → @{ method; path; body }
+function Read-Http($s) {  # → @{ method; path; query; body } (+ ms · start · len: the raw body, for /font)
     $buf = New-Object byte[] 65536; $ms = New-Object IO.MemoryStream; $end = -1; $len = 0
     while ($true) {
         $n = $s.Read($buf, 0, $buf.Length); if ($n -le 0) { break }
         $ms.Write($buf, 0, $n)
-        $txt = $LATIN1.GetString($ms.GetBuffer(), 0, [int]$ms.Length)
-        if ($end -lt 0) {
+        if ($end -lt 0) {   # header not found yet — decoded only until then (a font body is MBs)
+            $txt = $LATIN1.GetString($ms.GetBuffer(), 0, [int]$ms.Length)
             $end = $txt.IndexOf("`r`n`r`n")
             if ($end -ge 0 -and $txt.Substring(0, $end) -match '(?im)^content-length:\s*(\d+)') { $len = [int]$Matches[1] }
         }
@@ -236,7 +281,9 @@ function Read-Http($s) {  # → @{ method; path; body }
     }
     if ($end -lt 0) { return $null }
     $first = ($txt.Substring(0, $txt.IndexOf("`r`n")) -split ' ')
-    @{ method = $first[0]; path = ($first[1] -split '\?')[0]; body = $UTF8.GetString($ms.GetBuffer(), $end + 4, $len) }
+    $path = ($first[1] -split '\?')[0]
+    @{ method = $first[0]; path = $path; query = (@($first[1] -split '\?', 2) + '')[1]; ms = $ms; start = $end + 4; len = $len
+       body = $(if ($path -eq '/font') { '' } else { $UTF8.GetString($ms.GetBuffer(), $end + 4, $len) }) }
 }
 function Get-CfgJson {  # 기본값 + 설정 파일
     $d = [ordered]@{}
@@ -260,6 +307,18 @@ function Invoke-Http($r) {
                 $script:cfgWrite = [datetime]::MinValue   # the tick re-reads it right away
             }
             return ($d | ConvertTo-Json -Compress)
+        }
+        '/fonts' {   # font files the player already sent (font_setting.js fontToOverlay)
+            $files = @(); try { $files = @(Get-ChildItem $script:fontDir -File -ErrorAction Stop | ForEach-Object { $_.Name }) } catch {}
+            return (ConvertTo-Json -InputObject @{ files = $files } -Compress)
+        }
+        '/font' {    # POST /font?file=<id>.<ttf|otf>, body = the raw file (sent once per file)
+            $f = [Uri]::UnescapeDataString(((@($r.query -split '&') | Where-Object { $_ -like 'file=*' } | Select-Object -First 1) -replace '^file=', ''))
+            if (-not $post -or $f -notmatch '^[0-9a-f]{12}\.(ttf|otf)$') { return '{"error":"bad font"}' }
+            New-Item -ItemType Directory -Force $script:fontDir | Out-Null
+            $fs = [IO.File]::Create((Join-Path $script:fontDir $f)); try { $fs.Write($r.ms.GetBuffer(), $r.start, $r.len) } finally { $fs.Close() }
+            $script:fontCache.Remove($f); $script:cfgWrite = [datetime]::MinValue   # the tick redraws with it
+            return '{"ok":true}'
         }
         '/ovprograms' {
             $items = '[]'; try { $items = [IO.File]::ReadAllText($script:ProgFile, [Text.Encoding]::UTF8).TrimStart([char]0xFEFF) } catch {}
@@ -350,7 +409,7 @@ if ($Test) {  # 시험: 몇 초 뒤 그린 글자를 출력하고 끝냄
     $stop.Add_Tick({
         "창: 투명={0} 항상위={1} 불투명도={2} 크기={3}x{4} · 설정: 글자 {5} · 테두리 {6} · 폭 {7} · 클릭 통과 {8} · 설정 중 {9} · 프로그램 '{10}'" -f $w.AllowsTransparency, $w.Topmost,
             $w.Opacity, [int]$w.ActualWidth, [int]$w.ActualHeight, $script:cfg.size, $script:cfg.outline, $script:cfg.width, $script:cfg.clickthrough, $script:editing, $script:cfg.target | Write-Host
-        $script:panel.Children | ForEach-Object { "[{0}칸 테두리 {1}] {2}" -f $_.Children.Count, $(if ($_.Children.Count -gt 1) { $_.Children[0].StrokeThickness } else { 0 }), $_.Tag } | Write-Host
+        $script:panel.Children | ForEach-Object { "[{0}칸 테두리 {1}] {2}" -f $_.Children.Count, $(($_.Children | ForEach-Object { $_.Children } | Select-Object -First 1).StrokeThickness), $_.Tag } | Write-Host
         $script:app.Shutdown()
     })
     $stop.Start()

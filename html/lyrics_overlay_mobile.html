@@ -11,39 +11,57 @@
      Drag up/down to move · double tap opens the player. -->
 <style>
   html, body { margin: 0; background: transparent; overflow: hidden; -webkit-user-select: none; user-select: none; touch-action: none; }
-  #box { padding: 6px 10px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-family: system-ui, "Malgun Gothic", sans-serif; }
-  .ln { position: relative; text-align: center; line-height: 1.25; max-width: 100%; overflow-wrap: anywhere; }
+  /* kana · kanji from one Japanese font (user request 2026-11-19, as the player's #lyrics): kanji and kana were different sizes */
+  @font-face { font-family: CscJa; font-weight: 100 500; unicode-range: U+3000-30FF,U+31F0-31FF,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+FF00-FFEF,U+20000-3FFFF;
+    src: local("Noto Sans CJK JP"), local("NotoSansCJKjp-Regular"), local("Noto Sans JP"), local("Hiragino Sans W4"), local("HiraginoSans-W4"), local("Yu Gothic Medium"), local("YuGothic-Medium"); }
+  @font-face { font-family: CscJa; font-weight: 600 900; unicode-range: U+3000-30FF,U+31F0-31FF,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+FF00-FFEF,U+20000-3FFFF;
+    src: local("Noto Sans CJK JP Bold"), local("NotoSansCJKjp-Bold"), local("Noto Sans JP Bold"), local("Hiragino Sans W6"), local("HiraginoSans-W6"), local("Yu Gothic Bold"), local("YuGothic-Bold"); }
+  #box { padding: 6px 10px; display: flex; flex-direction: column; align-items: center; gap: 0; font-family: system-ui, CscJa, "Malgun Gothic", sans-serif; }
+  .ln { position: relative; text-align: center; line-height: 1.15;  /* tighter, same as the PC overlay (user request 2026-11-19) */ max-width: 100%; overflow-wrap: anywhere; }
   .ln span { display: block; }
-  .ln .edge { position: absolute; inset: 0; color: transparent; -webkit-text-stroke: var(--o) #000; }
+  /* 불투명도 (user request 2026-11-18: over a pure-black phone theme the see-through letters went too dark): outline + letters
+     are drawn as one layer that turns see-through (.grp — like the SNS card's name tag), and under the letters lies an opaque
+     white copy (.base), so the letters fade toward white instead of the black screen; only the outline lets the screen through */
+  .ln .base, .ln .edge { position: absolute; inset: 0; }
+  .ln .base { color: #fff; }
+  .ln .grp { position: relative; }
+  .ln .edge { color: transparent; -webkit-text-stroke: var(--o) #000; }
   .ln .fill { position: relative; color: var(--c, #fff); }
   .ln.grad .fill { color: transparent; background: var(--g); -webkit-background-clip: text; background-clip: text; }
+  /* player in light mode (now.light — user request 2026-11-18): white outline, dark text, vocal colors darkened like the player */
+  body.light .ln .edge { -webkit-text-stroke-color: #fff; }
+  body.light .ln .fill { color: color-mix(in srgb, var(--c, #fff) 62%, #000); }
+  body.light .ln:not([style*="--c:"]) .fill { color: #323238; }
+  body.light .ln.grad .fill { color: transparent; filter: brightness(.62); }
 </style>
 </head>
 <body>
 <div id="box"></div>
 <script>
-let now = {}, set = {size: 22, outline: 2, opacity: 100, info: true, width: 1100};
+let now = {}, set = {size: 22, info_size: 12, outline: 2, opacity: 100, info: true, width: 1100};
 const box = document.getElementById("box"), app = window.AppOverlay;
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
 
 function line(text, size, weight, opacity, colors) {
   const cs = (colors || []).filter(c => /^#[0-9a-f]{6}$/i.test(c));
-  const style = `font-size:${size}px;font-weight:${weight};opacity:${opacity};--o:${2 * Math.max(0, +set.outline || 0)}px;`
+  const a = opacity * Math.max(0.1, Math.min(1, (+set.opacity || 100) / 100));
+  const style = `font-size:${size}px;font-weight:${weight};--o:${2 * Math.max(0, +set.outline || 0)}px;`
     + (cs.length === 1 ? `--c:${cs[0]};` : cs.length > 1 ? `--g:linear-gradient(to bottom,${cs.join(",")});` : "");
-  return `<div class="ln${cs.length > 1 ? " grad" : ""}" style="${style}"><span class="edge">${esc(text)}</span><span class="fill">${esc(text)}</span></div>`;
+  return `<div class="ln${cs.length > 1 ? " grad" : ""}" style="${style}">${a < 1 ? `<span class="base">${esc(text)}</span>` : ""}<span class="grp" style="opacity:${a}"><span class="edge">${esc(text)}</span><span class="fill">${esc(text)}</span></span></div>`;
 }
 function render() {
   const s = Math.max(6, +set.size || 22), d = now;
   box.style.maxWidth = `${Math.max(200, +set.width || 1100)}px`;
   box.style.margin = "0 auto";
-  document.body.style.opacity = Math.max(0.1, Math.min(1, (+set.opacity || 100) / 100));
+  document.body.classList.toggle("light", !!(d && d.light));
   let h = "";
   if (d && d.title) {
-    if (set.info !== false) h += line(d.artist ? `${d.title} — ${d.artist}` : d.title, s * 0.55, 600, 0.9, []);
+    if (set.info !== false) h += line(d.artist ? `${d.title} — ${d.artist}` : d.title, Math.max(6, +set.info_size || 12), 600, 0.9, [])  // own size setting (user request 2026-11-19, was size × 0.55);
     for (const l of d.lines || []) {
+      // every lyric line one size (user request 2026-11-19 — a Korean- or English-only song = the Japanese line's size)
       if (l.role === "o") h += line(l.text, s, 700, 1, d.colors);
-      else if (l.role === "r" && d.show_r) h += line(l.text, s * 0.65, 600, 0.85, d.colors);
-      else if ((l.role === "t" && d.show_t) || l.role === "x") h += line(l.text, s * 0.65, 600, 1, d.colors);
+      else if (l.role === "r" && d.show_r) h += line(l.text, s, 600, 0.85, d.colors);
+      else if ((l.role === "t" && d.show_t) || l.role === "x") h += line(l.text, s, 600, 1, d.colors);
     }
   }
   box.innerHTML = h;
@@ -51,7 +69,38 @@ function render() {
 }
 const report = () => { if (app) app.height(box.innerHTML ? box.offsetHeight : 1); };
 window.ovNow = d => { now = d || {}; render(); };
-window.ovSet = c => { set = {...set, ...(c || {})}; render(); };
+window.ovSet = c => { set = {...set, ...(c || {})}; render(); useFonts(); };
+
+/* 글꼴 (user request 2026-11-18): the player's ⚙ 글꼴 picks — font_ja / font_etc name the picked file; the player keeps the
+   file in IndexedDB music-fonts (slots ja · etc, {sha, file, buf}) and this page has the same origin, so it reads it there.
+   Ranges as in the player's js/font_setting.js (Japanese pick = kana · kanji, the other = the rest) */
+const FONT_RANGE = {
+  ja: "U+3000-30FF,U+31F0-31FF,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+FF00-FFEF,U+20000-3FFFF",
+  etc: "U+0-2FFF,U+3100-31EF,U+3200-33FF,U+4DC0-4DFF,U+A000-F8FF,U+FB00-FEFF,U+FFF0-FFFF,U+10000-1FFFF,U+40000-10FFFF",
+};
+const fonts = {};  // k → {file, face}
+const fontSlot = k => new Promise(res => {
+  const q = indexedDB.open("music-fonts", 1);
+  q.onupgradeneeded = () => q.result.createObjectStore("kv");
+  q.onerror = () => res(null);
+  q.onsuccess = () => { const r = q.result.transaction("kv").objectStore("kv").get(k); r.onsuccess = () => res(r.result); r.onerror = () => res(null); };
+});
+async function useFonts() {
+  for (const k of ["ja", "etc"]) {
+    const want = set["font_" + k] || "", old = fonts[k];
+    if ((old ? old.file : "") === want) continue;
+    if (old) document.fonts.delete(old.face);
+    fonts[k] = null;
+    const hit = want ? await fontSlot(k) : null;
+    if (!hit || hit.file !== want) continue;
+    try {
+      const face = new FontFace(k === "ja" ? "CscFontJa" : "CscFontEtc", hit.buf, {unicodeRange: FONT_RANGE[k]});
+      await face.load(); document.fonts.add(face); fonts[k] = {file: want, face};
+    } catch (e) {}
+  }
+  box.style.fontFamily = [fonts.ja && '"CscFontJa"', fonts.etc && '"CscFontEtc"', "system-ui", "CscJa", '"Malgun Gothic"', "sans-serif"].filter(Boolean).join(",");
+  report();
+}
 
 // drag up/down to move the window · double tap → player
 let y0 = null, moved = false, lastTap = 0;

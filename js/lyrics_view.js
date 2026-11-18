@@ -221,8 +221,6 @@ $("lyrics").addEventListener("click", e => {
 $("lyrics").addEventListener("wheel", () => userScrollAt = Date.now(), {passive: true});
 $("lyrics").addEventListener("touchmove", () => userScrollAt = Date.now(), {passive: true});
 
-/* 가사 먼저 보이기(초): 재생기 값 (브라우저 저장값) */
-const lyricsLead = () => SHELL.lead;
 /* 현재 묶음 표시 — 0.25초마다 + 다음 줄로 바뀌는 순간 (nextTimer). Was every frame; the phone got hot (user request
    2026-11-18): the time · bar are written only when they change, and the line's progress bar runs by itself (CSS transition) */
 let tShown = "", seekShown = -1, progRun = "";
@@ -233,7 +231,7 @@ function tick(force) {
   if (sv !== seekShown) { $("seek").value = seekShown = sv; fillRange($("seek")); }
   const T = editing ? editTimes : times;
   if (!T || !song) return;
-  const off = editing ? 0 : offset - lyricsLead();  // 싱크를 직접 맞출 때는 싱크 그대로, 재생할 때만 '가사 먼저 보이기'만큼 앞당김
+  const off = editing ? 0 : offset;  // '가사 먼저 보이기' is the overlay's only — the player shows the sync as it is (user request 2026-11-18)
   let idx = -1;
   for (let i = 0; i < T.length; i++) { if (T[i] != null && T[i] + off <= now + 0.05) idx = i; else if (T[i] != null) break; }
   const box = $("lyrics");

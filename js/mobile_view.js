@@ -274,7 +274,7 @@
     const b = e.target.closest("button[data-set]"); if (!b) return;
     if (b.dataset.set === "close") return dlg.close();
     if (b.dataset.set === "report") { dlg.close(); return $("btnReport").click(); }
-    if (b.dataset.set === "overlay") { dlg.close(); openOverlaySettings(); }
+    if (b.dataset.set === "overlay") { dlg.close(); openPlayerSettings(); }
   });
   function renderEar() {
     dlg.querySelectorAll("button[data-ear]").forEach(b => {

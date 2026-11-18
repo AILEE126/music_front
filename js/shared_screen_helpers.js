@@ -224,12 +224,14 @@ function renderVolume(btn, range, audio) {
     + (v === 0 ? '<path d="m16 9 5 6M21 9l-5 6"/>' : '<path d="M15.5 9.5a3.5 3.5 0 0 1 0 5"/>' + (v > .5 ? '<path d="M18.5 6.5a7.5 7.5 0 0 1 0 11"/>' : "")) + "</svg>";
 }
 
-/* ---- 가사 오버레이 설정 창 (⚙) ----
+/* ---- 설정 창 (⚙, user request 2026-11-18: 가사 · 오버레이 · 글꼴 as separate parts — PC: the parts listed on the left,
+   one shown at a time · phone: every part foldable) ----
    가사 오버레이 = tools\lyrics_overlay.bat 로 켜는 파워쉘 창 (바탕 투명 · 어느 브라우저든). 이 창에서 바꾸면 곧바로 반영.
    local_files.js 가 오버레이의 창구(127.0.0.1:47613)로 보냄 → 오버레이가 overlay\lyrics_overlay.json 에 씀 (꺼져 있으면 이 브라우저에만).
-   창이 열려 있는 동안은 editing_at 을 계속 알려 줌 → 오버레이가 붙일 프로그램과 상관없이 보이고 끌어 옮길 수 있음 (닫으면 원래대로) */
-const OVSET_DEFAULTS = {x: -1, y: -1, width: 1100, size: 22, outline: 2, opacity: 100, clickthrough: false, target: "ffxiv_dx11", info: true, editing_at: 0, quit_at: 0, enabled: true};
-async function openOverlaySettings() {
+   창이 열려 있는 동안은 editing_at 을 계속 알려 줌 → 오버레이가 붙일 프로그램과 상관없이 보이고 끌어 옮길 수 있음 (닫으면 원래대로).
+   켜기·끄기는 가사 도구 줄의 [오버레이] 단추 (2026-11-18 — not in this window any more) */
+const OVSET_DEFAULTS = {x: -1, y: -1, width: 1100, size: 22, info_size: 12, outline: 2, opacity: 100, clickthrough: false, target: "ffxiv_dx11", info: true, editing_at: 0, quit_at: 0, enabled: true, font_ja: "", font_etc: ""};  // font_*: font_setting.js
+async function openPlayerSettings() {
   let c, progs = [];
   LOCAL.ovEnable();  // from now on this browser talks to the overlay (no folder picking — user request)
   try { c ={...OVSET_DEFAULTS, ...(await api("/api/ovset"))}; } catch (e) { return uiAlert(e.message); }
@@ -241,24 +243,44 @@ async function openOverlaySettings() {
   const phoneUi = APP.on || document.body.classList.contains("m");
   if (phoneUi && c.target) { c.target = ""; post("/api/ovset", {target: ""}).catch(() => {}); }
   const d = document.createElement("dialog");
-  d.className = "uidlg ovset";
+  d.className = "uidlg ovset " + (phoneUi ? "setfold" : "setnav");
   const lead = typeof SHELL !== "undefined" && SHELL.setLead;  // 플레이어 화면에서만
-  d.innerHTML = `<div class="dlg-head hx">${lead ? "가사 · " : ""}오버레이 설정<button class="ib dlgx" data-act="close" title="닫기 (Esc)" aria-label="닫기">✕</button></div><div class="dlg-body">${lead ? `<b>가사</b>
-    <label title="싱크는 그대로 두고, 재생할 때 가사(위 막대·플레이어·오버레이)만 이만큼 먼저 넘어감 (0.10 ~ 1.00초, 0.01초 단위 · 기본 0.50초)">먼저 보이기 <b data-lead></b><input type="range" min="0.1" max="1" step="0.01" data-lead-r></label>
-    <hr>` : ""}<b>가사 오버레이 설정</b>
-    <div class="row"><button class="ovpow" data-ovpow></button></div><!-- user request 2026-11-15: the on/off button lives here now (toolbar keeps only [오버레이 ⚙]) -->
-    <p class="muted">바탕이 투명한 가사 창 (어느 브라우저든). 이 창을 열어 둔 동안은 오버레이가 늘 보이고 끌어서 옮길 수 있어요.</p>
+  const fonts = typeof fontSettingsHtml === "function" ? await fontSettingsHtml() : "";  // 글꼴 (font_setting.js, player only)
+  const secs = [["ov", "오버레이"], fonts && ["font", "글꼴"]].filter(Boolean);  // 가사 먼저 보이기 moved into 오버레이 (user request 2026-11-18)
+  const sec = (k, html) => `<section class="setsec" data-sec="${k}"><button type="button" class="sethead" data-fold="${k}">${secs.find(s => s[0] === k)[1]}</button><div class="setbody">${html}</div></section>`;
+  d.innerHTML = `<div class="dlg-head hx">설정<button class="ib dlgx" data-act="close" title="닫기 (Esc)" aria-label="닫기">✕</button></div><div class="dlg-body">
+    <nav class="setlist">${secs.map(([k, t]) => `<button type="button" data-pick="${k}">${t}</button>`).join("")}</nav><div class="setpanes">${sec("ov", `${lead ? `
+    <label title="싱크는 그대로 두고, 재생할 때 가사만 이만큼 먼저 넘어감 (0.10 ~ 1.00초, 0.01초 단위 · 기본 0.50초)">가사 먼저 보이기 <b data-lead></b><input type="range" min="0.1" max="1" step="0.01" data-lead-r></label>` : ""}
+    <p class="muted">바탕이 투명한 가사 창 (어느 브라우저든) — 켜기·끄기는 가사 도구 줄의 [오버레이] 단추. 이 창을 열어 둔 동안은 오버레이가 늘 보이고 끌어서 옮길 수 있어요.</p>
     <label${phoneUi ? " hidden" : ""}>이 프로그램이 앞에 있을 때만 보이기 <select data-k="target">
       <option value="">(늘 보임)</option>${opts.map(p => `<option value="${esc(p.exe)}">${esc(p.exe)}${p.title ? ` — ${esc(p.title)}` : ""}</option>`).join("")}</select>
       <span class="muted">그 프로그램이 꺼져 있으면 늘 보임 · 목록은 오버레이가 켜져 있을 때 채워짐</span></label>
     <label class="inline"><input type="checkbox" data-k="clickthrough"> 클릭 통과 (가사를 눌러도 뒤 창으로 — 끄면 가사를 끌어 옮김)</label>
     <label class="inline"><input type="checkbox" data-k="info"> 곡 정보 줄 (제목 — 프로듀서 feat. 가수)</label>
     <label>글자 크기 <b data-v="size"></b><input type="range" min="9" max="30" step="1" data-k="size"></label>
+    <label>곡 정보 줄 글자 크기 <b data-v="info_size"></b><input type="range" min="6" max="30" step="1" data-k="info_size"></label>
     <label>테두리 두께 <b data-v="outline"></b><input type="range" min="0" max="6" step="0.5" data-k="outline"></label>
     <label>불투명도 <b data-v="opacity"></b><input type="range" min="10" max="100" step="5" data-k="opacity"></label>
     <label>가로 폭 <b data-v="width"></b><input type="range" min="300" max="3000" step="50" data-k="width"></label>
     <p class="muted">발음·번역 줄은 플레이어의 '발음'·'번역' 체크를 따릅니다.</p>
-    <div class="row"><button data-act="reset">위치 처음으로 (화면 아래 가운데)</button></div></div>`;
+    <div class="row"><button data-act="reset">위치 처음으로 (화면 아래 가운데)</button></div>`)}${fonts ? sec("font", fonts) : ""}</div></div>`;
+  // PC: the picked part only (remembered) · phone: each part folds by its title (open ones remembered)
+  const pick = k => {
+    store.set("set.sec", k);
+    d.querySelectorAll("[data-pick]").forEach(b => b.classList.toggle("on", b.dataset.pick === k));
+    d.querySelectorAll(".setsec").forEach(s => s.classList.toggle("cur", s.dataset.sec === k));
+  };
+  const opened = new Set(store.get("set.open", ["ov"]));
+  d.querySelectorAll(".setsec").forEach(s => s.classList.toggle("open", opened.has(s.dataset.sec)));
+  pick(secs.some(s => s[0] === store.get("set.sec", "")) ? store.get("set.sec", "") : secs[0][0]);
+  d.addEventListener("click", e => {
+    const p = e.target.closest("[data-pick]"); if (p) return pick(p.dataset.pick);
+    const f = e.target.closest("[data-fold]"); if (!f) return;
+    const s = f.closest(".setsec"), on = s.classList.toggle("open");
+    on ? opened.add(s.dataset.sec) : opened.delete(s.dataset.sec);
+    store.set("set.open", [...opened]);
+  });
+  if (fonts) fontSettingsBind(d);
   const ins = [...d.querySelectorAll("[data-k]")];
   for (const i of ins) { if (i.type === "checkbox") i.checked = !!c[i.dataset.k]; else i.value = String(c[i.dataset.k]).replace(/\.exe$/i, ""); }
   const showVals = () => d.querySelectorAll("[data-v]").forEach(b => b.textContent = d.querySelector(`[data-k=${b.dataset.v}]`).value + (b.dataset.v === "opacity" ? "%" : ""));
@@ -277,36 +299,37 @@ async function openOverlaySettings() {
     t = setTimeout(go, 250);
   };
   ins.forEach(i => i.addEventListener(i.type === "range" ? "input" : "change", () => { showVals(); save(); if (i.tagName === "SELECT") i.blur(); }));
-  const stopPower = bindOverlayPower(d.querySelector("[data-ovpow]"));
   const beat = setInterval(() => post("/api/ovset", {editing_at: Date.now()}).catch(() => {}), 3000);  // 열려 있다는 표시
   post("/api/ovset", {editing_at: Date.now()}).catch(() => {});
   d.addEventListener("click", e => {
     const b = e.target.closest("[data-act]"); if (!b) return;
     if (b.dataset.act === "reset") save({x: -1, y: -1}); else d.close();
   });
-  d.addEventListener("close", () => { clearInterval(beat); clearTimeout(t); stopPower(); save({editing_at: 0}, true); d.remove(); });
+  d.addEventListener("close", () => { clearInterval(beat); clearTimeout(t); save({editing_at: 0}, true); d.remove(); });
   document.body.appendChild(d);
   d.showModal();
 }
 
-/* ---- 가사 오버레이 켜기/끄기 단추 (오버레이 설정 창 안 — returns a stop function for the 5 s check) ----
+/* ---- 가사 오버레이 켜기/끄기 단추 (가사 도구 줄의 [오버레이] — 2026-11-18 its own button again, out of the settings window) ----
    오버레이 프로그램은 한 번 켜 두면 뒤에서 계속 돌고(서버를 켜면 서버가 띄움 · 서버 없이는 lyrics_overlay.bat 한 번),
    이 단추는 설정 파일의 enabled(보이기·숨기기)만 바꿈 → 어느 브라우저든, 서버가 없어도 바로 됨.
    프로그램이 돌고 있는지: 창구(127.0.0.1:47613)가 답하면 돌고 있음.
    프로그램이 꺼져 있을 때 '켜기': 'musicoverlay:' 링크 (못 켜 주는 브라우저면 bat 안내) */
-function bindOverlayPower(btn) {
+function bindOverlayPower(btn, label) {  // label: fixed text, on/off by color only (toolbar)
   let alive = false, enabled = true, starting = 0;
   const on = () => alive && enabled;
   const show = () => {
-    btn.textContent = starting ? "오버레이 켜는 중…" : on() ? "오버레이 끄기" : "오버레이 켜기";
-    btn.classList.toggle("on", on());
+    btn.textContent = starting ? "오버레이 켜는 중…" : label || (on() ? "오버레이 끄기" : "오버레이 켜기");
+    btn.classList.toggle("on", on()); btn.setAttribute("aria-pressed", on());
     btn.title = on() ? "가사 오버레이 숨기기" : "가사 오버레이 보이기 (바탕 투명 가사 창)";
   };
   const check = async () => {
+    const was = alive;
     try {
       const [r, c] = await Promise.all([api("/api/ovprograms"), api("/api/ovset")]);
       alive = !!r.running; enabled = c.enabled !== false;
     } catch (e) { alive = false; }
+    if (alive && !was && typeof fontToOverlay === "function") fontToOverlay();  // overlay (re)started: give it the picked fonts
     if (on()) starting = 0;
     show();
   };
@@ -333,7 +356,7 @@ function bindOverlayPower(btn) {
     }, 8000);
   };
   show(); check();
-  const timer = setInterval(check, 5000);
+  const timer = setInterval(() => { if (!document.hidden) check(); }, 5000);
   return () => clearInterval(timer);
 }
 /* 브라우저 저장소(IndexedDB) 한 칸짜리 키-값: 고른 폴더 손잡이 기억 (곡 목록 폴더 · 오프라인 mp3 폴더) */

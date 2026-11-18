@@ -451,7 +451,7 @@ function makePlayer(el) {
       lyrIdx = -2; this.lemit();
     },
     setOffset(o) { if (this.lyr) { this.lyr.offset = o; lyrIdx = -2; this.lemit(); } },
-    /* 가사 먼저 보이기(초): 싱크 파일은 그대로, 재생할 때 가사 표시만 이만큼 앞당김 (0.1~1.0초 · 기본 0.5초) (위 막대·플레이어·오버레이 모두) */
+    /* 가사 먼저 보이기(초): 싱크 파일은 그대로, 재생할 때 가사 표시만 이만큼 앞당김 (0.1~1.0초 · 기본 0.5초) — 오버레이만 (user request 2026-11-18: the player screen shows the sync as it is) */
     lead: Math.min(1, Math.max(0.1, +store.get("lyricsLead", 0.5) || 0.5)),
     setLead(v) {
       this.lead = Math.round(Math.min(1, Math.max(0.1, +v || 0)) * 100) / 100;
@@ -536,6 +536,7 @@ function makePlayer(el) {
     const it = P.now, L = P.lyr, i = P.lyrIndex(), g = L && L.times && i >= 0 ? L.groups[i] : null;
     const d = {title: it ? titleOf(it) : "", artist: it ? shortName(it.artist || "") : "", playing: !audio.paused,
       show_r: store.get("showR", true), show_t: store.get("showT", true), colors: g && !store.get("simple", false) ? (g.vc || []) : [],  // 간단 표시: 보컬 색 없이 흰색
+      light: store.get("theme", "dark") === "light",  // 밝은 화면: 오버레이도 흰 테두리 + 어두운 글자 (user request 2026-11-18)
       // other-language lines (VocaDB): only the language picked in the player's 다른 언어 select (none by default)
       lines: g ? g.lines.filter(l => l.role !== "x" || (l.lang && l.lang === store.get("xLang", ""))).map(l => ({role: l.role, text: l.text})) : []};
     const text = JSON.stringify(d);
