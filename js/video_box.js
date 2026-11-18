@@ -27,7 +27,8 @@ function applyTheme(t) {
 $("btnTheme").onclick = () => { const t = store.get("theme", "dark") === "light" ? "dark" : "light"; store.set("theme", t); applyTheme(t); };
 applyTheme(store.get("theme", "dark"));
 function showVideo() {
-  const on = VID.on && !!cur && !SIMPLE, playing = !!cur && !!SHELL.now && keyOf(SHELL.now) === keyOf(cur);
+  const guide = audio.biliGuide;  // Bilibili volume guide: the video shows even when folded / 간단 (play_engine.js)
+  const on = (VID.on || guide) && !!cur && (!SIMPLE || guide), playing = !!cur && !!SHELL.now && keyOf(SHELL.now) === keyOf(cur);
   const live = on && playing && audio.bridged && !audio.error;
   $("btnVideo").classList.toggle("on", VID.on);
   $("videoBox").hidden = !on;
@@ -78,7 +79,7 @@ const VID_F = f => { f = Math.min(.85, Math.max(.1, f)); document.documentElemen
 }
 $("btnCmt").onclick = () => { audio.comments = !audio.comments; showVideo(); };
 $("songMeta").addEventListener("click", e => { if (e.target.id === "tagsMore" && cur) { store.set("tagsOpen", !store.get("tagsOpen", false)); renderMeta(cur); } });
-for (const ev of ["sourcechange", "emptied", "error", "loadedmetadata"]) on(audio, ev, showVideo);  // 중계 플레이어가 바뀜·뜸·못 틂
+for (const ev of ["sourcechange", "emptied", "error", "loadedmetadata", "guidechange"]) on(audio, ev, showVideo);  // 중계 플레이어가 바뀜·뜸·못 틂
 cleanups.push(() => SHELL.placeVideo(null));  // 화면을 떠나면 영상 칸이 없어짐 → 접음 (소리는 그대로)
 
 /* ================= 썸네일: 누르면 크게, 오른쪽 클릭하면 저장 ================= */

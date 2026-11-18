@@ -74,12 +74,12 @@ function nicoViews(id) {
 }
 /* 중계 페이지 하나 = 플레이어 하나. on(메시지): ready · state(s: playing|paused|ended|buffering) · time · error */
 class BridgePlayer {
-  constructor(host, ref, {start = 0, mute = false, volume = 1, on = () => {}} = {}) {
+  constructor(host, ref, {start = 0, mute = false, volume = 1, guide = false, vs = false, on = () => {}} = {}) {
     this.id = "b" + ++bridgeSeq; this.t = start; this.at = this.heard = performance.now(); this.d = 0; this.state = "buffering"; this.ready = false;
     this.ref = ref; this.on = on;  // on: 메시지 받는 곳 (미리 띄워 둔 플레이어를 넘겨받으면 바뀜)
     const f = this.frame = document.createElement("iframe");
     f.allow = "autoplay; encrypted-media; fullscreen";
-    f.src = `${BRIDGE_URL}?${ref.kind}=${encodeURIComponent(ref.id)}&id=${this.id}&start=${Math.floor(start)}${mute ? "&mute=1" : ""}&vol=${Math.round(volume * 100)}${nicoComments() ? "" : "&cmt=0"}${ref.len ? "&len=" + ref.len : ""}`;
+    f.src = `${BRIDGE_URL}?${ref.kind}=${encodeURIComponent(ref.id)}&id=${this.id}&start=${Math.floor(start)}${mute ? "&mute=1" : ""}&vol=${Math.round(volume * 100)}${nicoComments() ? "" : "&cmt=0"}${ref.len ? "&len=" + ref.len : ""}${guide ? "&guide=1" : ""}${vs ? "&vs=1" : ""}`;
     // 유튜브 플레이어는 칸이 접혀(1px) 안 보이면 재생 상태(state)를 알려 주지 않음 → 시간이 흐르는지로 재생·멈춤·끝을 셈
     const guess = s => { if (this.state === s) return; this.state = s; if (s === "playing") this.played = true; this.on({ev: "state", s}); };
     let still = 0;
@@ -140,6 +140,7 @@ class BridgePlayer {
   volume(v) { this.cmd("volume", Math.round(v * 100)); }
   mute(on) { this.cmd("mute", on); }
   comments(on) { if (this.ref.kind === "nico") this.cmd("comments", on); }
+  guide(on) { this.cmd("guide", on); }
   destroy() { clearTimeout(this.timer); removeEventListener("message", this.onMsg); this.frame.remove(); }
 }
 /* 중계 플레이어가 알려 준 오류 → 못 튼 까닭 (자동 오류 신고에 남길 글) */
@@ -166,15 +167,68 @@ const nicoCurve = v => {
 };
 /* SoundCloud · Vimeo · a plain file (user request 2026-11-18): nobody levels them and their knob is linear. Songs are mastered
    around -8 LUFS (YouTube's own stats on loud songs: 'cont.-5.9dB' to reach -14) → a fixed -6 dB brings them near the other two.
-   Bilibili's embed takes no volume at all (no player API — the bridge can only mute it). */
+   Bilibili: unleveled too (its loudness leveling is off in the embed) and linear (player.setVolume = media volume, checked
+   2026-11-18) — it takes the volume only through the user script below. */
 const UNLEVELED = 0.5;
 function platformVolume(kind, v) {
-  if (kind === "sc" || kind === "vimeo" || kind === "file") return Math.max(0, Math.min(1, v)) * UNLEVELED;
+  if (kind === "sc" || kind === "vimeo" || kind === "file" || kind === "bili") return Math.max(0, Math.min(1, v)) * UNLEVELED;
   if (kind !== "nico" || v <= 0 || v >= 1) return Math.max(0, Math.min(1, v));
   let lo = 0, hi = 1;  // nicoCurve rises with v → bisect for the value Niconico turns into v
   for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (nicoCurve(m) < v) lo = m; else hi = m; }
   return hi;
 }
+
+/* Bilibili volume extension (user request 2026-11-18): its embed takes no volume from a page, so the player's guide hands
+   out a tiny extension the user loads unpacked (developer mode — no store, no Tampermonkey). biliExtZip() builds the zip
+   right here, so it always matches this code. Its content script runs in the Bilibili frame's page world (MAIN — Bilibili's
+   window.player lives there): it takes {biliVol: 0~1 | null} from the bridge, sets it with Bilibili's own player.setVolume
+   (linear, also unmutes, saved by Bilibili) and answers {biliVolAck: 1}. null = only "are you there" (guide: stay muted). */
+const BILI_EXT_JS = `// 음원 플레이어 · 비리비리 볼륨 — the player's volume slider for Bilibili videos inside the music player
+(function () {
+  if (window.top === window) return;  // only inside the music player
+  let want = null;
+  const apply = () => {
+    const p = window.player, v = document.querySelector("video");
+    if (want === null || !p || typeof p.setVolume !== "function") return;
+    try { if (Math.abs((+p.getVolume() || 0) - want) > 0.005 || (v && v.muted)) p.setVolume(want); } catch (e) {}
+  };
+  addEventListener("message", e => {
+    if (e.source !== parent || !e.data || !("biliVol" in e.data)) return;
+    if (typeof e.data.biliVol === "number") { want = Math.max(0, Math.min(1, e.data.biliVol)); apply(); }
+    parent.postMessage({biliVolAck: 1}, "*");
+  });
+  setInterval(apply, 500);  // the player comes up after the first message
+})();
+`;
+const BILI_EXT_MANIFEST = JSON.stringify({
+  manifest_version: 3, name: "음원 플레이어 · 비리비리 볼륨", version: "1.0",
+  description: "음원 플레이어의 볼륨 슬라이더가 비리비리 영상에도 적용되게 합니다",
+  content_scripts: [{matches: ["https://player.bilibili.com/*"], js: ["bili_volume.js"], all_frames: true, run_at: "document_start", world: "MAIN"}],
+}, null, 2);
+/* the extension as a zip (stored, no compression) — folder bili-volume/ with manifest.json + bili_volume.js */
+function biliExtZip() {
+  const crcT = [...Array(256)].map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = d => { let c = -1; for (const x of d) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ -1) >>> 0; };
+  const enc = new TextEncoder(), parts = [], dir = [];
+  let off = 0;
+  for (const [name, text] of [["bili-volume/manifest.json", BILI_EXT_MANIFEST], ["bili-volume/bili_volume.js", BILI_EXT_JS]]) {
+    const n = enc.encode(name), d = enc.encode(text), c = crc(d);
+    const head = (sig, extra) => { const h = new DataView(new ArrayBuffer(extra)); h.setUint32(0, sig, true); return h; };
+    const l = head(0x04034b50, 30);  // local header: version 20, flag 0x800 (UTF-8 names), stored
+    l.setUint16(4, 20, true); l.setUint16(6, 0x800, true); l.setUint32(14, c, true); l.setUint32(18, d.length, true); l.setUint32(22, d.length, true); l.setUint16(26, n.length, true);
+    const g = head(0x02014b50, 46);  // central directory entry
+    g.setUint16(4, 20, true); g.setUint16(6, 20, true); g.setUint16(8, 0x800, true); g.setUint32(16, c, true); g.setUint32(20, d.length, true); g.setUint32(24, d.length, true);
+    g.setUint16(28, n.length, true); g.setUint32(42, off, true);
+    parts.push(l, n, d); dir.push(g, n);
+    off += 30 + n.length + d.length;
+  }
+  const size = dir.reduce((a, x) => a + x.byteLength, 0), e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, 2, true); e.setUint16(10, 2, true); e.setUint32(12, size, true); e.setUint32(16, off, true);
+  return new Blob([...parts, ...dir, e], {type: "application/zip"});
+}
+
+/* phone / tablet: no extensions to load there — the guide only says so */
+const BILI_TOUCH = () => matchMedia("(pointer: coarse)").matches && !matchMedia("(any-pointer: fine)").matches;
 
 /* Bilibili video length in seconds (0 = unknown): VocaDB API (CORS ok — bilibili's own API is not) → that PV's length,
    else the song's. Kept per video while the page is open */
@@ -283,6 +337,8 @@ class LocalMedia extends EventTarget {
         else if (m.s === "paused" && !this.brPaused) { this.brPaused = true; this.fire("pause"); }
         else if (m.s === "ended") { this.brPaused = true; this.fire("pause"); this.fire("ended"); }
       }
+      else if (m.ev === "volctl") this.gotVolCtl(br);
+      else if (m.ev === "novolctl") store.set("biliScript", false);  // script removed / off → the guide comes back next time
       else if (m.ev === "error" && this.refs === refs) {
         // kept player broke (page/player didn't come up) → make a new one next time
         if (br === this.kept[ref.kind] && (m.code === "api" || m.code === "timeout")) { this.kept[ref.kind] = null; br.destroy(); }
@@ -305,7 +361,12 @@ class LocalMedia extends EventTarget {
       br.load(ref, this.start); br.comments(nicoComments());  // always plays (priming pauses it once it really started)
       diag("reuse", ref.kind + ":" + ref.id, document.hidden ? "hidden" : "shown");
     } else {
-      br = new BridgePlayer(this.host, ref, {start: this.start, volume: platformVolume(ref.kind, this.el.volume), mute: this.el.muted || this.priming, on});
+      // Bilibili: script installed earlier → &vs (opens muted, the script unmutes at our volume); else the guide (see biliGuide)
+      const vs = ref.kind === "bili" && store.get("biliScript", false);
+      const guide = ref.kind === "bili" && !vs && !this.biliLater && !(BILI_TOUCH() && store.get("biliTouchOk", false));
+      // muted too while guiding: an older deployed bridge ignores &guide and would play aloud (user report: 귀테러)
+      br = new BridgePlayer(this.host, ref, {start: this.start, volume: platformVolume(ref.kind, this.el.volume), mute: this.el.muted || this.priming || guide, guide, vs, on});
+      br.guiding = guide;
       if (kept) kept.destroy();  // (old bridge page: replaced each time as before)
       this.kept[ref.kind] = br;
       diag("new frame", ref.kind + ":" + ref.id, document.hidden ? "hidden" : "shown");
@@ -343,9 +404,28 @@ class LocalMedia extends EventTarget {
   }
   /* 지금 틀고 있는 출처 종류 (yt|nico — 온라인 곡이 아니거나 아직 없으면 '') · 니코니코 댓글 켜기/끄기 (미리 띄운 다음 곡에도) */
   get kind() { return this.refs && this.br ? this.br.ref.kind : ""; }
+  /* Bilibili volume guide (user request 2026-11-18): its embed takes our volume only through the extension (BILI_EXT_JS).
+     Until it answers in this browser, a Bilibili song opens muted with the step guide over the video (makePlayer):
+     download the zip → open the extensions page (address copy) → load the folder. Its answer (bridge "volctl") ends the
+     guide by itself. 나중에 = sound on at Bilibili's own volume, asked again after a reload. Touch devices can't load
+     extensions: one notice. */
+  get biliGuide() { return !!(this.refs && this.br && this.br.guiding); }
+  endBiliGuide() {
+    const br = this.br;
+    if (br && br.guiding) { br.guiding = false; this.applyVolume(); br.guide(false); }  // unmute first: the guide frame stays open meanwhile
+    this.fire("guidechange");
+  }
+  laterBiliGuide() { this.biliLater = true; this.endBiliGuide(); }
+  touchBiliOk() { store.set("biliTouchOk", true); this.endBiliGuide(); }
+  recheckBili() { if (this.br && this.br.guiding) this.br.cmd("reload"); }  // a just-saved script runs only in a new page
+  gotVolCtl(br) {
+    br.volCtl = true;
+    store.set("biliScript", true);
+    if (br === this.br) { this.fire("volctl"); this.endBiliGuide(); }
+  }
   get comments() { return nicoComments(); }
   set comments(on) { store.set("nicoComments", !!on); if (this.br) this.br.comments(!!on); if (this.pre) this.pre.br.comments(!!on); }
-  applyVolume() { if (this.br) { this.br.volume(platformVolume(this.br.ref.kind, this.el.volume)); this.br.mute(this.el.muted || this.priming); } }
+  applyVolume() { if (this.br) { this.br.volume(platformVolume(this.br.ref.kind, this.el.volume)); this.br.mute(this.el.muted || this.priming || !!this.br.guiding); } }
   get currentTime() { return this.refs ? (this.br ? this.br.time() : 0) : this.el.currentTime; }
   set currentTime(t) { if (!this.refs) { this.el.currentTime = t; return; } if (this.br) { this.br.seek(t); setTimeout(() => this.fire("seeked"), 0); } }
   get duration() { return this.refs ? (this.br && this.br.d) || NaN : this.el.duration; }
@@ -406,10 +486,83 @@ function makePlayer(el) {
   shield.title = "누르면 재생 / 일시정지";
   shield.addEventListener("click", () => P.toggle());
   host.appendChild(shield);
+  // Bilibili volume guide (LocalMedia.biliGuide): a card over the video, one step at a time
+  // (user request 2026-11-18: download + address copy buttons, developer-mode extension — no Tampermonkey)
+  const bubble = document.createElement("div");
+  bubble.className = "vguide";
+  bubble.hidden = true;
+  host.appendChild(bubble);
+  const ua = navigator.userAgent, brw = /Whale\//.test(ua) ? "whale" : /Edg\//.test(ua) ? "edge" : "chrome";
+  const STEPS = [
+    // {A} = where the step's button (+ its note) goes — right under the line that asks for it (user request 2026-11-18)
+    {t: "확장 프로그램 내려받기", b: "비리비리 영상은 우리 플레이어 볼륨이 적용되지 않아요. 작은 확장 프로그램을 한 번 넣으면 플레이어 볼륨으로 조절돼요.<br>① 아래 버튼으로 내려받기{A}② 내려받은 zip 의 <b>압축 풀기</b> (<b>bili-volume</b> 폴더가 생겨요)",
+     a: `<button type="button" class="vg-cta" data-get="zip">확장 프로그램 내려받기</button>`},
+    {t: "확장 프로그램 화면 열기", b: "① <b>주소 복사</b>를 누르고 새 탭 주소창에 붙여 넣어 이동{A}② 오른쪽 위 <b>개발자 모드</b> 켜기",
+     a: `<button type="button" class="vg-cta" data-get="addr">주소 복사</button>`},
+    {t: "폴더 넣기", b: "① <b>압축해제된 확장 프로그램을 로드합니다</b> 누르기<br>② 압축을 푼 <b>bili-volume</b> 폴더를 골라 <b>폴더 선택</b><br>③ 이 화면으로 돌아와 <b>다 했어요</b>", a: ""}];
+  let step = 0, note = "", checkT = 0;
+  const copy = async text => {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+    const ta = document.createElement("textarea");  // fallback (clipboard API refused) — off screen, removed at once
+    ta.value = text; ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+    ta.remove(); return ok;
+  };
+  function drawGuide() {
+    if (BILI_TOUCH()) {
+      bubble.innerHTML = '<div class="vg-b">비리비리 영상은 이 기기에서 플레이어 볼륨이 적용되지 않아요. 기기 볼륨으로 맞춰 주세요.</div>' +
+        '<div class="vg-nav"><span></span><button type="button" class="primary" data-act="touchok">확인</button></div>';
+      return;
+    }
+    const S = STEPS[step], last = step === STEPS.length - 1;
+    const act = S.a || note ? `<div class="vg-a">${S.a}${note ? `<span class="vg-note">${note}</span>` : ""}</div>` : "";
+    const body = S.b.includes("{A}") ? S.b.replace("{A}", act) : S.b + act;
+    bubble.innerHTML = `<div class="vg-h"><span class="vg-n">${step + 1}/${STEPS.length}</span>${S.t}</div><div class="vg-b">${body}</div>` +
+      `<div class="vg-nav"><button type="button" class="vg-later" data-act="later">나중에</button><span>` +
+      (step ? '<button type="button" data-act="prev">이전</button>' : "") +
+      (last ? '<button type="button" class="primary" data-act="done">다 했어요</button>' : '<button type="button" class="primary" data-act="next">다음</button>') +
+      "</span></div>";
+  }
+  bubble.addEventListener("click", async e => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.get === "zip") {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(biliExtZip()); a.download = "bili-volume.zip";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      note = "내려받았어요. 압축을 풀어 주세요.";
+      return drawGuide();
+    }
+    if (b.dataset.get === "addr") {
+      note = await copy(`${brw}://extensions`) ? "주소를 복사했어요. 새 탭 주소창에 붙여 넣으세요." : "복사하지 못했어요. 다시 눌러 주세요.";
+      return drawGuide();
+    }
+    const act = b.dataset.act;
+    note = "";
+    if (act === "next") step++;
+    else if (act === "prev") step--;
+    else if (act === "later") return audio.laterBiliGuide();
+    else if (act === "touchok") return audio.touchBiliOk();
+    else if (act === "done") {
+      audio.recheckBili();
+      note = "확장 프로그램을 확인하는 중…";
+      clearTimeout(checkT);
+      checkT = setTimeout(() => { if (audio.biliGuide) { note = "아직 확장 프로그램이 확인되지 않아요. 개발자 모드와 폴더를 다시 확인해 주세요."; drawGuide(); } }, 12000);
+    }
+    drawGuide();
+  });
+  const showGuide = () => {
+    const g = audio.biliGuide;
+    if (g && bubble.hidden) { step = 0; note = ""; drawGuide(); }
+    if (!g) clearTimeout(checkT);
+    bubble.hidden = !g;  // the shield stays (user request 2026-11-18: no unlocked video — the guide's buttons sit above it)
+  };
   const probe = document.createElement("div");  // 이 문서의 화면 축소 비율 재기 (100px 이 실제로 몇 px 로 보이나)
   probe.style.cssText = "position:fixed;left:0;top:0;width:100px;height:0;visibility:hidden;pointer-events:none";
   document.body.appendChild(probe);
   const audio = new LocalMedia(el, host);
+  for (const ev of ["sourcechange", "emptied", "guidechange"]) audio.addEventListener(ev, showGuide);
   const P = {
     audio, now: null, lyr: null, editing: false, autoplay: false,
     follow: false,  // 같이듣기 손님 (곡이 끝나도 혼자 넘어가지 않음)

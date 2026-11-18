@@ -14,6 +14,7 @@
    재생 상태·시간을 부모 화면으로 보내고 부모의 명령(재생·멈춤·이동·소리)을 플레이어에 전함.
    주소: ?yt=<유튜브 영상 번호> 또는 ?nico=<sm…> (또는 ?sc=<SoundCloud 주소> · ?vimeo=<번호> · ?file=<음원 파일 주소> ·
    ?bili=<av…|BV…>&len=<초> — 원곡이 없어진 곡의 다른 링크, 2026-11-18) · &start=<초> · &mute=1 · &vol=<0~100> · &id=<부모가 구분하는 번호>
+   · &guide=1: 비리비리 볼륨 가이드 — 소리 끈 채로 열어 둠, cmd guide false 로 소리 켜고 다시 엶 · &vs=1: 볼륨 스크립트가 있는 브라우저
    · &cmt=0: 니코니코 댓글 끄기 (기본 켬) · 유튜브 자막은 늘 끄고 시작
    · &info=1: 니코니코 영상 정보만 알리고 재생하지 않음 (플레이어 곡 정보 줄의 재생수)
    · cmd load {yt|nico, start, play}: next song in the same player (reused so playback goes on in a hidden tab)
@@ -194,21 +195,35 @@ if (q.get("yt")) {
   // Bilibili: its embed player has no API — it takes no command and tells nothing (tested 2026-11-18). So it plays only
   // while it should be heard: pause / mute = the frame is emptied, play / seek = reopened at that second (&t=).
   // Time is counted here from when the frame loaded; the end = the length the parent got from VocaDB (&len=).
-  // No volume control at all.
+  // Its player keeps the volume set inside it (its own storage, per browser) but takes none from us — except through the
+  // user script the player's guide hands out (user request 2026-11-18, Tampermonkey): it listens in the Bilibili frame for
+  // {biliVol: 0~1 | null} and answers {biliVolAck: 1}; Bilibili's player.setVolume also unmutes.
+  // &guide=1: the frame opens muted (&muted=1 — Bilibili doesn't save the mute) and stays open even while the parent is muted;
+  //   only pings (biliVol null) are sent, so nothing unmutes it. cmd guide false = reopen with sound.
+  // &vs=1 (script installed earlier): opens muted too, the script unmutes it at our volume (no loud first moment);
+  //   no answer within 6 s → {ev: "novolctl"} and reopened without the mute (plays at its own saved volume).
+  // An answer → {ev: "volctl"} (once). cmd reload = reopen the frame (a just-saved script runs only in a new page).
   const bid = q.get("bili"), len = +q.get("len") || 0;
+  let guide = q.get("guide") === "1", vs = q.get("vs") === "1", vol = startVol, acked = false, loadedAt = 0;
   const f = document.createElement("iframe");
   f.allow = "autoplay; fullscreen";
   document.getElementById("p").replaceWith(f);
-  const src = t => `https://player.bilibili.com/player.html?${/^bv/i.test(bid) ? "bvid=" + bid : "aid=" + bid.replace(/^av/i, "")}&page=1&autoplay=1&danmaku=0&high_quality=1&t=${Math.floor(t)}`;
+  const src = t => `https://player.bilibili.com/player.html?${/^bv/i.test(bid) ? "bvid=" + bid : "aid=" + bid.replace(/^av/i, "")}&page=1&autoplay=1&danmaku=0&high_quality=1&t=${Math.floor(t)}${guide || vs ? "&muted=1" : ""}`;
+  const tell = () => { if (open && loadedAt) try { f.contentWindow.postMessage({biliVol: guide ? null : vol / 100}, "https://player.bilibili.com"); } catch (e) {} };
+  addEventListener("message", e => {
+    if (e.source !== f.contentWindow || !e.data || !e.data.biliVolAck || acked) return;
+    acked = true; up({ev: "volctl"});
+  });
   let base = start, at = 0, playing = true, muted = startMuted, open = false;
   const now = () => playing && at ? base + (performance.now() - at) / 1000 : base;
   const freeze = () => { base = now(); at = 0; };
   // heard → frame open (time runs from its load) · silent → frame empty, time runs on its own while playing (priming)
   const show = () => {
-    const want = playing && !muted;
-    if (want && !open) { open = true; freeze(); f.onload = () => { if (open) at = performance.now(); }; f.src = src(base); }
-    else if (!want && open) { freeze(); open = false; f.onload = null; f.src = "about:blank"; if (playing) at = performance.now(); }
+    const want = playing && (!muted || guide);
+    if (want && !open) { open = true; freeze(); loadedAt = 0; f.onload = () => { if (open) { at = loadedAt = performance.now(); tell(); } }; f.src = src(base); }
+    else if (!want && open) { freeze(); open = false; loadedAt = 0; f.onload = null; f.src = "about:blank"; if (playing) at = performance.now(); }
   };
+  const reopen = () => { if (open) { freeze(); open = false; loadedAt = 0; f.onload = null; f.src = "about:blank"; if (playing) at = performance.now(); } show(); };
   let lastState = "";
   const state = s => { if (s !== lastState) { lastState = s; up({ev: "state", s}); } };
   if (!len) up({ev: "error", code: "no-length"});
@@ -216,15 +231,20 @@ if (q.get("yt")) {
     if (muted) at = performance.now();
     show();
     up({ev: "ready", d: len});
+    let tick = 0;
     setInterval(() => {
       if (playing && now() >= len) { base = len; at = 0; playing = false; show(); state("ended"); }
       else if (playing && at) state("playing");
       up({ev: "time", t: Math.min(now(), len), d: len});
+      if (!acked && ++tick % 4 === 0) tell();  // the script may come up after the load
+      if (vs && !acked && loadedAt && performance.now() - loadedAt > 6000) { vs = false; up({ev: "novolctl"}); reopen(); }
     }, 250);
     P = {play: () => { if (playing) return; if (base >= len) base = 0; playing = true; if (muted) at = performance.now(); show(); },
          pause: () => { if (!playing) return; freeze(); playing = false; show(); state("paused"); },
          seek: t => { base = Math.max(0, Math.min(+t || 0, len)); at = 0; if (playing) { if (open) { open = false; show(); } else at = performance.now(); } },
-         volume: () => {}, mute: on => { muted = on; show(); }};
+         volume: v => { vol = Math.max(0, Math.min(100, +v || 0)); tell(); }, mute: on => { muted = on; show(); },
+         guide: on => { if (guide === !!on) return; guide = !!on; vs = vs || (!guide && acked); reopen(); },
+         reload: reopen};
   }
 } else if (q.get("ytlist")) {
   // ?ytlist=<유튜브 재생목록 번호>: 그 재생목록의 영상 번호만 알림 {ev: "list", ids} — 재생 안 함
@@ -251,7 +271,7 @@ if (q.get("yt")) {
 addEventListener("message", e => {
   if (e.source !== parent || !e.data || !e.data.cmd || !P) return;
   const {cmd, v} = e.data;
-  try { if (cmd === "load") { if (P.load) P.load(v || {}); } else if (cmd === "seek") P.seek(+v); else if (cmd === "volume") P.volume(+v); else if (cmd === "mute" || cmd === "comments") { if (P[cmd]) P[cmd](!!v); } else if (P[cmd]) P[cmd](); } catch (x) {}
+  try { if (cmd === "load") { if (P.load) P.load(v || {}); } else if (cmd === "seek") P.seek(+v); else if (cmd === "volume") P.volume(+v); else if (cmd === "mute" || cmd === "comments" || cmd === "guide") { if (P[cmd]) P[cmd](!!v); } else if (P[cmd]) P[cmd](); } catch (x) {}
 });
 </script>
 </body>

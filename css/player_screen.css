@@ -326,6 +326,7 @@ body:not(.simple) .ltmembers li.mc{background:color-mix(in srgb,var(--mc) 38%,tr
 body.lt-guest #list{cursor:not-allowed}
 body.lt-guest .vshield{pointer-events:none}
 body.lt-guest #streamHost{pointer-events:none}
+body.lt-guest #streamHost:has(.vguide:not([hidden])){pointer-events:auto}  /* Bilibili volume guide: its buttons must be reachable */
 /* 썸네일 크게 보기 */
 #coverDlg{width:auto;max-width:94vw;background:transparent;border:0}
 /* 노래방 번호 랜덤 추천 (user request 2026-11-15): info off → only the number, big in the middle */
