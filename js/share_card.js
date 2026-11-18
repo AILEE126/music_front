@@ -9,7 +9,7 @@
    (same idea as listen_turn.json — players read it with their own token; the token can touch only the share repo).
    The page sends visitors on with JS (bots don't run it) to <player>#play=<id>. A card is uploaded again only when its
    content changed (csc-key); Pages takes ~1 min to show a new page, so the buttons wait until the page answers with the key. */
-const SHARE_V = 4;  // bump when the card drawing changes (every card is made again on its next share)
+const SHARE_V = 5;  // bump when the card drawing changes (every card is made again on its next share)
 const SHARE = {cfg: null};
 async function shareCfg() {
   if (!SHARE.cfg) {
@@ -90,19 +90,28 @@ function shareRound(g, x, y, w, h, r) {
   g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
   g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
 }
-/* 1200×630 (X · 디스코드 큰 카드 비율): 썸네일을 꽉 채우고 (작은 썸네일은 흐리게) 아래쪽을 어둡게 해서 글자를 얹음 */
-async function shareDraw(it) {
-  const W = 1200, H = 630, P = 60, t = shareText(it), img = await shareThumb(it);
+/* 1200×630 (X · 디스코드 큰 카드 비율): 썸네일을 꽉 채우고 (작은 썸네일은 흐리게) 아래쪽을 어둡게 해서 글자를 얹음.
+   blur: hide the picture — some vocaloid thumbnails are gory or lewd (공유 창 '썸네일 흐리게', user request 2026-11-18):
+   only a heavily blurred background, never the sharp small thumbnail (low-res cards without blur still get it).
+   ink: "white" (white words on a dark shade) or "black" (black words on a light shade); the 사이버노인정 badge outline is the word color
+   (공유 창 블랙/화이트 스위치, user request 2026-11-18). img: reuse an already fetched thumbnail (the toggle redraws without fetching again) */
+async function shareDraw(it, {blur = false, img, ink = "white"} = {}) {
+  const W = 1200, H = 630, P = 60, t = shareText(it), dark = ink === "black";
+  const sh = dark ? "255,255,255" : "0,0,0", fg = dark ? "0,0,0" : "255,255,255";  // shade · word colors as r,g,b
+  if (img === undefined) img = await shareThumb(it);
   try { await document.fonts.ready; } catch (e) {}
   const cv = Object.assign(document.createElement("canvas"), {width: W, height: H}), g = cv.getContext("2d");
   g.fillStyle = "#16161d"; g.fillRect(0, 0, W, H);
   let box = null;  // the sharp small thumbnail (top right) — the title keeps off it
   if (img) {
-    const s = Math.max(W / img.naturalWidth, H / img.naturalHeight), w = img.naturalWidth * s, h = img.naturalHeight * s;
-    if (img.naturalWidth < 640) g.filter = "blur(14px) brightness(.85)";  // 니코니코 작은 썸네일: 늘리면 깨져 보임 → 흐리게
+    // blur: scaled up a little so the blur's soft edge falls outside the card
+    const s = Math.max(W / img.naturalWidth, H / img.naturalHeight) * (blur ? 1.25 : 1), w = img.naturalWidth * s, h = img.naturalHeight * s;
+    const small = img.naturalWidth < 640;
+    if (blur) g.filter = "blur(48px) brightness(.8)";  // strong enough that the picture can't be made out
+    else if (small) g.filter = "blur(14px) brightness(.85)";  // 니코니코 작은 썸네일: 늘리면 깨져 보임 → 흐리게
     g.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
     g.filter = "none";
-    if (img.naturalWidth < 640) {  // 그 위에 원래 크기의 2배로 또렷하게 (오른쪽 위)
+    if (small && !blur) {  // 그 위에 원래 크기의 2배로 또렷하게 (오른쪽 위)
       const k = Math.min(2, 420 / img.naturalWidth), tw = img.naturalWidth * k, th = img.naturalHeight * k, x = W - P - tw, y = P;
       g.save(); g.shadowColor = "rgba(0,0,0,.5)"; g.shadowBlur = 30; shareRound(g, x, y, tw, th, 16); g.fillStyle = "#000"; g.fill(); g.restore();
       g.save(); shareRound(g, x, y, tw, th, 16); g.clip(); g.drawImage(img, x, y, tw, th); g.restore();
@@ -110,12 +119,12 @@ async function shareDraw(it) {
     }
   }
   const grad = g.createLinearGradient(0, H * .25, 0, H);
-  grad.addColorStop(0, "rgba(0,0,0,0)"); grad.addColorStop(.45, "rgba(0,0,0,.55)"); grad.addColorStop(1, "rgba(0,0,0,.9)");
+  grad.addColorStop(0, `rgba(${sh},0)`); grad.addColorStop(.45, `rgba(${sh},.55)`); grad.addColorStop(1, `rgba(${sh},.9)`);
   g.fillStyle = grad; g.fillRect(0, 0, W, H);
   // 아래에서부터 쌓음: 프로듀서 · 엔진 → 일본어 제목 → 제목 — 왼쪽 아래 구석에 바짝 (user request 2026-11-18: 처음 배치가 더 예쁨.
   // X 가 왼쪽 아래에 덮는 제목 이름표에 아랫줄이 조금 가려지는 건 감수 — 위로 올린 배치는 사용자가 되돌림)
   const E = 36;  // 글자의 왼쪽 · 아래 여백
-  g.textBaseline = "alphabetic"; g.shadowColor = "rgba(0,0,0,.6)"; g.shadowBlur = 12;
+  g.textBaseline = "alphabetic"; g.shadowColor = `rgba(${sh},.6)`; g.shadowBlur = 12;
   let y = H - E;
   const meta = [["프로듀서", t.producer], ["엔진", t.engine]].filter(([, v]) => v);
   g.font = `600 30px ${SHARE_FONT}`;
@@ -123,39 +132,51 @@ async function shareDraw(it) {
   for (const [i, [label, val]] of meta.entries()) {
     g.font = `700 22px ${SHARE_FONT}`;
     const lw = g.measureText(label).width + 22;
-    g.shadowBlur = 0; shareRound(g, x, y - 30, lw, 36, 18); g.fillStyle = "rgba(255,255,255,.18)"; g.fill();
-    g.fillStyle = "#fff"; g.fillText(label, x + 11, y - 5);
+    g.shadowBlur = 0; shareRound(g, x, y - 30, lw, 36, 18); g.fillStyle = `rgba(${fg},.18)`; g.fill();
+    g.fillStyle = `rgb(${fg})`; g.fillText(label, x + 11, y - 5);
     x += lw + 12;
     g.shadowBlur = 12;
     // 앞 칸(프로듀서)은 반까지, 마지막 칸(엔진)은 이름표 앞까지
     const room = i < meta.length - 1 ? (W - E - P) / 2 - lw - 36 : W - P - x - 230;
     const v = shareFit(g, val, 600, 30, 22, Math.max(120, room), 1);
-    g.fillStyle = "#f2f2f2"; g.fillText(v.lines[0], x, y);
+    g.fillStyle = `rgba(${fg},.95)`; g.fillText(v.lines[0], x, y);
     x += g.measureText(v.lines[0]).width + 36;
   }
   if (meta.length) y -= 58;
   if (t.ja) {
     const j = shareFit(g, t.ja, 500, 34, 24, W - E - P, 1);
-    g.fillStyle = "rgba(255,255,255,.82)"; g.fillText(j.lines[0], E, y);
+    g.fillStyle = `rgba(${fg},.82)`; g.fillText(j.lines[0], E, y);
     y -= j.size + 22;
   }
   let tt = shareFit(g, t.title, 800, 72, 44, W - E - P, 2);
   if (box && y - (tt.lines.length - 1) * tt.size * 1.15 - tt.size < box.bottom + 16) tt = shareFit(g, t.title, 800, 72, 44, box.x - E - 30, 2);  // would run under it
-  g.fillStyle = "#fff";
+  g.fillStyle = `rgb(${fg})`;
   tt.lines.slice().reverse().forEach(l => { g.fillText(l, E, y); y -= tt.size * 1.15; });
-  // 오른쪽 아래 구석: 이름표 — 타원 배경 없이 무지개 글자 + 검은 테두리, 살짝 비침 (user request 2026-11-18: 50~80% 사이 → 65%)
+  // 오른쪽 아래 구석: 이름표 — 타원 배경 없이 무지개 글자 + 검은 테두리, 살짝 비침 (user request 2026-11-18: 50~80% 사이 → 65% → 조금 더 투명하게 55%)
   // 따로 그린 뒤 통째로 비치게 — 바로 비치게 그리면 검은 테두리가 글자 속으로 비쳐 탁해짐
   const mk = Object.assign(document.createElement("canvas"), {width: W, height: H}), m = mk.getContext("2d");
   m.font = `800 28px ${SHARE_FONT}`; m.textAlign = "right";
-  const bn = "♪ 사이버노인정", bw = m.measureText(bn).width, bx = W - 28, by = H - 30;
-  m.lineJoin = "round"; m.lineWidth = 6; m.strokeStyle = "#000"; m.strokeText(bn, bx, by);
-  const rb = m.createLinearGradient(bx - bw, 0, bx, 0);
-  ["#ff6b8b", "#ffb347", "#ffe66d", "#7ee081", "#6ec6ff", "#b388ff"].forEach((c, i, a) => rb.addColorStop(i / (a.length - 1), c));
+  // the note = the tab icon's beamed note (player_screen.html favicon, user request 2026-11-18), not the ♪ glyph
+  const bn = "사이버노인정", bw = m.measureText(bn).width, bx = W - 28, by = H - 30;
+  const ns = .5, nx = bx - bw - 10 - 56 * ns, ny = by - 26;  // icon: 64-unit box scaled to ~28 px tall, left of the name
+  const n64 = new Path2D("M22 11L56 4V14L22 21Z"), note = new Path2D();
+  n64.rect(22, 11, 6, 38); n64.rect(50, 4, 6, 38);
+  n64.moveTo(28, 49); n64.ellipse(17, 49, 11, 8, -20 * Math.PI / 180, 0, Math.PI * 2);
+  n64.moveTo(56, 42); n64.ellipse(45, 42, 11, 8, -20 * Math.PI / 180, 0, Math.PI * 2);
+  note.addPath(n64, new DOMMatrix().translate(nx - 6 * ns, ny).scale(ns));
+  // outline the same color as the words: 화이트 = white outline, 블랙 = black (user 2026-11-18); width 6 → 5 (4 was too thin)
+  m.lineJoin = "round"; m.lineWidth = 5; m.strokeStyle = `rgb(${fg})`; m.strokeText(bn, bx, by);
+  m.stroke(note);  // all outlines first, then all fills — no outline inside the note
+  const rb = m.createLinearGradient(nx, 0, bx, 0);
+  // 화이트 (white outline): pastel letters bled into the white edge (user 2026-11-18) → the deeper rainbow the light theme's
+  // app name uses; 블랙 (black outline) keeps the pastel one
+  (dark ? ["#ff6b8b", "#ffb347", "#ffe66d", "#7ee081", "#6ec6ff", "#b388ff"] : ["#e00000", "#e06a00", "#c9a400", "#009a00", "#0068d6", "#3a00d6", "#a000d6"]).forEach((c, i, a) => rb.addColorStop(i / (a.length - 1), c));
   m.fillStyle = rb; m.fillText(bn, bx, by);
-  g.save(); g.shadowBlur = 0; g.globalAlpha = .65; g.drawImage(mk, 0, 0); g.restore();
+  m.fill(note);
+  g.save(); g.shadowBlur = 0; g.globalAlpha = dark ? .55 : .4; g.drawImage(mk, 0, 0);  // 화이트: deep rainbow stood out more than 블랙's → fainter (user 2026-11-18) g.restore();
   const blob = await new Promise(r => cv.toBlob(r, "image/jpeg", .9));
   if (!blob) throw new Error("카드 그림을 만들지 못했습니다.");
-  return {blob, text: t, thumb: !!img};
+  return {blob, text: t, thumb: !!img, img, blur: blur && !!img, ink};
 }
 
 const shareAttr = s => String(s ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -195,9 +216,10 @@ async function shareCommit(cfg, files, msg) {
     if (!r.ok) throw new Error(`공유 저장소 응답 ${r.status}${r.status === 401 ? " (토큰 만료?)" : r.status === 409 ? " (저장소가 비어 있음?)" : ""}`);
     return r.json();
   };
-  const ref = await gh(`git/ref/heads/${cfg.branch}`), head = ref.object.sha, base = await gh(`git/commits/${head}`);
-  const tree = [];
-  for (const [path, content, enc] of files) tree.push({path, mode: "100644", type: "blob", sha: (await gh("git/blobs", {content, encoding: enc})).sha});
+  // blobs and the branch head at once (was one after another — 링크 생성이 너무 느림, user 2026-11-18)
+  const [ref, ...tree] = await Promise.all([gh(`git/ref/heads/${cfg.branch}`),
+    ...files.map(async ([path, content, enc]) => ({path, mode: "100644", type: "blob", sha: (await gh("git/blobs", {content, encoding: enc})).sha}))]);
+  const head = ref.object.sha, base = await gh(`git/commits/${head}`);
   const nt = await gh("git/trees", {base_tree: base.tree.sha, tree});
   const c = await gh("git/commits", {message: msg, tree: nt.sha, parents: [head]});
   await gh(`git/refs/heads/${cfg.branch}`, {sha: c.sha}, "PATCH");
@@ -211,51 +233,80 @@ async function shareKey(s) {
   return [...new Uint8Array(h)].slice(0, 6).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-/* 공유 창: 카드 미리보기 · 링크 · X 에 올리기 / 링크 복사 (디스코드는 링크를 붙이면 카드가 뜸) */
+/* 공유 창: 카드 미리보기 · [링크 복사] [X 에 올리기] (디스코드는 링크를 붙이면 카드가 뜸).
+   User request 2026-11-18: the link itself is not shown; both buttons spin until the page is live on Pages. */
 async function openShare(it = cur) {
   if (!it || !it.vocadb) return uiAlert(it ? "VocaDB 곡만 공유할 수 있습니다 (mp3 폴더 곡은 안 됨)." : "공유할 곡을 먼저 트세요.");
   document.querySelector("dialog.sharedlg")?.remove();
   const d = document.createElement("dialog");
   d.className = "uidlg sharedlg";
   d.innerHTML = `<div class="dlg-head">SNS 공유 카드<span class="grow"></span><button class="ib" data-a="close" title="닫기 (Esc)">✕</button></div>
-    <div class="dlg-body"><div class="shimg"><span class="spin"></span></div>
-    <div class="shlink"><input type="text" readonly placeholder="링크 만드는 중…"><button data-a="copy" disabled>링크 복사</button></div>
-    <div class="shst">카드 만드는 중…</div></div>
-    <div class="dlg-foot"><span class="grow shhint">디스코드에는 링크를 붙여 넣으면 카드가 뜹니다.</span><button class="primary" data-a="x" disabled>X 에 올리기</button></div>`;
+    <div class="dlg-body"><div class="shimg"><span class="spin"></span></div><div class="shrow"><div class="shst">카드 만드는 중…</div><button type="button" class="onoff shink" title="카드 위 글자 색 (처음엔 화이트)"><span class="lb off">블랙</span><span class="lb on">화이트</span></button></div></div>
+    <div class="dlg-foot"><span class="grow shhint">디스코드에는 링크를 붙여 넣으면 카드가 뜹니다.</span><button data-a="copy">링크 복사</button><button class="shx" data-a="x" title="X(트위터)에 올리기">X</button><span class="shsep" aria-hidden="true">|</span><label class="shblur busy" title="잔인하거나 야한 썸네일일 때 — 그림을 알아볼 수 없게 흐린 배경만 남김">흐리게<span class="shck"><input type="checkbox" disabled><span class="sendspin" aria-hidden="true"></span></span></label></div>`;
   document.body.appendChild(d);
   d.addEventListener("close", () => { d.dead = true; d.remove(); });
-  const st = m => { d.querySelector(".shst").textContent = m; }, inp = d.querySelector("input");
-  let link = "", title = titleOf(it);
+  const st = m => { d.querySelector(".shst").textContent = m; }, btns = [...d.querySelectorAll("button[data-a=copy],button[data-a=x]")];
+  // loading = the button greyed out with a spinner over it, not beside the text (user request 2026-11-18)
+  const busy = on => btns.forEach(b => { b.disabled = on; b.classList.toggle("shbusy", on); }), bb = d.querySelector(".shblur"), bc = bb.querySelector("input");
+  // checkbox, not a button (user 2026-11-18: the button changed size on every toggle); while redrawing a spinner sits in its place
+  const bspin = on => { bb.classList.toggle("busy", on); bc.disabled = on || !img; };
+  // 글자 색 스위치 (user request 2026-11-18): always starts at 화이트
+  const ib = d.querySelector(".shink");
+  let link = "", title = titleOf(it), run = 0, blur = false, img, ink = "white";
+  ib.classList.toggle("on", ink === "white");
+  ib.addEventListener("click", () => { ink = ink === "white" ? "black" : "white"; ib.classList.toggle("on", ink === "white"); make(); });
   d.addEventListener("click", async e => {
-    const a = e.target.closest("button[data-a]")?.dataset.a;
+    const b = e.target.closest("button[data-a]"), a = b?.dataset.a;
     if (a === "close") d.close();
-    if (a === "copy") { try { await navigator.clipboard.writeText(link); st("링크를 복사했습니다."); } catch (er) { inp.select(); st("복사하지 못했습니다 — 링크를 직접 복사하세요."); } }
+    if (a === "copy") {
+      let ok = false;
+      try { await navigator.clipboard.writeText(link); ok = true; } catch (er) {
+        const t = Object.assign(document.createElement("textarea"), {value: link});  // clipboard API blocked → old way
+        d.appendChild(t); t.select(); try { ok = document.execCommand("copy"); } catch (er2) {} t.remove();
+      }
+      st(ok ? "링크를 복사했습니다." : "복사하지 못했습니다.");
+      if (ok) { b.textContent = "복사됨 ✓"; setTimeout(() => { if (!d.dead) b.textContent = "링크 복사"; }, 1500); }
+    }
     if (a === "x") window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(`${title} — 사이버노인정`)}&url=${encodeURIComponent(link)}`, "_blank", "noopener");
   });
-  d.showModal();
-  try {
-    const cfg = await shareCfg(), id = it.vocadb, card = await shareDraw(it);
-    if (d.dead) return;
-    title = card.text.title;
-    d.querySelector(".shimg").innerHTML = `<img alt="" src="${URL.createObjectURL(card.blob)}">`;
-    const key = await shareKey(JSON.stringify([SHARE_V, card.text, card.thumb, cfg.player]));
-    const url = `${cfg.base}s/${id}/`, ready = () => { link = url; inp.value = url; d.querySelectorAll("button[data-a=copy],button[data-a=x]").forEach(b => b.disabled = false); };
-    if (!card.thumb) st("썸네일을 받지 못해 글자만 있는 카드입니다.");
-    if (await shareLive(url, key)) { ready(); return st("이미 만들어 둔 카드입니다. 링크를 붙여 넣으면 카드가 뜹니다."); }
-    st("공유 저장소에 올리는 중…");
-    const page = sharePage(cfg, id, card.text, key);
-    await shareCommit(cfg, [[`s/${id}/index.html`, page, "utf-8"], [`s/${id}/card.jpg`, await shareB64(card.blob), "base64"]],
-      `share ${id}: ${card.text.title}`.slice(0, 120));
-    inp.value = url;
-    // Pages publishes in ~1 min — a link posted before that gets no card (X · 디스코드 remember it), so the buttons wait
-    for (let n = 0; !d.dead && n < 60; n++) {
-      st(`깃허브 페이지에 반영되는 중… ${n * 5}초 (보통 1분 안)`);
-      if (await shareLive(url, key)) { ready(); return st("카드가 준비됐습니다. 링크를 붙여 넣으면 카드가 뜹니다."); }
-      await new Promise(r => setTimeout(r, 5000));
+  bc.addEventListener("change", () => { blur = bc.checked; make(); });  // the link follows the picked look: redraw + upload again
+  // one run = draw → preview → upload → wait for Pages; a newer run (blur toggle) makes the older one stop quietly
+  async function make() {
+    const my = ++run, gone = () => d.dead || my !== run;
+    link = ""; busy(true); bspin(true);
+    try {
+      // the card first, so the preview shows even when the share settings are missing (user report 2026-11-18: 미리보기 안 됨)
+      const card = await shareDraw(it, {blur, img, ink});
+      if (gone()) return;
+      img = card.img; title = card.text.title;
+      bspin(false);
+      d.querySelector(".shimg").innerHTML = `<img alt="" src="${URL.createObjectURL(card.blob)}">`;
+      st(card.thumb ? "링크 만드는 중…" : "썸네일을 받지 못해 글자만 있는 카드입니다. 링크 만드는 중…");
+      const cfg = await shareCfg(), id = it.vocadb;
+      const key = await shareKey(JSON.stringify([SHARE_V, card.text, card.thumb, card.blur, card.ink, cfg.player]));
+      const url = `${cfg.base}s/${id}/`, ready = m => { if (gone()) return; link = url; busy(false); st(m); };
+      if (await shareLive(url, key)) return ready("이미 만들어 둔 카드입니다. 링크를 붙여 넣으면 카드가 뜹니다.");
+      if (gone()) return;
+      const page = sharePage(cfg, id, card.text, key);
+      await shareCommit(cfg, [[`s/${id}/index.html`, page, "utf-8"], [`s/${id}/card.jpg`, await shareB64(card.blob), "base64"], [".nojekyll", "", "utf-8"]],
+        `share ${id}: ${card.text.title}`.slice(0, 120));
+      // Pages publishes in ~1 min — a link posted before that gets no card (X · 디스코드 remember it), so the buttons wait
+      const t0 = Date.now();
+      while (!gone() && Date.now() - t0 < 300000) {
+        st(`깃허브 페이지에 반영되는 중… ${Math.round((Date.now() - t0) / 1000)}초 (보통 1분 안)`);
+        if (await shareLive(url, key)) return ready("카드가 준비됐습니다. 링크를 붙여 넣으면 카드가 뜹니다.");
+        await new Promise(r => setTimeout(r, 2000));
+      }
+      ready("반영이 늦습니다 — 조금 뒤에 올리세요 (일찍 올리면 카드가 안 뜰 수 있음).");
+    } catch (e) {
+      if (gone()) return;
+      if (!d.querySelector(".shimg img")) d.querySelector(".shimg").textContent = "";
+      btns.forEach(b => b.classList.remove("shbusy"));  // stay disabled: no link
+      bspin(false);
+      st(e.message);
     }
-    if (!d.dead) { ready(); st("반영이 늦습니다 — 조금 뒤에 올리세요 (일찍 올리면 카드가 안 뜰 수 있음)."); }
-  } catch (e) {
-    if (!d.dead) { d.querySelector(".shimg").textContent = ""; st(e.message); }
   }
+  d.showModal();
+  make();
 }
 $("btnShare").onclick = () => openShare();
