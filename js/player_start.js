@@ -10,14 +10,15 @@ function showLoad(label) {
   if (e) e.textContent = label;
 }
 LOCAL.progress = showLoad;
-/* '<닉네임>님 안녕하세요!' right of the app name (user request 2026-11-17) — a write token (or the server PC) can change the
-   nickname by clicking it; a read-only token can't */
+/* '노인 <닉네임> ✎' right of the app name (user request 2026-11-17; wording 2026-11-18) — click = change the nickname */
 function renderHello() {
   const h = $("hello"), who = String(store.get("reportWho", "") || "").trim();
   if (!h) return;
   h.hidden = !who || !LOCAL.ready;
   // ✎ mirrored (css): the nickname can be changed — by everyone, read-only tokens too (user request 2026-11-17)
-  h.innerHTML = `<span class="nm">${esc(who)}</span>님 안녕하세요! <span class="pen">✎</span>`;
+  // one line (user request 2026-11-18): '노인 <닉네임> ✎' — a long nickname is cut, the theme button never wraps
+  // 간단 mode (user request 2026-11-18): no nickname, just '이름변경 ✎' (css swaps .full / .simple)
+  h.innerHTML = `<span class="l1"><span class="full">노인 <span class="nm">${esc(who)}</span></span><span class="simple">이름변경</span> <span class="pen">✎</span></span>`;
   h.classList.add("edit");
   h.title = "누르면 닉네임 · 대표색상 바꾸기";
   // 대표색상 (user request 2026-11-17): only the nickname in that color, not the whole greeting (간단 mode stays plain — css)
@@ -29,7 +30,7 @@ function renderHello() {
 function editMe() {
   const d = document.createElement("dialog");
   d.className = "uidlg medlg";
-  d.innerHTML = `<div class="dlg-body"><label class="ghform ghfield"><span class="ghlab">닉네임</span><input type="text" id="meWho" maxlength="40" autocomplete="off" spellcheck="false"></label>
+  d.innerHTML = `<div class="dlg-body"><label class="ghform ghfield"><span class="ghlab">닉네임</span><input type="text" id="meWho" maxlength="8" autocomplete="off" spellcheck="false"></label>
       <div class="ghform ghfield"><span class="ghlab">대표색상</span><span id="meClr"></span></div></div>
     <div class="dlg-foot"><button data-v="0">취소</button><button class="primary" data-v="1">확인</button></div>`;
   const who = d.querySelector("#meWho"), cf = colorField(store.get("myColor", ""));
@@ -104,9 +105,9 @@ async function offlineDialog(err = "") {
   d.innerHTML = `<div class="dlg-body"><b>깃허브 토큰을 넣어 주세요</b>
       <div class="ghmade">마지막 토큰 생성 <b>${TOKEN_MADE}</b></div>
       <div class="ghform"><input type="text" id="ghToken" class="masked" placeholder="깃허브 토큰 (github_pat_…)" autocomplete="off" spellcheck="false"></div>
-      <label class="ghform ghfield"><span class="ghlab"><span class="ltreq">*</span>닉네임</span><input type="text" id="ghWho" maxlength="40" autocomplete="off" spellcheck="false"></label>
+      <label class="ghform ghfield"><span class="ghlab"><span class="ltreq">*</span>닉네임</span><input type="text" id="ghWho" maxlength="8" autocomplete="off" spellcheck="false"></label>
       <div class="ghform ghfield"><span class="ghlab">대표색상</span><span id="ghClr"></span></div>
-      <label class="ghform ghfield" id="ghViaRow" hidden><span class="ghlab"><span class="ltreq">*</span>소개받은 닉네임</span><input type="text" id="ghVia" placeholder="토큰을 준 사람의 닉네임" maxlength="40" autocomplete="off" spellcheck="false"></label>
+      <label class="ghform ghfield" id="ghViaRow" hidden><span class="ghlab"><span class="ltreq">*</span>소개받은 닉네임</span><input type="text" id="ghVia" placeholder="토큰을 준 사람의 닉네임" maxlength="8" autocomplete="off" spellcheck="false"></label>
       <div class="ghform ghbtns"><button class="primary" id="ghOpen">열기</button>${cancelable ? '<button id="ghCancel" title="지금 열린 그대로 (Esc)">취소</button>' : ""}</div>
     <div class="offerr" id="offErr"></div></div>`;
   const q = sel => d.querySelector(sel), btns = () => d.querySelectorAll("button");

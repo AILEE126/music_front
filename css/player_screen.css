@@ -37,9 +37,15 @@ body.simple .side-head h1.rainbow{color:var(--text)}  /* 간단: plain text colo
 .side-head .top{flex-wrap:wrap}
 .side-head .top h1{margin-right:auto;flex:none;white-space:nowrap}
 #listenDlg .ltfield{display:none}  /* one nickname (the start one) — no field here (2026-11-17) */
-/* '<닉네임>님 안녕하세요!' (user request 2026-11-17) — between the name and the theme button */
+/* '노인 <닉네임> ✎' (user request 2026-11-17, wording 2026-11-18) — between the name and the theme button */
 .side-head .top h1:has(+ .hello:not([hidden])){margin-right:0}
-.hello{align-self:flex-end;margin-bottom:4px;margin-right:auto;margin-left:8px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted)}
+/* takes only the space left (flex-basis 0), so a long nickname never pushes the theme button to the next row (2026-11-18) */
+/* sits on the app name's text baseline (user request 2026-11-18 — flex-end put it below the letters) */
+.side-head .top h1:has(+ .hello:not([hidden])){align-self:baseline}
+.hello{display:block;flex:1 1 0;align-self:baseline;margin-left:8px;min-width:0;font-size:12px;color:var(--muted)}
+.hello .l1{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hello .simple,body.simple .hello .full{display:none}
+body.simple .hello .simple{display:inline}  /* 간단 (2026-11-18): '이름변경 ✎', no nickname */
 .hello[hidden]{display:none}
 .hello.edit{cursor:pointer}
 .hello .pen{display:inline-block;transform:scaleX(-1)}  /* pencil pointing the other way (user request 2026-11-17) */

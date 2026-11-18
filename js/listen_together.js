@@ -41,7 +41,7 @@ const LT_SILENT = 70000;   // 방장 소식이 이만큼 없으면 끊긴 것으
 const LT_GIVE_UP = 180000; // 손님: 이만큼 다시 잇지 못하면 나감
 let ltApplying = 0;  // 방장 상태를 따라 하는 중 (이때 바뀐 건 다시 보내지 않음)
 const ltQuiet = fn => { ltApplying++; try { return fn(); } finally { ltApplying--; } };
-// one nickname everywhere (user request 2026-11-17): the one typed at the start (edited by '<name>님 안녕하세요! ✎') — no field here
+// one nickname everywhere (user request 2026-11-17): the one typed at the start (edited by '노인 <name> ✎') — no field here
 const ltName = () => String(store.get("reportWho", "") || "").trim();
 const ltCrownSvg = () => `<svg class="ltcrown" viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-label="방장"><path d="M3 7l4.5 4L12 4l4.5 7L21 7l-2 12H5L3 7z"/></svg>`;
 const ltPenSvg = () => `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/><path d="M14.5 5.5l3 3"/></svg>`;

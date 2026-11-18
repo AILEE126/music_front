@@ -25,7 +25,7 @@
         <div class="dlg-head hx">🎧 같이듣기<button class="ib dlgx" id="ltClose" title="닫기 (Esc)" aria-label="닫기">✕</button></div>
         <div class="dlg-body">
           <label class="ltfield"><span class="ltlabel"><span class="ltreq">*</span>닉네임</span>
-            <input type="text" id="ltName" autocomplete="off" spellcheck="false" maxlength="40">
+            <input type="text" id="ltName" autocomplete="off" spellcheck="false" maxlength="8">
             <span class="lterr" id="ltNameErr" hidden>필수값입니다.</span></label>
           <div id="ltIdle">
             <div class="ltsec">
@@ -225,7 +225,7 @@
 <dialog id="reportDlg">
   <div class="dlg-head">오류신고 · 텍스트 대치 제안</div>
   <div class="dlg-body">
-    <label class="rlabel" hidden>보내는 사람<input type="text" id="reportWho" placeholder="이름 (다음에도 그대로)" autocomplete="off" spellcheck="false" maxlength="40"></label>
+    <label class="rlabel" hidden>보내는 사람<input type="text" id="reportWho" placeholder="이름 (다음에도 그대로)" autocomplete="off" spellcheck="false" maxlength="8"></label>
     <!-- user request 2026-11-15: kinds shortened to items (details go in the text) · 안 보는 동안 곡이 멈춤 stays for the automatic stall report only -->
     <!-- user request 2026-11-17: required (red *), nothing picked at first, 곡 정보 on top, 기능제안 removed -->
     <label class="rlabel"><span><span class="req">*</span> 종류</span><select id="reportKind">
