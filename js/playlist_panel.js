@@ -229,21 +229,31 @@ $("list").addEventListener("scroll", () => {
 window.addEventListener("resize", () => renderRows(true));
 /* badges: our lyrics / sync state (songs of ours) · 'VocaDB' for songs found only on VocaDB */
 function badgesHtml(it) {
-  const bs = [];
-  if (it.site === "stream" && it.api) bs.push('<span class="b src" title="VocaDB 에서 찾은 곡 — 가사는 VocaDB 가사 (있으면)">VocaDB</span>');
-  else if (it.lyrics === "vocaro" && it.karaoke) bs.push('<span class="b src" title="나무위키에 가사가 없어 보카로 가사 위키(VL)에서 받은 가사">VL가사</span>');
-  else if (it.lyrics === "own" && it.site !== "local") bs.push('<span class="b src" title="직접 넣은 가사">직접 가사</span>');
-  else if (!it.lyrics && it.site === "local") bs.push('<span class="b warn" title="같은 이름의 가사·싱크 json 이 없음">가사X</span>');
-  if (it.sync === "ok" && it.method === "manual") bs.push('<span class="b ok">직접 싱크</span>');
-  else if (it.sync_fail) bs.push(`<span class="b err" title="자동 싱크 실패: ${esc(it.sync_fail)}">싱크 실패</span>`);
-  if (it.deleted) bs.unshift('<span class="b err" title="원곡 영상이 삭제되어 재생할 수 없음">삭제됨</span>');
-  return bs.join("");
+  // two lines (user request 2026-11-18): lyrics state on top, sync state (+ %) under it
+  const bs = [], ss = [], vdbLyr = (it.flags || []).includes("VocaDB 가사 있음");
+  if (it.deleted) bs.push('<span class="b err" title="원곡 영상이 삭제되어 재생할 수 없음">삭제됨</span>');
+  if (it.site === "stream" && it.api) bs.push('<span class="b src" title="VocaDB 에서 찾은 곡 — 가사는 VocaDB 가사 (있으면)">voca</span>');
+  else if (it.site === "local") { if (!it.lyrics) bs.push('<span class="b warn" title="같은 이름의 가사·싱크 json 이 없음">가사X</span>'); }
+  else if (it.lyrics === "namu") bs.push('<span class="b src" title="나무위키에서 받은 가사">namu</span>');
+  else if (it.lyrics === "vocaro") bs.push('<span class="b src" title="보카로 가사 위키(VL)에서 받은 가사">wiki</span>');
+  else if (it.lyrics === "own") bs.push('<span class="b src" title="직접 넣은 가사">직접 가사</span>');
+  else if (it.lyrics) bs.push('<span class="b src" title="연결된 문서에서 받은 가사">연결 가사</span>');
+  else if (vdbLyr) bs.push('<span class="b src" title="우리 가사가 없어 VocaDB 가사를 보여 줌">voca</span>');
+  else bs.push('<span class="b warn" title="가사가 없음">가사X</span>');
+  // sync: every state of our songs except 직접 싱크 (user request 2026-11-18); the % (노래방 모드: the number) sits here too
+  if (it.sync === "ok" && it.method === "manual") {}
+  else if (it.sync_fail) ss.push(`<span class="b err" title="자동 싱크 실패: ${esc(it.sync_fail)}">싱크 실패</span>`);
+  else if (it.stale) ss.push('<span class="b warn" title="싱크를 맞춘 뒤 가사가 바뀜 — 싱크를 다시 맞춰야 함">싱크 어긋남</span>');
+  else if (it.sync === "ok" && syncPct(it) == null) ss.push('<span class="b ok" title="자동으로 맞춘 싱크">자동 싱크</span>');
+  else if (it.sync !== "ok" && !it.api && (it.lyrics || it.vsync || vdbLyr)) ss.push('<span class="b" title="가사는 있지만 싱크가 없음">싱크X</span>');
+  ss.push(pctHtml(it));
+  return `<div class="bl">${bs.join("")}</div><div class="bl">${ss.join("")}</div>`;
 }
 function itemHtml(it, i) {
   const pl = ONLINE && !guestPl;
   return `<div class="item${cur && keyOf(cur) === keyOf(it) ? " cur" : ""}${it.deleted ? " gone" : ""}" data-i="${i}"${pl ? ' draggable="true"' : ""}${it.deleted ? ' aria-disabled="true"' : ""}>
     ${coverHtml(it, "thumb")}<div class="meta"><div class="t">${titleHtml(it)}</div><div class="a">${esc(shortName(it.artist || it.name))}</div></div>
-    <div class="badges">${badgesHtml(it)}</div>${pctHtml(it)}${pl ? '<button class="plx" title="재생목록에서 빼기">✕</button>' : ""}</div>`;
+    <div class="badges">${badgesHtml(it)}</div></div>`;  // no ✕ — removing is in the right-click menu (user request 2026-11-18)
 }
 /* mp3 안의 썸네일 (오프라인 곡) · 원곡 영상의 썸네일 주소 (온라인 곡) — 못 받은 그림은 ♪ */
 const coverUrl = it => it.site === "local" ? OFFDIR.coverUrl(it) : LOCAL.coverUrl(it);
@@ -265,7 +275,6 @@ $("btnFindCur").onclick = () => {
 $("list").addEventListener("click", e => {
   const el = e.target.closest(".item"); if (!el || guestPl) return;  // 손님: 방장 재생목록은 보기만
   const i = +el.dataset.i;
-  if (e.target.closest(".plx")) return PL.remove(plIdx(i));
   if (el.classList.contains("gone")) return;  // deleted song: can't be picked
   play(view[i], true, ONLINE ? "" : "pick");  // playlist song: ⏭ goes on from it
 });
@@ -279,11 +288,11 @@ $("list").addEventListener("drop", e => {
   dragFrom = -1;
 });
 $("list").addEventListener("dragend", () => { dragFrom = -1; document.querySelectorAll("#list .item.dropto").forEach(x => x.classList.remove("dropto")); });
-/* 자동 싱크 인식 일치 % (직접 싱크·싱크 없음은 없음, 100 이면 생략) */
+/* 자동 싱크 인식 일치 % (직접 싱크·싱크 없음은 없음, 100% 도 표시 — user request 2026-11-18) */
 var syncPct = it => it.sync === "ok" && it.method !== "manual" && it.score != null ? Math.round(it.score * 100) : null;
 var pctHtml = it => {
   const p = syncPct(it);
-  return p != null && p < 100 ? `<span class="pct ${p >= 70 ? "ok" : "warn"}" title="자동 싱크 · 인식 일치 ${p}%">${p}%</span>` : "";
+  return p != null ? `<span class="pct ${p >= 70 ? "ok" : "warn"}" title="자동 싱크 · 인식 일치 ${p}%">${p}%</span>` : "";
 };
 /* 곡 우클릭: 나무위키 문서 · 가사 위키 · VocaDB · 복사 (+ 재생목록: 다음에 재생 · 빼기) */
 function songContext(e, it, extra = []) {
