@@ -994,3 +994,16 @@ body.m .songmeta{order:2}
 .calert-why{color:var(--muted)}
 .calert-todo{font-weight:600}
 .calert-x{position:absolute;top:4px;right:4px;font-size:12px;padding:2px 6px}
+/* SNS 공유 카드 (user request 2026-11-18, share_card.js) */
+#btnShare svg{width:18px;height:18px}
+.sharedlg{width:min(640px,94vw)}
+.sharedlg .dlg-head{display:flex;align-items:center;gap:8px}
+.sharedlg .grow{flex:1}
+.sharedlg .dlg-body{white-space:normal}
+.shimg{aspect-ratio:1200/630;border-radius:10px;overflow:hidden;background:var(--line);display:flex;align-items:center;justify-content:center}
+.shimg img{width:100%;height:100%;display:block}
+.shimg .spin{width:28px;height:28px;border:3px solid var(--muted);border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite}
+.shlink{display:flex;gap:8px;margin-top:10px}
+.shlink input{flex:1;min-width:0}
+.shst{margin-top:6px;font-size:12px;color:var(--muted)}
+.shhint{font-size:12px;color:var(--muted);align-self:center}

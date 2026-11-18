@@ -16,9 +16,10 @@ const KARA_MODE_MS = 2 * 60 * 60 * 1000;  // 노래방 모드 turns itself off a
    small) — the same video's bigger picture is just another address. Largest first; a missing one falls back to the next,
    the stored address last */
 const KARA_BIG = u => {
-  const yt = u.match(/^(https?:\/\/i\.ytimg\.com\/vi\/[^/]+\/)default\.jpg$/);
-  if (yt) return [yt[1].replace(/^http:/, "https:") + "hqdefault.jpg", u];  // 480×360 (4:3 — the 16:9 box crops its bars)
-  if (/nicovideo\.cdn\.nimg\.jp\/thumbnails\/\d+\/\d+$/.test(u)) return [u + ".L", u + ".M", u];  // very old videos have no .L / .M
+  const yt = u.match(/^(https?:\/\/i\.ytimg\.com\/vi\/[^/]+\/)(?:mq)?default\.jpg$/);
+  // 480×360 (4:3 — the 16:9 box crops its bars); a deleted YouTube video → the song's own thumbnail (COVER_NEXT, local_files.js)
+  if (yt) return [yt[1].replace(/^http:/, "https:") + "hqdefault.jpg", u, ...(COVER_NEXT.has(u) ? KARA_BIG(COVER_NEXT.get(u)) : [])];
+  if (/nicovideo\.cdn\.nimg\.jp\/thumbnails\/\d+\/\d+\.\d+$/.test(u)) return [u + ".L", u + ".M", u];  // only addresses with the hash have .L / .M
   return [u];
 };
 const KARA = {

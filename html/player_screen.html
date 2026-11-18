@@ -110,6 +110,7 @@
         <button class="ib mode" id="btnPlayQueue" title="재생 대기열 (다음에 틀 곡 · 지난 곡)" hidden></button>
         <span class="volpop"><button class="ib vol" id="btnMute" title="음소거 / 해제"></button><input type="range" class="bar-range" id="vol" min="0" max="1" step="0.01" value="0.8" title="음량"></span><!-- user request 2026-11-15: slider always shown right of the speaker · speaker = mute toggle -->
         <div class="songmeta" id="songMeta" hidden><div class="cats"><span class="b sync" id="syncChip">싱크 없음</span></div></div><!-- 싱크 표시 = first tag chip (user request 2026-11-15, was in the lyrics toolbar) -->
+        <button class="ib" id="btnShare" title="SNS 공유 카드 — X(트위터) · 디스코드에 붙이면 썸네일 카드가 뜨고, 누르면 이 곡이 바로 재생됨" aria-label="SNS 공유"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg></button><!-- user request 2026-11-18: SNS 공유 카드 (share_card.js) -->
         <button id="btnReport" title="곡의 문제 알리기 (싱크·가사·곡 정보·재생 등) · 텍스트 대치 제안 — 음원 관리 › 오류 신고에 남음">오류신고 · 텍스트 대치 제안</button><!-- user request: small underlined text at the right end · 기능제안 · 텍스트 대치 제안 2026-11-15 -->
       </div>
     </div>
@@ -280,6 +281,7 @@ const STORE_PREFIX = "player.";  // 브라우저 저장값 이름 앞머리
 <script src="../js/mobile_view.js"></script>
 <script src="../js/listen_together.js"></script>
 <script src="../js/karaoke_random.js"></script>
+<script src="../js/share_card.js"></script>
 <script src="../js/patch_notes.js"></script>
 <script src="../js/collect_alert.js"></script><!-- 자동 수집 알림 (2026-11-18): admin players only -->
 <script src="../js/version_check.js"></script>

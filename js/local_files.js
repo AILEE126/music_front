@@ -40,13 +40,25 @@ function vdbLyrics(d, it) {
 }
 /* 썸네일 그림을 못 받으면(지워진 영상·주소 끝 값이 필요한 니코니코 새 영상) 깨진 그림 대신 ♪ 칸 — 그 주소는 기억해 다시 부르지 않음 */
 const BAD_THUMBS = new Set();
-document.addEventListener("error", e => {
-  const t = e.target;
-  if (t.tagName !== "IMG" || !/nimg\.jp|ytimg\.com/.test(t.src)) return;
+/* 유튜브 썸네일 주소 → 그걸 못 받으면 쓸 곡의 원래 썸네일 (LOCAL.coverUrl) */
+const COVER_NEXT = new Map();
+const thumbFail = t => {
   BAD_THUMBS.add(t.src);
+  const next = COVER_NEXT.get(t.src);
+  if (next && !BAD_THUMBS.has(next)) { t.src = next; return; }
   if (t.classList.contains("thumb")) t.replaceWith(Object.assign(document.createElement("span"), {className: t.className, textContent: "♪"}));
   else t.removeAttribute("src");
+};
+document.addEventListener("error", e => {
+  const t = e.target;
+  if (t.tagName === "IMG" && /nimg\.jp|ytimg\.com/.test(t.src) && !t.onerror) thumbFail(t);  // onerror: the image runs its own fallbacks (노래방 추첨)
 }, true);
+// 지워진 유튜브 영상: 404 인데도 120×90 회색 그림을 보내 load 가 옴 — 그것도 못 받은 것으로
+document.addEventListener("load", e => {
+  const t = e.target;
+  if (t.tagName === "IMG" && /ytimg\.com\/vi\/[^/]+\/(?:mq|hq|maxres)default/.test(t.src) && t.naturalWidth === 120) { BAD_THUMBS.add(t.src); t.onerror ? t.onerror() : thumbFail(t); }
+}, true);
+const ytThumbId = u => (/(?:youtu\.be\/|[?&]v=|\/embed\/|\/shorts\/)([\w-]{11})/.exec(u || "") || [])[1] || "";
 const notFound = path => Object.assign(new Error(`${path} 이 없습니다.`), {name: "NotFoundError"});
 
 /* ---------- 지난번에 고른 폴더 기억 (IndexedDB 에 폴더 손잡이 저장) ---------- */
@@ -248,6 +260,11 @@ const LOCAL = {
     // 원곡 영상의 썸네일 주소 (유튜브·니코니코 — 그림은 그때 바로 받음). 아직 안 받은 곡: 니코니코 옛 영상(2019년쯤 전)은 영상 번호만으로 됨
     const nc = String(it.video || "").match(/nicovideo\.jp\/watch\/(?:sm|nm|so)(\d+)/);
     const u = it.thumb || (nc ? `https://nicovideo.cdn.nimg.jp/thumbnails/${nc[1]}/${nc[1]}` : "");
+    // user request 2026-11-18 (화면 전부): 곡의 영상 링크 중 유튜브가 있으면 유튜브 썸네일 (320×180 — 니코니코는 대개 130×100,
+    // VocaDB 가 주는 유튜브 썸네일도 120×90). 재생 순서(니코니코 먼저)는 그대로, 그림만. 못 받으면 원래 썸네일로 (COVER_NEXT)
+    const yt = [...(it.sources || []), ...(it.videos || []), it.video].map(ytThumbId).find(Boolean);
+    const y = yt && `https://i.ytimg.com/vi/${yt}/mqdefault.jpg`;
+    if (y && !BAD_THUMBS.has(y)) { if (u && u !== y) COVER_NEXT.set(y, u); return y; }
     return BAD_THUMBS.has(u) ? "" : u;  // 못 받은 그림은 ♪
   },
 

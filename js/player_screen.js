@@ -1977,9 +1977,12 @@ async function offlineOpened() {
   // the '☁ <repo> · 서버 없이 재생 중' note above the playlist was removed (user request 2026-11-15)
   // tab reloaded while a song played (e.g. the browser reloaded it by itself) → go on playing it from there; else show the last song paused
   const res = SHELL.takeResume(), find = k => SHELL.queue.find(x => keyOf(x) === k) || LOCAL.items.get(k);
-  const rit = res && find(res.k), it = rit && canPlay(rit) ? rit : find(store.get("last", ""));
+  // shared song (#play=<id>, share_card.js): plays at once, not put in the playlist (user request 2026-11-18) — before the resumed / last song
+  const sid = typeof shareTake === "function" ? shareTake() : "", sit = sid && VDB.itemById(sid);
+  if (sid && !(sit && canPlay(sit))) uiAlert(sit ? "공유된 곡은 지금 재생할 수 없습니다 (영상 없음·삭제됨)." : "공유된 곡을 찾지 못했습니다.");
+  const rit = res && find(res.k), it = sit && canPlay(sit) ? sit : rit && canPlay(rit) ? rit : find(store.get("last", ""));
   showLoad("재생목록 여는 중…", 1);
-  if (it && canPlay(it) && !SHELL.now) { if (it === rit) SHELL.resumeAt(it, res.t); play(it, it === rit, ""); }
+  if (it && canPlay(it) && !SHELL.now) { if (it === rit) SHELL.resumeAt(it, res.t); play(it, it === rit || it === sit, it === sit ? "pick" : ""); }
   qRestoreAfterReload(rit && it === rit ? rit : null);  // after an update reload: the queue as it was
   setTimeout(hideLoad, 150);
   if (typeof pnCheck === "function") setTimeout(() => pnCheck(true), 400);  // 패치노트: a new one pops up once (patch_notes.js)
