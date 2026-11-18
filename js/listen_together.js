@@ -1228,15 +1228,22 @@ function ltRenderPop() {
   Object.assign(p.style, {position: "fixed", inset: "auto", left: Math.max(4, Math.min(rc.left, W - Math.max(rc.width, 240) - 4)) + "px",
     width: Math.max(rc.width, 240) + "px", maxHeight: h + "px", top: up ? "auto" : rc.bottom + 3 + "px", bottom: up ? H - rc.top + 3 + "px" : "auto"});
 }
-function ltChoose(o) {
-  if (!o || !o.it) return;
-  LOCAL.remember(o.it);  // a VocaDB result: lyrics · reports find it by name
-  if (LT.reqs.some(r => r.key === keyOf(o.it))) return;
+function ltChoose(o) { if (o && o.it) ltRequest(o.it); }
+function ltRequest(it) {
+  if (!LT.role || !it) return;
+  LOCAL.remember(it);  // a VocaDB result: lyrics · reports find it by name
+  if (LT.reqs.some(r => r.key === keyOf(it))) return;
   if (LT.chOn && ltCoolLeft(LT.uid)) { ltCoolNote(true); return ltCoolShake(); }  // channel: still cooling down — the note above the box shakes
   LT.reqPage = 9999;  // show the page with the newest one (clamped in render)
-  if (LT.role === "host") ltHostRequest(o.it);
-  else if (LT.host) ltSend(LT.host, {t: "req", key: keyOf(o.it), item: ltStrip(o.it)});  // the host's list comes right back
+  if (LT.role === "host") ltHostRequest(it);
+  else if (LT.host) ltSend(LT.host, {t: "req", key: keyOf(it), item: ltStrip(it)});  // the host's list comes right back
   ltRenderReqs();  // the songs stay open (user request: the box doesn't close on its own) — the request shows as 요청중 there
+}
+/* 우클릭 '신청곡으로' (user request 2026-11-18: playlist / offline rows, only while in a room or OPEN CHANNEL) — the 같이듣기
+   window opens so the request (or the cooldown note) shows */
+function ltRequestFromMenu(it) {
+  ltOpenDlg();
+  ltRequest(it);
 }
 $("ltReqQ").addEventListener("input", () => { ltHl = 0; ltSearch(); });
 $("ltReqQ").addEventListener("focus", ltRenderPop);

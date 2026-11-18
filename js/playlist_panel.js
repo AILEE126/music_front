@@ -303,7 +303,9 @@ function songContext(e, it, extra = []) {
 $("list").addEventListener("contextmenu", e => {
   const el = e.target.closest(".item"); if (!el) return;
   const i = +el.dataset.i, it = view[i];
-  songContext(e, it, ONLINE && !guestPl ? [{label: "다음에 재생", fn: () => SHELL.enqueue(it)}, {label: "재생목록에서 빼기", fn: () => PL.remove(plIdx(i))}] : []);
+  // in a 같이듣기 room / OPEN CHANNEL: request the song (user request 2026-11-18 — playlist and offline rows alike)
+  const req = typeof LT !== "undefined" && LT.role && !el.classList.contains("gone") ? [{label: "신청곡으로 신청", fn: () => ltRequestFromMenu(it)}] : [];
+  songContext(e, it, [...req, ...(ONLINE && !guestPl ? [{label: "다음에 재생", fn: () => SHELL.enqueue(it)}, {label: "재생목록에서 빼기", fn: () => PL.remove(plIdx(i))}] : [])]);
 });
 { let t = 0; $("plQ").addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { $("list").scrollTop = 0; renderList(); }, 150); }); }
 $("btnPlClear").onclick = async () => { if (SHELL.queue.length && await uiConfirm("재생목록을 비울까요?")) { setPlFilter(null); PL.set([]); } };
