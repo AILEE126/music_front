@@ -21,11 +21,12 @@ function pnHtml(text) {
   const close = to => { while (lvl > to) { if (lvl === 2) html += "</ul></details>"; else { flush(); html += "</li></ol>"; } lvl--; } };
   for (const ln of String(text || "").split(/\r?\n/)) {
     const li = /^(\s*)[-*]\s+(.*)$/.exec(ln), h = /^\s*#{1,3}\s+(.*)$/.exec(ln);
+    const shot = /^\s*@캡처\s+([\w-]+\.(?:jpg|png))\s*$/.exec(ln);  // picture of the changed screen part (user request 2026-11-18)
     if (h) { close(0); html += `<h4>${pnInline(h[1])}</h4>`; }
-    else if (li && li[1].length >= 2) {
+    else if (shot || li && li[1].length >= 2) {
       if (lvl === 0) { html += "<ol>"; lvl = 1; top = ""; }
       if (lvl === 1) { html += `<li class="fold"><details open><summary>${top || ""}</summary><ul>`; top = null; lvl = 2; }
-      html += `<li>${pnInline(li[2])}</li>`;
+      html += shot ? `<li class="pn-shot"><img data-shot="${esc(shot[1])}" alt="바뀐 화면"></li>` : `<li>${pnInline(li[2])}</li>`;
     } else if (li) {
       close(1);
       if (lvl === 1) { flush(); html += "</li>"; } else { html += "<ol>"; lvl = 1; }  // features numbered 1 2 3 (user request), details not
@@ -34,6 +35,18 @@ function pnHtml(text) {
   }
   close(0);
   return html;
+}
+/* '@캡처' pictures (Server/data/patch_shots): read only once their note is open (one GitHub request each); a missing one is
+   left out. Click = full size */
+const PN_SHOT = new Map();
+function pnShots(root) {
+  for (const img of root.querySelectorAll("details[open] img[data-shot]:not([src])")) {
+    const f = img.dataset.shot;
+    if (!PN_SHOT.has(f)) PN_SHOT.set(f, LOCAL.readBytes(`${LOCAL.data}patch_shots/${f}`)
+      .then(b => URL.createObjectURL(new Blob([b], {type: f.endsWith(".png") ? "image/png" : "image/jpeg"}))).catch(() => ""));
+    PN_SHOT.get(f).then(u => { if (u) img.src = u; else img.closest("li")?.remove(); });
+    img.onclick = () => img.classList.toggle("big");
+  }
 }
 function pnDot() {
   const h = pnName();
@@ -73,6 +86,8 @@ function pnShow(all) {
     <div class="pn-list">${list.map((n, i) => note(n, i === 0)).join("") || '<p class="pn-none">아직 패치노트가 없습니다.</p>'}
       ${older.length ? `<div class="pn-old">지난 패치노트</div>${older.map(n => note(n, false)).join("")}` : ""}</div></div>`;  // only the newest note open (user request 2026-11-18)
   document.body.appendChild(wrap);
+  pnShots(wrap);
+  wrap.addEventListener("toggle", () => pnShots(wrap), true);  // toggle doesn't bubble — caught on the way down
   PN.open = true; pnDot();
   const box = wrap.querySelector(".pn-box"), back = wrap.querySelector(".pn-back");
   if (!pnCalm()) {
