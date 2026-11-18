@@ -72,12 +72,17 @@ function showArtist(it) {
 }
 function vocalPopClose() { document.querySelectorAll(".vpop").forEach(p => p.remove()); }
 function vocalPop(btn) {
+  const vs = cur ? vocalsOf(cur) : [];
+  chipPop(btn, `<div class="h">보컬 ${vs.length}명</div>${vs.map(vocalChip).join("")}`);
+}
+/* a small popup under a chip (보컬 +N · 파일 포맷 링크 여럿) — the same chip again closes it */
+function chipPop(btn, html) {
   const open = document.querySelector(".vpop");
   vocalPopClose();
-  if (!cur || (open && open._from === btn)) return;  // the same chip again = close
-  const vs = vocalsOf(cur), p = document.createElement("div");
+  if (!cur || (open && open._from === btn)) return;
+  const p = document.createElement("div");
   p.className = "vpop"; p._from = btn;
-  p.innerHTML = `<div class="h">보컬 ${vs.length}명</div>${vs.map(vocalChip).join("")}`;
+  p.innerHTML = html;
   document.body.appendChild(p);
   // 화면 축소(--ui-zoom): same correction as ctxMenu · below the chip, above it when there is no room
   const f = uiZoom();
@@ -86,10 +91,30 @@ function vocalPop(btn) {
   p.style.left = x / f + "px"; p.style.top = y / f + "px";
 }
 document.addEventListener("click", e => { const b = e.target.closest("[data-vmore]"); if (b) { e.stopPropagation(); vocalPop(b); } });
-addEventListener("mousedown", e => { if (!e.target.closest(".vpop, [data-vmore]")) vocalPopClose(); }, true);
+/* 파일 포맷 태그 (user request 2026-11-18): 반주 · MIDI … 칩 — 접히는 '+N' 에 넣지 않음, 누르면 그 링크로 바로 (여럿이면 고르는 팝업).
+   파일은 우리에게 없고 VocaDB 에 적힌 링크만 있음 (piapro 등은 그 사이트에서 받음) */
+const linkHost = u => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return ""; } };
+const fileLinks = (it, k) => (it.files || []).filter(f => f[0] === k);
+function fileChip(it, k) {
+  const ls = fileLinks(it, k), c = tagColor("file", k);
+  const tip = ls.length === 1 ? `${k} — 누르면 링크로 이동\n${ls[0][2] || linkHost(ls[0][1])}\n${ls[0][1]}` : `${k} 링크 ${ls.length}개 — 눌러서 고르기`;
+  return `<button type="button" class="b file${c ? " tc" : ""}"${c ? ` style="--tc:${esc(c)}"` : ""} data-file="${esc(k)}" title="${esc(tip)}">⤓ ${esc(k)}${ls.length > 1 ? ` <small>${ls.length}</small>` : ""}</button>`;
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-file]"); if (!b || !cur) return;
+  e.stopPropagation();
+  const k = b.dataset.file, ls = fileLinks(cur, k);
+  if (ls.length === 1) { vocalPopClose(); window.open(ls[0][1], "_blank", "noopener"); return; }
+  chipPop(b, `<div class="h">${esc(k)} 링크 ${ls.length}개</div>${ls.map(([, u, d]) =>
+    `<a class="b flink" href="${esc(u)}" target="_blank" rel="noopener" title="${esc(u)}">${esc(d || linkHost(u))}${d ? ` <small>${esc(linkHost(u))}</small>` : ""}</a>`).join("")}`);
+});
+document.addEventListener("click", e => { if (e.target.closest(".vpop a.flink")) setTimeout(vocalPopClose); });
+addEventListener("mousedown", e => { if (!e.target.closest(".vpop, [data-vmore], [data-file]")) vocalPopClose(); }, true);
 addEventListener("keydown", e => { if (e.key === "Escape") vocalPopClose(); });
 addEventListener("scroll", e => { if (!(e.target.closest && e.target.closest(".vpop"))) vocalPopClose(); }, true);
 addEventListener("resize", vocalPopClose);
+/* 곡 태그 칩 묶음 순서 when filter.json has none (= server filter_settings.CHIP_GROUPS) */
+const CHIP_ORDER = ["vocal", "kara", "gone", "list", "tag", "file"];
 function renderMeta(it) {
   const tags = it.tags || [], notes = it.notes || [], box = $("songMeta");
   const kara = tags.filter(t => KARAOKE_TAG[t]).map(t => [KARAOKE_TAG[t], t]);
@@ -101,11 +126,17 @@ function renderMeta(it) {
   // user request 2026-11-15: only colored chips are shown; the plain ones fold behind a "+N" chip (open state remembered)
   const isPlain = t => !lists.includes(t) && !tagColor("tag:" + tagGroupOf(t), t);
   const vocals = it.vocals || [];
-  const chips = [
-    ...vocals.slice(0, VOCAL_SHOW).map(vocalChip), ...(vocals.length > VOCAL_SHOW ? [vocalMoreChip(vocals.length - VOCAL_SHOW, vocals.length)] : []),
-    ...kara.map(([t, b]) => `<span class="b kara" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b]}" title="${esc(karaOnlyTip(it, b, "노래방 수록"))}">${esc(t)}${karaOnlyMark(it, b)}</span>`),
-    ...Object.keys(it.gone || {}).map(b => `<span class="b kara gone" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b] || "#888"}" title="노래방에서 내려간 곡입니다 (${esc(b)} ${esc(it.gone[b])})">${esc(KARAOKE_TAG[b] || b)}</span>`),
-    ...inner.filter(t => !isPlain(t)).map(tagChip)];
+  // 곡 태그 표시 순서 (user request 2026-11-18: Manage › 필터 › 곡 태그 표시 순서 → filter.json chips; built-in: 파일 포맷 last)
+  const groups = {
+    vocal: [...vocals.slice(0, VOCAL_SHOW).map(vocalChip), ...(vocals.length > VOCAL_SHOW ? [vocalMoreChip(vocals.length - VOCAL_SHOW, vocals.length)] : [])],
+    kara: kara.map(([t, b]) => `<span class="b kara" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b]}" title="${esc(karaOnlyTip(it, b, "노래방 수록"))}">${esc(t)}${karaOnlyMark(it, b)}</span>`),
+    gone: Object.keys(it.gone || {}).map(b => `<span class="b kara gone" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b] || "#888"}" title="노래방에서 내려간 곡입니다 (${esc(b)} ${esc(it.gone[b])})">${esc(KARAOKE_TAG[b] || b)}</span>`),
+    list: lists.map(tagChip),
+    tag: inner.filter(t => !lists.includes(t) && !isPlain(t)).map(tagChip),
+    file: fileKindsOf(it).map(k => fileChip(it, k)),  // 파일 포맷: always shown, never folded (user request 2026-11-18)
+  };
+  const order = [...new Set([...((VDB.filter && VDB.filter.chips) || []), ...CHIP_ORDER])].filter(g => groups[g]);
+  const chips = order.flatMap(g => groups[g]);
   const plain = [...inner.filter(isPlain).map(tagChip), ...(it.categories || []).map(c => `<span class="b" title="나무위키 분류">${esc(c)}</span>`)];
   const open = !!store.get("tagsOpen", false);
   const more = plain.length ? `<button class="b more" id="tagsMore" title="${open ? "나머지 태그 접기" : "나머지 태그 보기"}">${open ? "접기" : `+${plain.length}`}</button>` : "";

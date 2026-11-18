@@ -201,7 +201,9 @@ const VDB = {
       rating: +r.rating_score || 0, sources: vdbSources([r.video_url, ...String(r.alt_urls || "").split(" ")]),
       tags: [...String(r.tags || "").split("|").filter(Boolean), ...ki.extraTags], nums: ki.nums, gone: ki.gone, only: ki.only, ord: ki.ord, karaoke: ki.karaoke, namu: ki.namu,
       lyrics: ours.lyrics || "", ...(ours.sync === "ok" ? {sync: "ok", method: ours.method || "", score: ours.score ?? null} : {}),
+      ...(ours.sync === "stale" ? {stale: 1} : {}),  // lyrics changed after the sync — list badge (2026-11-18)
       ...(ours.vsync ? {vsync: 1} : {})};  // sync made on VocaDB's lyrics (export/db/vsync/<id>.json, 2026-11-17)
+    if (Array.isArray(r.files) && r.files.length) it.files = r.files;  // 파일 포맷 태그 [[종류, 주소, 설명], …] (user request 2026-11-18)
     it.flags = songFlags(it, r.lyrics === "Y", !!(r.title_ko && r.title_ko !== r.title_ja && r.title_ko !== orig));  // 곡 상태 (song_filter.js FLAGS)
     vdbDerive(it); prepItem(it);
     return it;
