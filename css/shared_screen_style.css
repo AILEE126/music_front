@@ -104,6 +104,22 @@ a.ctxi:hover,button.ctxi:hover,.ctxsub:hover>.ctxi{background:var(--accent-soft)
 .ovset .setnb[hidden]{display:none}
 .ovset .setbody .isnew{margin-left:-8px;padding-left:5px;border-left:3px solid var(--err)}
 .ovset select{max-width:100%;min-width:0}
+/* ⚙ › 오버레이 미리보기 (user request 2026-11-19, shared_screen_helpers.js ovPreview): drawn like the overlay windows — black
+   outline under the letters, both see-through together; real pixel sizes (undoes the page zoom); fonts = the 글꼴 part's picks */
+.ovset .ovprev{margin:14px 0 4px;border:1px solid var(--line);border-radius:10px;overflow:hidden}  /* no backdrop color (user request 2026-11-19) */
+.ovset .ovprevhd{padding:5px 10px;font-size:11px;font-weight:600;color:var(--muted);background:var(--card);border-bottom:1px solid var(--line)}
+.ovset .ovbox{zoom:calc(1 / var(--ui-zoom,1));margin:0 auto;padding:8px 10px 10px;display:flex;flex-direction:column;align-items:center;
+  font-family:var(--font-user,) -apple-system,"Segoe UI",CscJa,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;line-height:1.15;text-align:center}  /* the 글꼴 part's stack */
+.ovset .ovl{position:relative;max-width:100%;overflow-wrap:anywhere}
+.ovset .ovcols{display:flex;justify-content:center;align-items:flex-start;max-width:100%}
+.ovset .ovcol{display:flex;flex-direction:column;align-items:center;min-width:0}
+.ovset .ovl span{display:block}
+.ovset .ovl .grp{position:relative}
+.ovset .ovl .edge{position:absolute;inset:0;color:transparent;-webkit-text-stroke:var(--o) #000}
+.ovset .ovl .fill{position:relative;color:var(--c,#fff)}
+html[data-theme=light] .ovset .ovl .edge{-webkit-text-stroke-color:#fff}
+html[data-theme=light] .ovset .ovl .fill{color:color-mix(in srgb,var(--c,#fff) 62%,#000)}
+html[data-theme=light] .ovset .ovl:not([style*="--c:"]) .fill{color:#323238}
 /* ⚙ › 추가기능 (user request 2026-11-19): the part's name, then '확장프로그램 필요' small on its own line · what this PC has */
 .ovset .setsub{display:block;font-size:10.5px;font-weight:400;opacity:.7;margin-top:1px}
 .ovset.setfold .sethead .setsub{display:inline;margin-left:8px}
