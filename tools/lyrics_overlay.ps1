@@ -41,7 +41,7 @@ $WS_EX_TRANSPARENT = 0x20; $WS_EX_TOOLWINDOW = 0x80; $WS_EX_LAYERED = 0x80000; $
 
 # 오버레이 버전 (user request 2026-11-19): the player compares it (/ovprograms ver) with this file in its own tools/ folder
 # and asks for the new zip when the running one is older — bump it with every change of this file
-$OV_VER = 3   # 3: a newer bat replaces a running older overlay by itself
+$OV_VER = 4   # 3: a newer bat replaces a running older overlay by itself · 4: parts (names, side by side)
 # data folder overlay\: next to tools\ in the player repo; in the 추가기능 zip (folder 오버레이\, play_engine.js setupZip)
 # inside that folder, so unzipping a new version over it keeps the settings
 $script:Root = if ((Split-Path -Leaf $PSScriptRoot) -eq 'tools') { Split-Path -Parent $PSScriptRoot } else { $PSScriptRoot }
@@ -207,8 +207,8 @@ function Get-OvFont([string]$file) {
 }
 # Japanese runs (same ranges as the player's font_setting.js): drawn with the Japanese pick
 $JA_RE = '(?:[\u3000-\u30FF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]|[\uD840-\uD8BF][\uDC00-\uDFFF])+'
-function Add-Line($text, [double]$size, $brush, [double]$opacity, $weight) {
-    $o = [Math]::Max(0.0, [double]$script:cfg.outline)
+# the text as WPF draws it (fonts by script, weights) — Add-Line draws it, Get-TextWidth measures a column (Show-Now)
+function New-Ft($text, [double]$size, $brush, $weight) {
     $etc = Get-OvFont ([string]$script:cfg.font_etc); $ja = $(if ([string]$script:cfg.font_ja) { Get-OvFont ([string]$script:cfg.font_ja) } else { $script:fontJa })
     # 굵기 (user request 2026-11-19): a picked font is drawn at its own weight (WPF fakes bold for a one-weight font) unless
     # the player's ⚙ 글꼴 '굵게' is on for that pick
@@ -224,7 +224,14 @@ function Add-Line($text, [double]$size, $brush, [double]$opacity, $weight) {
     # fixed line height (user request 2026-11-19): the font's own was taller for lines with Yu Gothic (Japanese) than Malgun
     # Gothic ones, so the gap after a Japanese line looked wider; 1.15 × size = tighter and the same for every line
     $ft.LineHeight = $size * 1.15
-    $ft.MaxTextWidth = [Math]::Max(50.0, $w.Width - 20.0 - 2.0 * $o); $ft.TextAlignment = 'Center'
+    $ft
+}
+function Get-TextWidth($text, [double]$size, $weight) { (New-Ft $text $size (Get-TextBrush) $weight).WidthIncludingTrailingWhitespace }
+# $parent / $maxW: a column of the side-by-side parts (Show-Now) — the line centred in that column's width
+function Add-Line($text, [double]$size, $brush, [double]$opacity, $weight, $parent = $null, [double]$maxW = 0) {
+    $o = [Math]::Max(0.0, [double]$script:cfg.outline)
+    $ft = New-Ft $text $size $brush $weight
+    $ft.MaxTextWidth = $(if ($maxW -gt 0) { [Math]::Max(30.0, $maxW) } else { [Math]::Max(50.0, $w.Width - 20.0 - 2.0 * $o) }); $ft.TextAlignment = 'Center'
     $geo = $ft.BuildGeometry((New-Object System.Windows.Point($o, $o)))
     $box = New-Object System.Windows.Controls.Grid
     $box.Width = $ft.MaxTextWidth + 2 * $o; $box.Height = $ft.Height + 2 * $o; $box.Tag = $text
@@ -242,7 +249,7 @@ function Add-Line($text, [double]$size, $brush, [double]$opacity, $weight) {
     $fill = New-Object System.Windows.Shapes.Path
     $fill.Data = $geo; $fill.Fill = $brush
     [void]$grp.Children.Add($fill)
-    [void]$script:panel.Children.Add($box)
+    [void]$(if ($parent) { $parent } else { $script:panel }).Children.Add($box)
 }
 function Show-Now {
     $script:panel.Children.Clear()
@@ -258,12 +265,41 @@ function Show-Now {
         # 곡 정보 줄 글자 크기: its own setting (user request 2026-11-19, was size × 0.55)
         Add-Line ($(if ($d.artist) { "$($d.title) — $($d.artist)" } else { $d.title })) ([Math]::Max(6.0, [double]$script:cfg.info_size)) $white 0.9 ([System.Windows.FontWeights]::SemiBold)
     }
-    $brush = New-Brush $d.colors
-    foreach ($l in @($d.lines)) {
-        if ($l.role -eq 'o') { Add-Line $l.text $s $brush 1 ([System.Windows.FontWeights]::Bold) }
+    # 파트 (user request 2026-11-19): the part's name small above its lyrics, in the part's colors. Several singers at once
+    # (cols) = side by side, each column centred on its own, a gap between, no '／'; a column is as wide as its longest line
+    $ps = [Math]::Max(9.0, [Math]::Round($s * 0.5))
+    $cols = @($d.cols | Where-Object { $_ })
+    if ($cols.Count -gt 1) {
+        $o = [Math]::Max(0.0, [double]$script:cfg.outline)
+        $gap = $s * 1.5
+        $cw = [Math]::Max(50.0, ($w.Width - 20.0 - $gap * ($cols.Count - 1)) / $cols.Count - 2.0 * $o)
+        $row = New-Object System.Windows.Controls.StackPanel
+        $row.Orientation = 'Horizontal'; $row.HorizontalAlignment = 'Center'
+        for ($k = 0; $k -lt $cols.Count; $k++) {
+            $c = $cols[$k]; $ls = @(Get-Shown $c.lines $d)
+            $nat = ($ls | ForEach-Object { Get-TextWidth $_.text $s ([System.Windows.FontWeights]::Bold) } | Measure-Object -Maximum).Maximum
+            if ($c.name) { $nat = [Math]::Max([double]$nat, (Get-TextWidth $c.name $ps ([System.Windows.FontWeights]::Bold))) }
+            $mw = [Math]::Min($cw, [double]$nat + 2.0)
+            $col = New-Object System.Windows.Controls.StackPanel
+            if ($k -gt 0) { $col.Margin = "$gap,0,0,0" }
+            if ($c.name) { Add-Line $c.name $ps (New-Brush $c.pcolors) 0.9 ([System.Windows.FontWeights]::Bold) $col $mw }
+            Add-Lyrics $ls $s (New-Brush $c.colors) $col $mw
+            [void]$row.Children.Add($col)
+        }
+        [void]$script:panel.Children.Add($row)
+        return
+    }
+    if ($d.part -and $d.part.name) { Add-Line $d.part.name $ps (New-Brush $d.part.colors) 0.9 ([System.Windows.FontWeights]::Bold) }
+    Add-Lyrics @(Get-Shown $d.lines $d) $s (New-Brush $d.colors)
+}
+# the lines the player asked for (발음 · 번역 checks; other-language lines come already picked)
+function Get-Shown($lines, $d) { @($lines) | Where-Object { $_ -and ($_.role -eq 'o' -or $_.role -eq 'x' -or ($_.role -eq 'r' -and $d.show_r) -or ($_.role -eq 't' -and $d.show_t)) } }
+function Add-Lyrics($ls, [double]$s, $brush, $parent = $null, [double]$maxW = 0) {
+    foreach ($l in @($ls)) {
         # every lyric line one size (user request 2026-11-19 — a Korean- or English-only song = the Japanese line's size)
-        elseif ($l.role -eq 'r' -and $d.show_r) { Add-Line $l.text $s $brush 0.85 ([System.Windows.FontWeights]::SemiBold) }
-        elseif ($l.role -eq 't' -and $d.show_t) { Add-Line $l.text $s $brush 1 ([System.Windows.FontWeights]::SemiBold) }
+        if ($l.role -eq 'o') { Add-Line $l.text $s $brush 1 ([System.Windows.FontWeights]::Bold) $parent $maxW }
+        elseif ($l.role -eq 'r') { Add-Line $l.text $s $brush 0.85 ([System.Windows.FontWeights]::SemiBold) $parent $maxW }
+        else { Add-Line $l.text $s $brush 1 ([System.Windows.FontWeights]::SemiBold) $parent $maxW }
     }
 }
 

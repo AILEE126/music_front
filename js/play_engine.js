@@ -937,12 +937,19 @@ function makePlayer(el) {
   const overlayOn = () => APP.on || LOCAL.ovOn;  // nobody to tell otherwise (the PC overlay was never used here)
   function sendNow(beat = false) {
     if (!LOCAL.ready || APP.screenOff || !overlayOn()) return;  // 폰 화면이 꺼짐: 가사 위치를 안 봄 (켜지면 appscreen 에서 바로 보냄)
-    const it = P.now, L = P.lyr, i = P.lyrIndex(), g = L && L.times && i >= 0 ? L.groups[i] : null;
+    const it = P.now, L = P.lyr, i = P.lyrIndex(), g = L && L.times && i >= 0 ? L.groups[i] : null, plain = store.get("simple", false);
+    // other-language lines (VocaDB): only the language picked in the player's 다른 언어 select (none by default)
+    const keep = ls => (ls || []).filter(l => l.role !== "x" || (l.lang && l.lang === store.get("xLang", ""))).map(l => ({role: l.role, text: l.text}));
+    const pc = p => plain ? [] : (p.colors || [p.color]).filter(c => /^#[0-9a-f]{6}$/i.test(c || ""));
+    const showP = store.get("showP", true);
     const d = {title: it ? titleOf(it) : "", artist: it ? shortName(it.artist || "") : "", playing: !audio.paused,
-      show_r: store.get("showR", true), show_t: store.get("showT", true), colors: g && !store.get("simple", false) ? (g.vc || []) : [],  // 간단 표시: 보컬 색 없이 흰색
+      show_r: store.get("showR", true), show_t: store.get("showT", true), colors: g && !plain ? (g.vc || []) : [],  // 간단 표시: 보컬 색 없이 흰색
       light: store.get("theme", "dark") === "light",  // 밝은 화면: 오버레이도 흰 테두리 + 어두운 글자 (user request 2026-11-18)
-      // other-language lines (VocaDB): only the language picked in the player's 다른 언어 select (none by default)
-      lines: g ? g.lines.filter(l => l.role !== "x" || (l.lang && l.lang === store.get("xLang", ""))).map(l => ({role: l.role, text: l.text})) : []};
+      lines: g ? keep(g.lines) : [],
+      // 파트 (user request 2026-11-19): the part's name small above the lyrics (the player's 파트 check) · several singers at
+      // once (g.cols) = side by side, each in its own colors and centred on its own, no '／' (lines stays for older overlays)
+      part: g && g.part && !g.cols && showP ? {name: g.part.name, colors: pc(g.part)} : null,
+      cols: g && g.cols ? g.cols.map(c => ({name: showP && c.part ? c.part.name : "", pcolors: c.part ? pc(c.part) : [], colors: plain ? [] : c.vc || [], lines: keep(c.lines)})) : null};
     const text = JSON.stringify(d);
     if (text === nowLast && !beat) return;
     nowLast = text;

@@ -23,6 +23,8 @@
      was dropped — it stayed white at any opacity (user report 2026-11-19) */
   .ln .edge { position: absolute; inset: 0; }
   .ln .grp { position: relative; }
+  .cols { display: flex; justify-content: center; align-items: flex-start; gap: 0 1.6em; max-width: 100%; }
+  .col { display: flex; flex-direction: column; align-items: center; min-width: 0; flex: 0 1 auto; }
   .ln .edge { color: transparent; -webkit-text-stroke: var(--o) #000; }
   .ln .fill { position: relative; color: var(--c, #fff); }
   .ln.grad .fill { color: transparent; background: var(--g); -webkit-background-clip: text; background-clip: text; }
@@ -47,6 +49,19 @@ function line(text, size, weight, opacity, colors) {
     + (cs.length === 1 ? `--c:${cs[0]};` : cs.length > 1 ? `--g:linear-gradient(to bottom,${cs.join(",")});` : "");
   return `<div class="ln${cs.length > 1 ? " grad" : ""}" style="${style}"><span class="grp" style="opacity:${a}"><span class="edge">${esc(text)}</span><span class="fill">${esc(text)}</span></span></div>`;
 }
+/* one block of lines (role o · r · t · x) in one set of colors */
+function lyrBlock(ls, s, colors, d) {
+  let h = "";
+  for (const l of ls || []) {
+    // every lyric line one size (user request 2026-11-19 — a Korean- or English-only song = the Japanese line's size)
+    if (l.role === "o") h += line(l.text, s, 700, 1, colors);
+    else if (l.role === "r" && d.show_r) h += line(l.text, s, 600, 0.85, colors);
+    else if ((l.role === "t" && d.show_t) || l.role === "x") h += line(l.text, s, 600, 1, colors);
+  }
+  return h;
+}
+/* 파트 (user request 2026-11-19): the part's name small above its lyrics, in the part's colors */
+const partLine = (p, s) => p && p.name ? line(p.name, Math.max(9, Math.round(s * 0.5)), 700, 0.9, p.colors || p.pcolors) : "";
 function render() {
   const s = Math.max(6, +set.size || 22), d = now;
   box.style.maxWidth = `${Math.max(200, +set.width || 1100)}px`;
@@ -55,12 +70,9 @@ function render() {
   let h = "";
   if (d && d.title) {
     if (set.info !== false) h += line(d.artist ? `${d.title} — ${d.artist}` : d.title, Math.max(6, +set.info_size || 12), 600, 0.9, [])  // own size setting (user request 2026-11-19, was size × 0.55);
-    for (const l of d.lines || []) {
-      // every lyric line one size (user request 2026-11-19 — a Korean- or English-only song = the Japanese line's size)
-      if (l.role === "o") h += line(l.text, s, 700, 1, d.colors);
-      else if (l.role === "r" && d.show_r) h += line(l.text, s, 600, 0.85, d.colors);
-      else if ((l.role === "t" && d.show_t) || l.role === "x") h += line(l.text, s, 600, 1, d.colors);
-    }
+    // several singers at once: side by side, each centred on its own, a gap between, no '／' (user request 2026-11-19)
+    if (d.cols && d.cols.length > 1) h += `<div class="cols" style="column-gap:${Math.round(s * 1.5)}px">${d.cols.map(c => `<div class="col">${partLine({name: c.name, colors: c.pcolors}, s)}${lyrBlock(c.lines, s, c.colors, d)}</div>`).join("")}</div>`;
+    else h += partLine(d.part, s) + lyrBlock(d.lines, s, d.colors, d);
   }
   box.innerHTML = h;
   report();
