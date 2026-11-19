@@ -4,7 +4,7 @@
    싱크 밀기·직접 맞추기·오류 신고는 그곳에 바로 저장. 싱크 만들기·가사 받기 등은 서버 PC 의 음원 관리에서.
    This file holds only what every part shares (player · current song state); the screen is split by feature (user request
    2026-11-18), read in this order by player_screen.html — a file may use another's names at load only if that one comes
-   earlier: playlist_panel · search_dialog · filter_panel · lyrics_view · video_box · report_dialog · player_start (last). */
+   earlier: playlist_panel · search_dialog · filter_panel · lyrics_view · play_speed · video_box · report_dialog · player_start (last). */
 const SHELL = makePlayer($("audioLocal"));  // 재생기 (play_engine.js)
 const audio = SHELL.audio;
 const cleanups = [];

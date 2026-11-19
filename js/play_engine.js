@@ -74,12 +74,13 @@ function nicoViews(id) {
 }
 /* 중계 페이지 하나 = 플레이어 하나. on(메시지): ready · state(s: playing|paused|ended|buffering) · time · error */
 class BridgePlayer {
-  constructor(host, ref, {start = 0, mute = false, volume = 1, guide = false, vs = false, on = () => {}} = {}) {
+  constructor(host, ref, {start = 0, mute = false, volume = 1, rate = 1, guide = false, vs = false, on = () => {}} = {}) {
     this.id = "b" + ++bridgeSeq; this.t = start; this.at = this.heard = performance.now(); this.d = 0; this.state = "buffering"; this.ready = false;
+    this.r = rate;  // 배속 (time() runs at it)
     this.ref = ref; this.on = on;  // on: 메시지 받는 곳 (미리 띄워 둔 플레이어를 넘겨받으면 바뀜)
     const f = this.frame = document.createElement("iframe");
     f.allow = "autoplay; encrypted-media; fullscreen";
-    f.src = `${BRIDGE_URL}?${ref.kind}=${encodeURIComponent(ref.id)}&id=${this.id}&start=${Math.floor(start)}${mute ? "&mute=1" : ""}&vol=${Math.round(volume * 100)}${nicoComments() ? "" : "&cmt=0"}${ref.len ? "&len=" + ref.len : ""}${guide ? "&guide=1" : ""}${vs ? "&vs=1" : ""}`;
+    f.src = `${BRIDGE_URL}?${ref.kind}=${encodeURIComponent(ref.id)}&id=${this.id}&start=${Math.floor(start)}${mute ? "&mute=1" : ""}&vol=${Math.round(volume * 100)}${nicoComments() ? "" : "&cmt=0"}${ref.len ? "&len=" + ref.len : ""}${guide ? "&guide=1" : ""}${vs ? "&vs=1" : ""}${rate !== 1 ? "&rate=" + rate : ""}`;
     // 유튜브 플레이어는 칸이 접혀(1px) 안 보이면 재생 상태(state)를 알려 주지 않음 → 시간이 흐르는지로 재생·멈춤·끝을 셈
     const guess = s => { if (this.state === s) return; this.state = s; if (s === "playing") this.played = true; this.on({ev: "state", s}); };
     let still = 0;
@@ -87,7 +88,9 @@ class BridgePlayer {
       if (e.source !== f.contentWindow || !e.data || !e.data.bridge) return;
       const m = e.data;
       this.heard = performance.now();  // the frame still answers (LocalMedia.watch)
-      this.ver = +m.ver || 1;  // bridge page version (2+: can "load" another YouTube song — older deployed page cannot)
+      this.ver = +m.ver || 1;  // bridge page version (2+: can "load" another YouTube song — older deployed page cannot · 4: rate, ext)
+      if (m.ev === "ext") return extSeen(m.v);  // the extension in this browser (bridge page 4+)
+      if (m.ev === "loud") return gotLoud(m);  // what the extension measured for this video
       if (this.loopAt && performance.now() - this.loopAt < 1000 && (m.ev === "time" || m.ev === "state")) return;  // the loop's own paused/playing/time
       if (m.ev === "time") {
         const t = +m.t || 0, now = performance.now(), moved = Math.abs(t - this.t) > 0.01;
@@ -133,7 +136,9 @@ class BridgePlayer {
   }
   canLoad(kind) { return this.ref.kind === kind && this.ver >= ({nico: 3, yt: 2}[kind] || Infinity); }  // other kinds: a new frame per song
   cmd(cmd, v) { try { this.frame.contentWindow.postMessage({cmd, v}, "*"); } catch (e) {} }
-  time() { return this.state === "playing" ? this.t + (performance.now() - this.at) / 1000 : this.t; }  // 0.25초마다 받는 시간 사이를 메움
+  time() { return this.state === "playing" ? this.t + (performance.now() - this.at) / 1000 * this.r : this.t; }  // 0.25초마다 받는 시간 사이를 메움
+  rate(r) { if (r === this.r) return; this.t = this.time(); this.at = performance.now(); this.r = r; this.cmd("rate", r); }
+  fx(o) { const k = JSON.stringify(o); if (k !== this.fxSent) { this.fxSent = k; this.cmd("fx", o); } }  // 키 · 소리 크기 (player_ext_media.js)
   play() { this.cmd("play"); }
   pause() { this.cmd("pause"); }
   seek(t) { this.t = t; this.at = performance.now(); this.cmd("seek", t); }
@@ -178,40 +183,30 @@ function platformVolume(kind, v) {
   return hi;
 }
 
-/* Bilibili volume extension (user request 2026-11-18): its embed takes no volume from a page, so the player's guide hands
-   out a tiny extension the user loads unpacked (developer mode — no store, no Tampermonkey). biliExtZip() builds the zip
-   right here, so it always matches this code. Its content script runs in the Bilibili frame's page world (MAIN — Bilibili's
-   window.player lives there): it takes {biliVol: 0~1 | null} from the bridge, sets it with Bilibili's own player.setVolume
-   (linear, also unmutes, saved by Bilibili) and answers {biliVolAck: 1}. null = only "are you there" (guide: stay muted). */
-const BILI_EXT_JS = `// 음원 플레이어 · 비리비리 볼륨 — the player's volume slider for Bilibili videos inside the music player
-(function () {
-  if (window.top === window) return;  // only inside the music player
-  let want = null;
-  const apply = () => {
-    const p = window.player, v = document.querySelector("video");
-    if (want === null || !p || typeof p.setVolume !== "function") return;
-    try { if (Math.abs((+p.getVolume() || 0) - want) > 0.005 || (v && v.muted)) p.setVolume(want); } catch (e) {}
-  };
-  addEventListener("message", e => {
-    if (e.source !== parent || !e.data || !("biliVol" in e.data)) return;
-    if (typeof e.data.biliVol === "number") { want = Math.max(0, Math.min(1, e.data.biliVol)); apply(); }
-    parent.postMessage({biliVolAck: 1}, "*");
-  });
-  setInterval(apply, 500);  // the player comes up after the first message
-})();
-`;
-const BILI_EXT_MANIFEST = JSON.stringify({
-  manifest_version: 3, name: "음원 플레이어 · 비리비리 볼륨", version: "1.0",
-  description: "음원 플레이어의 볼륨 슬라이더가 비리비리 영상에도 적용되게 합니다",
-  content_scripts: [{matches: ["https://player.bilibili.com/*"], js: ["bili_volume.js"], all_frames: true, run_at: "document_start", world: "MAIN"}],
+/* 음원 플레이어 확장 (user request 2026-11-18 Bilibili volume · 2026-11-19 one extension for every player: 배속 · 볼륨 ·
+   키 변경 · 소리 크기 맞추기 · YouTube ads). Embeds take no speed / key / volume (Bilibili) from a page, so a tiny extension
+   the user loads unpacked (developer mode — no store, no Tampermonkey) does it inside their frames. Its one script is
+   js/player_ext_media.js (mpxMedia — the phone app injects the same file into the same frames); extZip() builds the zip
+   right here from it, so it always matches this code. The old bili-volume extension (v1) still answers biliVol only. */
+const EXT_VER = window.MPX_VER || 0;
+const EXT_ORIGINS = ["https://embed.nicovideo.jp/*", "https://www.youtube-nocookie.com/*", "https://www.youtube.com/*", "https://player.bilibili.com/*",
+  "https://w.soundcloud.com/*", "https://player.vimeo.com/*", "https://ailee126.github.io/music-bridge/*", "http://127.0.0.1/tools/stream_bridge/*"];  // 127.0.0.1: the bridge under test
+const EXT_MANIFEST = JSON.stringify({
+  manifest_version: 3, name: "음원 플레이어 확장", version: EXT_VER + ".0",
+  description: "음원 플레이어의 배속 · 키 변경 · 소리 크기 맞추기 · 볼륨이 니코니코 · 유튜브 · 비리비리 · SoundCloud · Vimeo 영상에도 적용되게 합니다 (유튜브 광고 건너뛰기 포함)",
+  content_scripts: [{matches: EXT_ORIGINS, js: ["media.js"], all_frames: true, run_at: "document_start", world: "MAIN"}],
 }, null, 2);
-/* the extension as a zip (stored, no compression) — folder bili-volume/ with manifest.json + bili_volume.js */
-function biliExtZip() {
+const EXT_DIR = "music-player-ext";
+/* the extension as a zip (stored, no compression) — folder music-player-ext/ with manifest.json + media.js */
+function extZip() {
   const crcT = [...Array(256)].map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
   const crc = d => { let c = -1; for (const x of d) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ -1) >>> 0; };
   const enc = new TextEncoder(), parts = [], dir = [];
   let off = 0;
-  for (const [name, text] of [["bili-volume/manifest.json", BILI_EXT_MANIFEST], ["bili-volume/bili_volume.js", BILI_EXT_JS]]) {
+  const files = [["manifest.json", EXT_MANIFEST], ["media.js", `// 음원 플레이어 확장 — music_front js/player_ext_media.js
+(${mpxMedia})();
+`]];
+  for (const [name, text] of files.map(([n, t]) => [EXT_DIR + "/" + n, t])) {
     const n = enc.encode(name), d = enc.encode(text), c = crc(d);
     const head = (sig, extra) => { const h = new DataView(new ArrayBuffer(extra)); h.setUint32(0, sig, true); return h; };
     const l = head(0x04034b50, 30);  // local header: version 20, flag 0x800 (UTF-8 names), stored
@@ -223,12 +218,60 @@ function biliExtZip() {
     off += 30 + n.length + d.length;
   }
   const size = dir.reduce((a, x) => a + x.byteLength, 0), e = new DataView(new ArrayBuffer(22));
-  e.setUint32(0, 0x06054b50, true); e.setUint16(8, 2, true); e.setUint16(10, 2, true); e.setUint32(12, size, true); e.setUint32(16, off, true);
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, size, true); e.setUint32(16, off, true);
   return new Blob([...parts, ...dir, e], {type: "application/zip"});
 }
 
 /* phone / tablet: no extensions to load there — the guide only says so */
 const BILI_TOUCH = () => matchMedia("(pointer: coarse)").matches && !matchMedia("(any-pointer: fine)").matches;
+
+/* the extension in this browser: its version as the last bridge page told it (0 = none; kept in the browser so the
+   buttons are right before the first song). extChange fires on window when it changes. */
+const EXT = {ver: +store.get("extVer", 0) || 0};
+function extSeen(v) {
+  v = +v || 0;
+  if (v === EXT.ver) return;
+  EXT.ver = v; store.set("extVer", v);
+  dispatchEvent(new Event("extchange"));
+}
+/* ask a hidden bridge page now (guide's 다 했어요) → resolves the version (0: none, or an old bridge page that can't tell) */
+function extProbe() {
+  return new Promise(res => {
+    const f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;left:-9999px;top:0;width:10px;height:10px;border:0";
+    f.src = `${BRIDGE_URL}?probe=1&id=probe`;
+    const done = v => { removeEventListener("message", on); clearTimeout(t); f.remove(); if (v != null) extSeen(v); res(EXT.ver); };
+    const on = e => { if (e.source === f.contentWindow && e.data && e.data.bridge && e.data.ev === "ext") done(e.data.v); };
+    const t = setTimeout(() => done(null), 10000);
+    addEventListener("message", on);
+    document.body.appendChild(f);
+  });
+}
+/* 배속 (user request 2026-11-19): YouTube · a file · our mp3 take it themselves; the other players only through the extension */
+const RATE_SELF = new Set(["", "yt", "file"]);
+const rateNeedsExt = kind => !RATE_SELF.has(kind || "");
+/* 같이듣기 · OPEN CHANNEL: everyone at 1× (the room keeps listeners at the same second) */
+const rateLocked = () => typeof LT !== "undefined" && !!LT.role;
+/* 키 변경 · 소리 크기 맞추기 (user request 2026-11-19, player_ext_media.js): online songs need the extension / app
+   (version 3), a plain file link can't (its host gives no CORS — Web Audio would hear silence), our mp3 works in the page */
+function fxBlock(kind) {
+  if (!kind) return window.mpxAudioFor ? "" : "ext";
+  if (kind === "file") return "file";
+  return EXT.ver >= 3 ? "" : BILI_TOUCH() ? "touch" : "ext";
+}
+const levelOn = () => store.get("level", true);  // ⚙ › 재생 › 소리 크기 맞추기 (default on)
+/* measured loudness per video (LUFS — what the extension sent; the next play starts at the right level) */
+const LOUD = store.get("loud", {}) || {};
+function gotLoud(m) {
+  if (!m.key || !isFinite(+m.lufs)) return;
+  const old = LOUD[m.key];
+  if (old && old[1] > +m.secs) return;  // keep the longer measure
+  delete LOUD[m.key]; LOUD[m.key] = [+m.lufs, +m.secs || 0];
+  const keys = Object.keys(LOUD); if (keys.length > 3000) keys.slice(0, keys.length - 3000).forEach(k => delete LOUD[k]);
+  store.set("loud", LOUD);
+}
+/* 페이드 인 · 아웃 (user request 2026-11-19): seconds at a song's start / end, 0 = off — settings ⚙ › 재생 */
+const fadeSecs = () => ({fin: Math.max(0, +store.get("fadeIn", 0) || 0), fout: Math.max(0, +store.get("fadeOut", 0) || 0)});
 
 /* Bilibili video length in seconds (0 = unknown): VocaDB API (CORS ok — bilibili's own API is not) → that PV's length,
    else the song's. Kept per video while the page is open */
@@ -254,9 +297,15 @@ class LocalMedia extends EventTarget {
     super();
     this.el = el; this.host = host; this.br = null; this.refs = null; this.brPaused = true; this.brErr = null; this.errs = [];
     this.kept = {yt: null, nico: null};  // kept bridge player per kind (see tryRef)
+    // volume = the slider's (uv); what plays = uv × gain (페이드 — fadeTick). el.volume of our mp3 carries the gain too,
+    // so el's own volumechange counts only for mute
+    this.uv = 1; this.gain = 1; this.wasMuted = el.muted;
     for (const ev of ["play", "pause", "playing", "ended", "seeked", "loadedmetadata", "error", "waiting", "emptied", "timeupdate"])
       el.addEventListener(ev, () => { if (!this.refs) this.fire(ev); });
-    el.addEventListener("volumechange", () => { this.applyVolume(); this.fire("volumechange"); });
+    el.addEventListener("volumechange", () => { if (el.muted === this.wasMuted) return; this.wasMuted = el.muted; this.applyVolume(); this.fire("volumechange"); });
+    for (const ev of ["play", "playing", "seeked", "loadedmetadata"]) this.addEventListener(ev, () => this.fadeTick());
+    this.addEventListener("pause", () => clearTimeout(this.fadeT));
+    addEventListener("extchange", () => this.applyFx());  // the extension / app script just showed up → key · 소리 크기 now
     setInterval(() => this.watch(), 1000);
     // back in sight: the frame's timers were slowed meanwhile — give it a moment before watch() counts its silence
     const grace = () => { if (this.br) this.br.heard = performance.now(); };
@@ -266,7 +315,7 @@ class LocalMedia extends EventTarget {
   fire(ev) { this.dispatchEvent(new Event(ev)); }
   get bridged() { return !!this.refs; }
   /* mp3 */
-  setSrc(src) { this.stopStream(); this.el.src = src; }
+  setSrc(src) { this.stopStream(); this.fadeStart(0); this.applyVolume(); this.el.src = src; this.applyRate(); }
   /* 다음 곡 미리 띄워 두기: 그 곡 첫 출처의 중계 플레이어를 소리 없이 띄워 멈춰 둠 (안 보이게 지금 플레이어 뒤에) →
      그 곡 차례가 되면 새로 띄우지 않고 넘겨받아 바로 틂. 미리 띄운 출처가 안 되면(삭제 등) 그 곡 차례에 다음 출처부터 보통대로 */
   preload(refs) {
@@ -308,6 +357,7 @@ class LocalMedia extends EventTarget {
     if (pre) this.pre = null; else this.dropPreload();  // 미리 띄워 둔 곡이 아니면 버림
     this.stopStream();
     this.refs = refs; this.ri = -1; this.brErr = null; this.errs = []; this.brPaused = true; this.autoplay = autoplay; this.start = start;
+    this.fadeStart(start);
     // Loaded without playing = primed: it starts muted, and once it really plays it pauses back at the start → ready.
     // A frame that never played may stay silent in a hidden tab (see preload), and a play() sent before the bridge is ready
     // is lost — user report: listen together's start-together left both players stuck at 0.
@@ -362,16 +412,17 @@ class LocalMedia extends EventTarget {
       diag("reuse", ref.kind + ":" + ref.id, document.hidden ? "hidden" : "shown");
     } else {
       // Bilibili: script installed earlier → &vs (opens muted, the script unmutes at our volume); else the guide (see biliGuide)
-      const vs = ref.kind === "bili" && store.get("biliScript", false);
+      const vs = ref.kind === "bili" && (store.get("biliScript", false) || EXT.ver >= 2);
       const guide = ref.kind === "bili" && !vs && !this.biliLater && !(BILI_TOUCH() && store.get("biliTouchOk", false));
       // muted too while guiding: an older deployed bridge ignores &guide and would play aloud (user report: 귀테러)
-      br = new BridgePlayer(this.host, ref, {start: this.start, volume: platformVolume(ref.kind, this.el.volume), mute: this.el.muted || this.priming || guide, guide, vs, on});
+      br = new BridgePlayer(this.host, ref, {start: this.start, volume: platformVolume(ref.kind, this.uv * this.gain), rate: this.rateFor(ref.kind),
+        mute: this.el.muted || this.priming || guide, guide, vs, on});
       br.guiding = guide;
       if (kept) kept.destroy();  // (old bridge page: replaced each time as before)
       this.kept[ref.kind] = br;
       diag("new frame", ref.kind + ":" + ref.id, document.hidden ? "hidden" : "shown");
     }
-    this.br = br;
+    this.br = br; this.applyRate();
     if (got) {
       this.priming = false;  // a preloaded frame has played already
       got.on = on; got.frame.classList.remove("pre");
@@ -425,7 +476,69 @@ class LocalMedia extends EventTarget {
   }
   get comments() { return nicoComments(); }
   set comments(on) { store.set("nicoComments", !!on); if (this.br) this.br.comments(!!on); if (this.pre) this.pre.br.comments(!!on); }
-  applyVolume() { if (this.br) { this.br.volume(platformVolume(this.br.ref.kind, this.el.volume)); this.br.mute(this.el.muted || this.priming || !!this.br.guiding); } }
+  applyVolume() {
+    const v = this.uv * this.gain;
+    if (!this.refs && Math.abs(this.el.volume - v) > 0.0005) this.el.volume = v;
+    if (this.br) { this.br.volume(platformVolume(this.br.ref.kind, v)); this.br.mute(this.el.muted || this.priming || !!this.br.guiding); }
+    this.applyFx();
+  }
+  /* 키 변경 (semis, per song — play_speed.js sets it) · 소리 크기 맞추기 (setting): online = sent through the bridge to the
+     extension / app script in the site's frame; our mp3 = the same chain in this page (made only once wanted — an <audio>
+     can't be taken back out of Web Audio) */
+  applyFx() {
+    const level = levelOn(), vol = this.el.muted ? 0 : this.uv * this.gain;
+    if (this.refs) {
+      if (!this.br || fxBlock(this.br.ref.kind)) return;
+      const key = this.br.ref.kind + ":" + this.br.ref.id, l = LOUD[key];
+      this.br.fx({semis: this.semis || 0, level, vol: Math.round(vol * 1000) / 1000, key, prior: l ? l[0] : null});
+      return;
+    }
+    if (!this.local && !(this.semis || level) || !window.mpxAudioFor || !this.el.src) return;
+    if (!this.local) { try { this.local = window.mpxAudioFor(this.el); } catch (e) { return; } }
+    const {chain, lev} = this.local;
+    chain.setSemis(this.semis || 0);
+    if (lev.key !== this.el.src) lev.reset(this.el.src);
+    lev.on = level; lev.vol = vol; lev.apply();
+  }
+  get semis() { return this.semisV || 0; }
+  set semis(s) { this.semisV = Math.max(-12, Math.min(12, Math.round(+s || 0))); this.applyFx(); this.fire("fxchange"); }
+  /* 페이드 인 · 아웃 (user request 2026-11-19): gain from where the song is — 0 → 1 over the first fin seconds, 1 → 0 over
+     the last fout (only when the song is long enough). From the position, not a clock: a seek or a resume is right at once.
+     Looked at every 50 ms inside a fade only; between them one timer waits for the fade-out (no loop all song long). */
+  fadeGain() {
+    const {fin, fout} = fadeSecs(), t = this.currentTime || 0, d = this.duration;
+    let g = 1;
+    if (fin > 0) g = Math.min(g, t / fin);
+    if (fout > 0 && d > (fin + fout) * 1.5) g = Math.min(g, (d - t) / fout);
+    return Math.max(0, Math.min(1, g));
+  }
+  fadeStart(start) { const {fin} = fadeSecs(); this.gain = fin > 0 && start < fin ? 0 : 1; }  // a new song: silent until it fades in
+  fadeTick() {
+    clearTimeout(this.fadeT);
+    if (this.priming) return;
+    const g = this.fadeGain();
+    if (Math.abs(g - this.gain) >= 0.01 || (g !== this.gain && (g === 0 || g === 1))) { this.gain = g; this.applyVolume(); }
+    if (this.paused) return;
+    const {fin, fout} = fadeSecs(), t = this.currentTime || 0, d = this.duration;
+    let wait = 0;  // 0 = nothing more to fade
+    if (fin > 0 && t < fin) wait = 50;
+    else if (fout > 0 && d > (fin + fout) * 1.5) wait = t >= d - fout - 0.3 ? 50 : Math.min(5000, (d - fout - 0.3 - t) * 1000 / (this.playbackRate || 1));
+    if (wait) this.fadeT = setTimeout(() => this.fadeTick(), Math.max(50, wait));
+  }
+  /* 배속 (user request 2026-11-19, browser key rate): what plays — 1 in a 같이듣기 room, or on a player that needs the
+     extension when it isn't here (the button shows that: rateBlock) */
+  rateFor(kind) { return this.rateBlock(kind) ? 1 : +store.get("rate", 1) || 1; }
+  rateBlock(kind = this.kind) {
+    if (rateLocked()) return "lock";
+    if (rateNeedsExt(kind) && EXT.ver < 2) return BILI_TOUCH() ? "touch" : "ext";  // the app injects the same script (EXT.ver from its bridge page)
+    return "";
+  }
+  applyRate() {
+    const r = this.rateFor(this.kind);
+    if (this.refs) { if (this.br) this.br.rate(r); }
+    else if (this.el.playbackRate !== r) { this.el.defaultPlaybackRate = r; this.el.playbackRate = r; }
+    if (r !== this.lastRate) { this.lastRate = r; this.fire("ratechange"); this.fadeTick(); }
+  }
   get currentTime() { return this.refs ? (this.br ? this.br.time() : 0) : this.el.currentTime; }
   set currentTime(t) { if (!this.refs) { this.el.currentTime = t; return; } if (this.br) { this.br.seek(t); setTimeout(() => this.fire("seeked"), 0); } }
   get duration() { return this.refs ? (this.br && this.br.d) || NaN : this.el.duration; }
@@ -462,15 +575,79 @@ class LocalMedia extends EventTarget {
     return Promise.resolve();
   }
   pause() { if (!this.refs) return this.el.pause(); this.autoplay = false; if (this.br) diag("cmd pause", this.br.ref.kind + ":" + this.br.ref.id, this.br.state); if (this.br && !this.priming) this.br.pause(); if (!this.brPaused) { this.brPaused = true; this.fire("pause"); } }  // priming pauses by itself
-  get volume() { return this.el.volume; }
-  set volume(v) { this.el.volume = v; }
+  get volume() { return this.uv; }
+  set volume(v) { this.uv = Math.max(0, Math.min(1, +v || 0)); this.applyVolume(); this.fire("volumechange"); }
   get muted() { return this.el.muted; }
   set muted(v) { this.el.muted = v; }
   get error() { return this.refs ? this.brErr : this.el.error; }
   get src() { return this.refs ? (this.refs[this.ri] || {}).url || "" : this.el.src; }
   get readyState() { return this.refs ? (this.br && this.br.ready && !this.priming ? 4 : 0) : this.el.readyState; }
-  get playbackRate() { return this.refs ? 1 : this.el.playbackRate; }
-  set playbackRate(v) { this.el.playbackRate = v; }
+  get playbackRate() { return this.refs ? (this.br ? this.br.r : 1) : this.el.playbackRate; }
+  set playbackRate(v) { store.set("rate", +v || 1); this.applyRate(); this.fire("ratechange"); }
+}
+
+/* 확장 프로그램 넣기 안내 (user request 2026-11-18 Bilibili volume · 2026-11-19 also the speed button): three steps,
+   one at a time — download the zip (extZip) → extensions page (address copy) → load the folder. box: the card element.
+   intro: why (first step) · touch: what a phone sees instead (no extensions there) · later / touchOk / done: buttons
+   (done returns the note to show, e.g. "확인하는 중…"). → {reset, note(text)} */
+function extGuide(box, {intro, touch, later, touchOk, done}) {
+  const ua = navigator.userAgent, brw = /Whale\//.test(ua) ? "whale" : /Edg\//.test(ua) ? "edge" : "chrome";
+  const STEPS = [
+    // {A} = where the step's button (+ its note) goes — right under the line that asks for it (user request 2026-11-18)
+    {t: "확장 프로그램 내려받기", b: `${intro}<br>① 아래 버튼으로 내려받기{A}② 내려받은 zip 의 <b>압축 풀기</b> (<b>${EXT_DIR}</b> 폴더가 생겨요)`,
+     a: `<button type="button" class="vg-cta" data-get="zip">확장 프로그램 내려받기</button>`},
+    {t: "확장 프로그램 화면 열기", b: "① <b>주소 복사</b>를 누르고 새 탭 주소창에 붙여 넣어 이동{A}② 오른쪽 위 <b>개발자 모드</b> 켜기",
+     a: `<button type="button" class="vg-cta" data-get="addr">주소 복사</button>`},
+    {t: "폴더 넣기", b: `① <b>압축해제된 확장 프로그램을 로드합니다</b> 누르기<br>② 압축을 푼 <b>${EXT_DIR}</b> 폴더를 골라 <b>폴더 선택</b><br>③ 이 화면으로 돌아와 <b>다 했어요</b>` +
+       "<br><span class=\"vg-note\">예전에 넣은 <b>음원 플레이어 · 비리비리 볼륨</b>이 있으면 지워도 돼요.</span>", a: ""}];
+  let step = 0, note = "";
+  const copy = async text => {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+    const ta = document.createElement("textarea");  // fallback (clipboard API refused) — off screen, removed at once
+    ta.value = text; ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+    ta.remove(); return ok;
+  };
+  function draw() {
+    if (BILI_TOUCH()) {
+      box.innerHTML = `<div class="vg-b">${touch}</div>` +
+        '<div class="vg-nav"><span></span><button type="button" class="primary" data-act="touchok">확인</button></div>';
+      return;
+    }
+    const S = STEPS[step], last = step === STEPS.length - 1;
+    const act = S.a || note ? `<div class="vg-a">${S.a}${note ? `<span class="vg-note">${note}</span>` : ""}</div>` : "";
+    const body = S.b.includes("{A}") ? S.b.replace("{A}", act) : S.b + act;
+    box.innerHTML = `<div class="vg-h"><span class="vg-n">${step + 1}/${STEPS.length}</span>${S.t}</div><div class="vg-b">${body}</div>` +
+      `<div class="vg-nav"><button type="button" class="vg-later" data-act="later">나중에</button><span>` +
+      (step ? '<button type="button" data-act="prev">이전</button>' : "") +
+      (last ? '<button type="button" class="primary" data-act="done">다 했어요</button>' : '<button type="button" class="primary" data-act="next">다음</button>') +
+      "</span></div>";
+  }
+  box.addEventListener("click", async e => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.get === "zip") {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(extZip()); a.download = EXT_DIR + ".zip";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      note = "내려받았어요. 압축을 풀어 주세요.";
+      return draw();
+    }
+    if (b.dataset.get === "addr") {
+      note = await copy(`${brw}://extensions`) ? "주소를 복사했어요. 새 탭 주소창에 붙여 넣으세요." : "복사하지 못했어요. 다시 눌러 주세요.";
+      return draw();
+    }
+    const act = b.dataset.act;
+    note = "";
+    if (act === "next") step++;
+    else if (act === "prev") step--;
+    else if (act === "later") return later();
+    else if (act === "touchok") return touchOk();
+    else if (act === "done") note = done() || "";
+    draw();
+  });
+  return {reset() { step = 0; note = ""; draw(); }, note(t) { note = t; draw(); }};
 }
 
 /* ---------- 재생기 ---------- */
@@ -492,69 +669,20 @@ function makePlayer(el) {
   bubble.className = "vguide";
   bubble.hidden = true;
   host.appendChild(bubble);
-  const ua = navigator.userAgent, brw = /Whale\//.test(ua) ? "whale" : /Edg\//.test(ua) ? "edge" : "chrome";
-  const STEPS = [
-    // {A} = where the step's button (+ its note) goes — right under the line that asks for it (user request 2026-11-18)
-    {t: "확장 프로그램 내려받기", b: "비리비리 영상은 우리 플레이어 볼륨이 적용되지 않아요. 작은 확장 프로그램을 한 번 넣으면 플레이어 볼륨으로 조절돼요.<br>① 아래 버튼으로 내려받기{A}② 내려받은 zip 의 <b>압축 풀기</b> (<b>bili-volume</b> 폴더가 생겨요)",
-     a: `<button type="button" class="vg-cta" data-get="zip">확장 프로그램 내려받기</button>`},
-    {t: "확장 프로그램 화면 열기", b: "① <b>주소 복사</b>를 누르고 새 탭 주소창에 붙여 넣어 이동{A}② 오른쪽 위 <b>개발자 모드</b> 켜기",
-     a: `<button type="button" class="vg-cta" data-get="addr">주소 복사</button>`},
-    {t: "폴더 넣기", b: "① <b>압축해제된 확장 프로그램을 로드합니다</b> 누르기<br>② 압축을 푼 <b>bili-volume</b> 폴더를 골라 <b>폴더 선택</b><br>③ 이 화면으로 돌아와 <b>다 했어요</b>", a: ""}];
-  let step = 0, note = "", checkT = 0;
-  const copy = async text => {
-    try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
-    const ta = document.createElement("textarea");  // fallback (clipboard API refused) — off screen, removed at once
-    ta.value = text; ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
-    document.body.appendChild(ta); ta.select();
-    let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
-    ta.remove(); return ok;
-  };
-  function drawGuide() {
-    if (BILI_TOUCH()) {
-      bubble.innerHTML = '<div class="vg-b">비리비리 영상은 이 기기에서 플레이어 볼륨이 적용되지 않아요. 기기 볼륨으로 맞춰 주세요.</div>' +
-        '<div class="vg-nav"><span></span><button type="button" class="primary" data-act="touchok">확인</button></div>';
-      return;
-    }
-    const S = STEPS[step], last = step === STEPS.length - 1;
-    const act = S.a || note ? `<div class="vg-a">${S.a}${note ? `<span class="vg-note">${note}</span>` : ""}</div>` : "";
-    const body = S.b.includes("{A}") ? S.b.replace("{A}", act) : S.b + act;
-    bubble.innerHTML = `<div class="vg-h"><span class="vg-n">${step + 1}/${STEPS.length}</span>${S.t}</div><div class="vg-b">${body}</div>` +
-      `<div class="vg-nav"><button type="button" class="vg-later" data-act="later">나중에</button><span>` +
-      (step ? '<button type="button" data-act="prev">이전</button>' : "") +
-      (last ? '<button type="button" class="primary" data-act="done">다 했어요</button>' : '<button type="button" class="primary" data-act="next">다음</button>') +
-      "</span></div>";
-  }
-  bubble.addEventListener("click", async e => {
-    const b = e.target.closest("button"); if (!b) return;
-    if (b.dataset.get === "zip") {
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(biliExtZip()); a.download = "bili-volume.zip";
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-      note = "내려받았어요. 압축을 풀어 주세요.";
-      return drawGuide();
-    }
-    if (b.dataset.get === "addr") {
-      note = await copy(`${brw}://extensions`) ? "주소를 복사했어요. 새 탭 주소창에 붙여 넣으세요." : "복사하지 못했어요. 다시 눌러 주세요.";
-      return drawGuide();
-    }
-    const act = b.dataset.act;
-    note = "";
-    if (act === "next") step++;
-    else if (act === "prev") step--;
-    else if (act === "later") return audio.laterBiliGuide();
-    else if (act === "touchok") return audio.touchBiliOk();
-    else if (act === "done") {
+  let checkT = 0;
+  const guide = extGuide(bubble, {
+    intro: "비리비리 영상은 우리 플레이어 볼륨이 적용되지 않아요. 작은 확장 프로그램을 한 번 넣으면 플레이어 볼륨으로 조절돼요.",
+    touch: "비리비리 영상은 이 기기에서 플레이어 볼륨이 적용되지 않아요. 기기 볼륨으로 맞춰 주세요.",
+    later: () => audio.laterBiliGuide(), touchOk: () => audio.touchBiliOk(),
+    done: () => {
       audio.recheckBili();
-      note = "확장 프로그램을 확인하는 중…";
       clearTimeout(checkT);
-      checkT = setTimeout(() => { if (audio.biliGuide) { note = "아직 확장 프로그램이 확인되지 않아요. 개발자 모드와 폴더를 다시 확인해 주세요."; drawGuide(); } }, 12000);
-    }
-    drawGuide();
-  });
+      checkT = setTimeout(() => { if (audio.biliGuide) guide.note("아직 확장 프로그램이 확인되지 않아요. 개발자 모드와 폴더를 다시 확인해 주세요."); }, 12000);
+      return "확장 프로그램을 확인하는 중…";
+    }});
   const showGuide = () => {
     const g = audio.biliGuide;
-    if (g && bubble.hidden) { step = 0; note = ""; drawGuide(); }
+    if (g && bubble.hidden) guide.reset();
     if (!g) clearTimeout(checkT);
     bubble.hidden = !g;  // the shield stays (user request 2026-11-18: no unlocked video — the guide's buttons sit above it)
   };

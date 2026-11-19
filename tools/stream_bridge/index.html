@@ -18,12 +18,28 @@
    · &cmt=0: 니코니코 댓글 끄기 (기본 켬) · 유튜브 자막은 늘 끄고 시작
    · &info=1: 니코니코 영상 정보만 알리고 재생하지 않음 (플레이어 곡 정보 줄의 재생수)
    · cmd load {yt|nico, start, play}: next song in the same player (reused so playback goes on in a hidden tab)
-   · ?ytlist=<재생목록 번호>: 재생 없이 그 재생목록의 영상 번호만 {ev: "list", ids} */
+   · ?ytlist=<재생목록 번호>: 재생 없이 그 재생목록의 영상 번호만 {ev: "list", ids}
+   · 배속 (user request 2026-11-19): &rate=<배> · cmd rate. YouTube · 파일은 스스로, 니코니코 · SoundCloud · Vimeo · 비리비리는
+     음원 플레이어 확장이 있을 때만 (그 플레이어 칸에 {mpx: 1, rate} — 확장이 영상의 playbackRate 를 바꿈)
+   · {ev: "ext", v}: 이 브라우저의 음원 플레이어 확장 판 (0 = 없음) — 늘 맨 먼저 · ?probe=1: 그것만 알림
+   · cmd fx {semis, level, vol, key, prior}: 키 변경 · 소리 크기 맞추기 — 확장 / 앱 스크립트(music_front js/player_ext_media.js)가
+     있는 플레이어 칸에 그대로 전함 · 그 스크립트가 잰 소리 크기 {mpxLoud} → {ev: "loud", lufs, secs, key} (2026-11-19) */
 const q = new URLSearchParams(location.search), id = q.get("id") || "";
-const up = m => parent.postMessage({bridge: 1, ver: 3, id, ...m}, "*");  // ver 2: cmd "load" (YouTube) · ver 3: also Niconico  // 부모는 파일로 연 화면 (origin 이 없음) → "*"
+const up = m => parent.postMessage({bridge: 1, ver: 4, id, ...m}, "*");  // ver 2: cmd "load" (YouTube) · ver 3: also Niconico · 4: rate, ext  // 부모는 파일로 연 화면 (origin 이 없음) → "*"
+const EXT = +window.MPX_EXT || 0;  // set by the extension's bridge.js (document_start, before this)
+up({ev: "ext", v: EXT});
 const start = +q.get("start") || 0, startMuted = q.get("mute") === "1", startVol = q.has("vol") ? +q.get("vol") : 100;
+let rate = +q.get("rate") || 1;  // 배속 — kept across "load" (the parent sends it again when it changes)
+const extRate = () => EXT >= 2 ? rate : 1;  // players only the extension can speed up
+let fx = {};  // 키 · 소리 크기 — kept across "load" like rate
+let FR = null;  // the site's player frame: {el: () => iframe, origin}
+const toFrame = () => { try { const f = FR && FR.el(); if (f) f.contentWindow.postMessage({mpx: 1, rate: extRate(), ...fx}, FR.origin); } catch (e) {} };
+addEventListener("message", e => {  // the extension / app script measured this video's loudness
+  const f = FR && FR.el();
+  if (f && e.source === f.contentWindow && e.data && e.data.mpxLoud) up({ev: "loud", ...e.data.mpxLoud});
+});
 const comments = q.get("cmt") !== "0";  // 니코니코 댓글: 기본 켬 (&cmt=0 이면 끔)
-let P = null;  // {play, pause, seek(초), volume(0~100), mute(bool), comments(bool — 니코니코만)}
+let P = null;  // {play, pause, seek(초), volume(0~100), mute(bool), rate(배), comments(bool — 니코니코만)}
 
 if (q.get("yt")) {
   const s = document.createElement("script");
@@ -40,6 +56,8 @@ if (q.get("yt")) {
       events: {
         onReady: e => {
           if (muted) e.target.mute(); else { e.target.unMute(); e.target.setVolume(vol); }
+          if (rate !== 1) e.target.setPlaybackRate(rate);
+          toFrame();
           if (play) e.target.playVideo();
           up({ev: "ready", d: e.target.getDuration()});
         },
@@ -51,6 +69,7 @@ if (q.get("yt")) {
             const off = () => { try { y.unloadModule("captions"); } catch (x) {} };
             off(); setTimeout(off, 1000); setTimeout(off, 3000);
           }
+          if (e.data === 1 && y.getPlaybackRate() !== rate) y.setPlaybackRate(rate);  // a loaded video starts at 1
           up({ev: "state", s: STATE[e.data] || "buffering"});
         },
         onError: e => {  // 2·5·100·101·150: 없는 영상·퍼가기 금지 등
@@ -64,12 +83,14 @@ if (q.get("yt")) {
       if (!document.getElementById("p")) { const d = document.createElement("div"); d.id = "p"; document.body.prepend(d); }
       ccOff = false; make(host, play);
     };
+    FR = {el: () => y && y.getIframe && y.getIframe(), get origin() { return new URL(this.el().src).origin; }};
     make("https://www.youtube-nocookie.com");
     // load: next YouTube song in this same player. Chrome defers media in frames created while the tab is hidden
     // (until shown) → the parent keeps one YouTube bridge and reuses it, so songs go on while the user isn't looking.
     let want = "";  // video id loaded by "load" — "ready" is sent once its duration is known (state events don't come while folded)
     P = {play: () => y.playVideo(), pause: () => y.pauseVideo(), seek: t => y.seekTo(t, true),
          volume: v => { vol = v; y.setVolume(v); }, mute: on => { muted = on; on ? y.mute() : y.unMute(); },
+         rate: r => { y.setPlaybackRate(r); toFrame(); }, fx: toFrame,
          load: v => {
            // a player remade on www.youtube.com stays so (a new frame in a hidden tab may stay silent)
            want = v.yt; vid = v.yt; from = Math.floor(+v.start || 0); playing = !!v.play; ccOff = false;
@@ -93,6 +114,7 @@ if (q.get("yt")) {
   const url = v => `https://embed.nicovideo.jp/watch/${encodeURIComponent(v.nico)}?jsapi=1&playerId=b&from=${Math.floor(+v.start || 0)}`;
   f.src = url(cur);
   document.getElementById("p").replaceWith(f);
+  FR = {el: () => f, origin: "https://embed.nicovideo.jp"};
   const send = (eventName, data) => f.contentWindow.postMessage({eventName, data, playerId: "b", sourceConnectorType: 1}, "https://embed.nicovideo.jp");
   const STATE = {2: "playing", 3: "paused", 4: "ended"};
   let dur = 0;
@@ -106,6 +128,7 @@ if (q.get("yt")) {
         send("commentVisibilityChange", {commentVisibility: cmt});  // 댓글(弾幕) — 플레이어의 💬 댓글 버튼
         if (muted) send("mute", {mute: true}); else { send("mute", {mute: false}); send("volumeChange", {volume: vol / 100}); }
         if (cur.start) send("seek", {time: cur.start * 1000});
+        toFrame();
         if (cur.play) send("play");
         up({ev: "ready", d: dur, views: (d.videoInfo || {}).viewCount ?? null, vid: cur.nico});  // 재생수 (니코니코 퍼가기 플레이어가 알려 줌)
         break;
@@ -123,6 +146,7 @@ if (q.get("yt")) {
   P = {play: () => send("play"), pause: () => send("pause"), seek: t => send("seek", {time: t * 1000}),
        volume: v => { vol = v; send("volumeChange", {volume: v / 100}); }, mute: on => { muted = on; send("mute", {mute: on}); },
        comments: on => { cmt = on; send("commentVisibilityChange", {commentVisibility: on}); },
+       rate: toFrame, fx: toFrame,
        load: v => { if (!v.nico) return; cur = {nico: v.nico, start: +v.start || 0, play: !!v.play}; dur = 0; f.contentWindow.location.replace(url(cur)); }};  // replace: no history entry per song (phone app's back button stepped the video back — user report)
 } else if (q.get("sc")) {
   // SoundCloud (user request 2026-11-18: the song's other links when the original is gone) — Widget API
@@ -130,6 +154,7 @@ if (q.get("yt")) {
   f.allow = "autoplay";
   f.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(q.get("sc"))}&auto_play=false&visual=true&show_comments=false&buying=false&sharing=false&download=false&show_teaser=false`;
   document.getElementById("p").replaceWith(f);
+  FR = {el: () => f, origin: "https://w.soundcloud.com"};
   const s = document.createElement("script");
   s.src = "https://w.soundcloud.com/player/api.js";
   s.onerror = () => up({ev: "error", code: "api"});  // also what an ad blocker that blocks it looks like → next source
@@ -142,6 +167,7 @@ if (q.get("yt")) {
       w.getDuration(ms => {
         dur = (+ms || 0) / 1000;
         if (start) w.seekTo(start * 1000);
+        toFrame();
         w.play();
         up({ev: "ready", d: dur});
       });
@@ -152,7 +178,8 @@ if (q.get("yt")) {
     w.bind(E.PLAY_PROGRESS, e => up({ev: "time", t: (+e.currentPosition || 0) / 1000, d: dur}));
     w.bind(E.ERROR, () => up({ev: "error", code: "sc"}));
     P = {play: () => w.play(), pause: () => w.pause(), seek: t => w.seekTo(t * 1000),
-         volume: v => { vol = v; if (!muted) w.setVolume(v); }, mute: on => { muted = on; w.setVolume(on ? 0 : vol); }};
+         volume: v => { vol = v; if (!muted) w.setVolume(v); }, mute: on => { muted = on; w.setVolume(on ? 0 : vol); },
+         rate: toFrame, fx: toFrame};
   };
 } else if (q.get("vimeo")) {
   // Vimeo — Player API (player.js)
@@ -163,6 +190,9 @@ if (q.get("yt")) {
   s.onload = () => {
     const v = new Vimeo.Player("p", {id: +q.get("vimeo"), autoplay: true, muted: startMuted, dnt: true, title: false, byline: false, portrait: false, responsive: true});
     let dur = 0, vol = startVol;
+    // its own setPlaybackRate works only for videos of paid accounts → else the extension
+    FR = {el: () => document.querySelector("iframe"), origin: "https://player.vimeo.com"};
+    const vrate = () => { v.setPlaybackRate(rate).catch(toFrame); };
     v.on("play", () => up({ev: "state", s: "playing"}));
     v.on("pause", () => up({ev: "state", s: "paused"}));
     v.on("ended", () => up({ev: "state", s: "ended"}));
@@ -171,17 +201,19 @@ if (q.get("yt")) {
     v.ready().then(async () => {
       dur = await v.getDuration().catch(() => 0);
       v.setVolume(vol / 100).catch(() => {});
+      if (rate !== 1) vrate();
+      toFrame();
       if (start) v.setCurrentTime(start).catch(() => {});  // never awaited: before the first play it may not answer (tested)
       v.play().catch(() => {});  // blocked autoplay: the parent's ▶ sends play again
       up({ev: "ready", d: dur});
     }).catch(() => up({ev: "error", code: "vimeo"}));  // deleted · private · not embeddable
     P = {play: () => v.play().catch(() => {}), pause: () => v.pause().catch(() => {}), seek: t => v.setCurrentTime(t).catch(() => {}),
-         volume: x => { vol = x; v.setVolume(x / 100).catch(() => {}); }, mute: on => v.setMuted(on).catch(() => {})};
+         volume: x => { vol = x; v.setVolume(x / 100).catch(() => {}); }, mute: on => v.setMuted(on).catch(() => {}), rate: vrate, fx: toFrame};
   };
 } else if (q.get("file")) {
   // a plain audio file (VocaDB 'LocalFile' · 'File' links)
   const a = new Audio();
-  a.preload = "auto"; a.volume = startVol / 100; a.muted = startMuted;
+  a.preload = "auto"; a.volume = startVol / 100; a.muted = startMuted; a.defaultPlaybackRate = a.playbackRate = rate;
   a.addEventListener("loadedmetadata", () => { if (start) a.currentTime = start; a.play().catch(() => {}); up({ev: "ready", d: a.duration || 0}); }, {once: true});
   a.addEventListener("playing", () => up({ev: "state", s: "playing"}));
   a.addEventListener("pause", () => { if (!a.ended) up({ev: "state", s: "paused"}); });
@@ -190,7 +222,8 @@ if (q.get("yt")) {
   setInterval(() => { if (a.readyState) up({ev: "time", t: a.currentTime, d: a.duration || 0}); }, 250);
   a.src = q.get("file");
   P = {play: () => a.play().catch(() => {}), pause: () => a.pause(), seek: t => { a.currentTime = t; },
-       volume: v => { a.volume = Math.max(0, Math.min(1, v / 100)); }, mute: on => { a.muted = on; }};
+       volume: v => { a.volume = Math.max(0, Math.min(1, v / 100)); }, mute: on => { a.muted = on; },
+       rate: r => { a.defaultPlaybackRate = a.playbackRate = r; }};
 } else if (q.get("bili")) {
   // Bilibili: its embed player has no API — it takes no command and tells nothing (tested 2026-11-18). So it plays only
   // while it should be heard: pause / mute = the frame is emptied, play / seek = reopened at that second (&t=).
@@ -208,14 +241,15 @@ if (q.get("yt")) {
   const f = document.createElement("iframe");
   f.allow = "autoplay; fullscreen";
   document.getElementById("p").replaceWith(f);
+  FR = {el: () => f, origin: "https://player.bilibili.com"};
   const src = t => `https://player.bilibili.com/player.html?${/^bv/i.test(bid) ? "bvid=" + bid : "aid=" + bid.replace(/^av/i, "")}&page=1&autoplay=1&danmaku=0&high_quality=1&t=${Math.floor(t)}${guide || vs ? "&muted=1" : ""}`;
-  const tell = () => { if (open && loadedAt) try { f.contentWindow.postMessage({biliVol: guide ? null : vol / 100}, "https://player.bilibili.com"); } catch (e) {} };
+  const tell = () => { if (open && loadedAt) { try { f.contentWindow.postMessage({biliVol: guide ? null : vol / 100}, "https://player.bilibili.com"); } catch (e) {} toFrame(); } };
   addEventListener("message", e => {
     if (e.source !== f.contentWindow || !e.data || !e.data.biliVolAck || acked) return;
     acked = true; up({ev: "volctl"});
   });
   let base = start, at = 0, playing = true, muted = startMuted, open = false;
-  const now = () => playing && at ? base + (performance.now() - at) / 1000 : base;
+  const now = () => playing && at ? base + (performance.now() - at) / 1000 * extRate() : base;  // its time runs at the speed
   const freeze = () => { base = now(); at = 0; };
   // heard → frame open (time runs from its load) · silent → frame empty, time runs on its own while playing (priming)
   const show = () => {
@@ -244,8 +278,12 @@ if (q.get("yt")) {
          seek: t => { base = Math.max(0, Math.min(+t || 0, len)); at = 0; if (playing) { if (open) { open = false; show(); } else at = performance.now(); } },
          volume: v => { vol = Math.max(0, Math.min(100, +v || 0)); tell(); }, mute: on => { muted = on; show(); },
          guide: on => { if (guide === !!on) return; guide = !!on; vs = vs || (!guide && acked); reopen(); },
+         rebase: () => { if (at) { base = now(); at = performance.now(); } },  // before the speed changes: time so far at the old one
+         rate: tell, fx: tell,
          reload: reopen};
   }
+} else if (q.get("probe")) {
+  // only the {ev: "ext"} above (the player's 다 했어요 check)
 } else if (q.get("ytlist")) {
   // ?ytlist=<유튜브 재생목록 번호>: 그 재생목록의 영상 번호만 알림 {ev: "list", ids} — 재생 안 함
   // (플레이어 오프라인 모드의 유튜브 재생목록 — user request 2026-11-15; 플레이어 화면은 youtube.com 을 직접 못 읽음)
@@ -269,8 +307,18 @@ if (q.get("yt")) {
 
 // 부모의 명령 {cmd: play|pause|seek|volume|mute|comments, v}
 addEventListener("message", e => {
-  if (e.source !== parent || !e.data || !e.data.cmd || !P) return;
+  if (e.source !== parent || !e.data || !e.data.cmd) return;
   const {cmd, v} = e.data;
+  if (cmd === "fx") { fx = {...fx, ...(v || {})}; try { if (P && P.fx) P.fx(); } catch (x) {} return; }
+  if (cmd === "rate") {  // kept even before the player is up (P null) — each player applies it once ready
+    const r = Math.max(0.25, Math.min(4, +v || 1));
+    if (r === rate) return;
+    if (P && P.rebase) P.rebase();
+    rate = r;
+    try { if (P && P.rate) P.rate(r); } catch (x) {}
+    return;
+  }
+  if (!P) return;
   try { if (cmd === "load") { if (P.load) P.load(v || {}); } else if (cmd === "seek") P.seek(+v); else if (cmd === "volume") P.volume(+v); else if (cmd === "mute" || cmd === "comments" || cmd === "guide") { if (P[cmd]) P[cmd](!!v); } else if (P[cmd]) P[cmd](); } catch (x) {}
 });
 </script>

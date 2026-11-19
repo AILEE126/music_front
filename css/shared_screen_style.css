@@ -148,27 +148,30 @@ button.onoff.on .lb.on{color:var(--ok)}
 /* Bilibili volume guide (play_engine.js biliGuide): step guide card in the middle of the video (user request 2026-11-18:
    Tampermonkey script, copy buttons). Stands out like a focused button: thick dashed accent border + focus ring + slow pulse */
 #streamHost{container-type:size}
+/* the same guide as a window (play_speed.js: 배속 needs the extension) — rules below are shared via :is(#streamHost, #extDlg) */
+#extDlg .dlg-body{white-space:normal;max-height:none}
+#extDlg .vguide{display:flex;flex-direction:column;gap:10px;font-size:15px;line-height:1.5}
 #streamHost .vguide{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3;width:min(460px,calc(100% - 24px));
   max-height:calc(100% - 24px);overflow:auto;padding:12px 14px;box-sizing:border-box;
   background:var(--card);color:var(--text);border:3px dashed var(--accent);border-radius:12px;
   box-shadow:0 0 0 4px var(--accent-soft),0 10px 30px rgb(0 0 0 / .5);animation:vguidePulse 1.6s ease-in-out infinite;
   font-size:15px;line-height:1.5;display:flex;flex-direction:column;gap:10px}
 @keyframes vguidePulse{50%{box-shadow:0 0 0 8px var(--accent-soft),0 10px 30px rgb(0 0 0 / .5)}}
-#streamHost .vguide[hidden]{display:none}
-#streamHost .vguide .vg-h{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
-#streamHost .vguide .vg-n{font-size:12px;font-weight:700;padding:1px 8px;border-radius:9px;background:var(--accent);color:var(--accent-text)}
-#streamHost .vguide .vg-a{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:6px 0 8px 22px}
-#streamHost .vguide .vg-b b{color:var(--ok)}  /* the words to look for on screen — green (user request 2026-11-18) */
+:is(#streamHost,#extDlg) .vguide[hidden]{display:none}
+:is(#streamHost,#extDlg) .vguide .vg-h{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+:is(#streamHost,#extDlg) .vguide .vg-n{font-size:12px;font-weight:700;padding:1px 8px;border-radius:9px;background:var(--accent);color:var(--accent-text)}
+:is(#streamHost,#extDlg) .vguide .vg-a{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:6px 0 8px 22px}
+:is(#streamHost,#extDlg) .vguide .vg-b b{color:var(--ok)}  /* the words to look for on screen — green (user request 2026-11-18) */
 /* the step's own button: like a focused button — accent fill + pulsing ring, as the card itself (user request 2026-11-18) */
-#streamHost .vguide .vg-cta{background:var(--accent);color:var(--accent-text);border:2px dashed var(--accent-text);font-weight:700;
+:is(#streamHost,#extDlg) .vguide .vg-cta{background:var(--accent);color:var(--accent-text);border:2px dashed var(--accent-text);font-weight:700;
   box-shadow:0 0 0 3px var(--accent-soft);animation:vguideCta 1.6s ease-in-out infinite}
 @keyframes vguideCta{50%{box-shadow:0 0 0 7px var(--accent-soft)}}
-#streamHost .vguide .vg-note{font-size:13px;color:var(--muted)}
-#streamHost .vguide .vg-nav{display:flex;align-items:center;justify-content:space-between;gap:8px}
-#streamHost .vguide .vg-nav span{display:flex;gap:6px}
-#streamHost .vguide button,#streamHost .vguide .vg-btn{font-size:14px;padding:6px 14px}
-#streamHost .vguide .vg-btn{display:inline-block;border-radius:6px;border:1px solid var(--line);background:var(--chip);color:var(--text);text-decoration:none}
-#streamHost .vguide .vg-later{border:0;background:none;color:var(--muted);padding-left:0}
+:is(#streamHost,#extDlg) .vguide .vg-note{font-size:13px;color:var(--muted)}
+:is(#streamHost,#extDlg) .vguide .vg-nav{display:flex;align-items:center;justify-content:space-between;gap:8px}
+:is(#streamHost,#extDlg) .vguide .vg-nav span{display:flex;gap:6px}
+:is(#streamHost,#extDlg) .vguide button,:is(#streamHost,#extDlg) .vguide .vg-btn{font-size:14px;padding:6px 14px}
+:is(#streamHost,#extDlg) .vguide .vg-btn{display:inline-block;border-radius:6px;border:1px solid var(--line);background:var(--chip);color:var(--text);text-decoration:none}
+:is(#streamHost,#extDlg) .vguide .vg-later{border:0;background:none;color:var(--muted);padding-left:0}
 @container (max-width:399px){
   #streamHost .vguide{font-size:13px;padding:8px 10px;gap:6px}
   #streamHost .vguide .vg-h{font-size:14px}

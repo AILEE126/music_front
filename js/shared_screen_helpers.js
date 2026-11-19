@@ -249,7 +249,7 @@ async function openPlayerSettings() {
   d.className = "uidlg ovset " + (phoneUi ? "setfold" : "setnav");
   const lead = typeof SHELL !== "undefined" && SHELL.setLead;  // 플레이어 화면에서만
   const fonts = typeof fontSettingsHtml === "function" ? await fontSettingsHtml() : "";  // 글꼴 (font_setting.js, player only)
-  const secs = [["ov", "오버레이"], fonts && ["font", "글꼴"]].filter(Boolean);  // 가사 먼저 보이기 moved into 오버레이 (user request 2026-11-18)
+  const secs = [["ov", "오버레이"], fonts && ["font", "글꼴"], lead && ["play", "재생"]].filter(Boolean);  // 재생: 페이드 · 소리 크기 (2026-11-19, player only)  // 가사 먼저 보이기 moved into 오버레이 (user request 2026-11-18)
   const sec = (k, html) => `<section class="setsec" data-sec="${k}"><button type="button" class="sethead" data-fold="${k}">${secs.find(s => s[0] === k)[1]}</button><div class="setbody">${html}</div></section>`;
   d.innerHTML = `<div class="dlg-head hx">설정<button class="ib dlgx" data-act="close" title="닫기 (Esc)" aria-label="닫기">✕</button></div><div class="dlg-body">
     <nav class="setlist">${secs.map(([k, t]) => `<button type="button" data-pick="${k}">${t}</button>`).join("")}</nav><div class="setpanes">${sec("ov", `${lead ? `
@@ -266,7 +266,12 @@ async function openPlayerSettings() {
     <label>불투명도 <b data-v="opacity"></b><input type="range" min="10" max="100" step="5" data-k="opacity"></label>
     <label>가로 폭 <b data-v="width"></b><input type="range" min="300" max="3000" step="50" data-k="width"></label>
     <p class="muted">발음·번역 줄은 플레이어의 '발음'·'번역' 체크를 따릅니다.</p>
-    <div class="row"><button data-act="reset">위치 처음으로 (화면 아래 가운데)</button></div>`)}${fonts ? sec("font", fonts) : ""}</div></div>`;
+    <div class="row"><button data-act="reset">위치 처음으로 (화면 아래 가운데)</button></div>`)}${fonts ? sec("font", fonts) : ""}${lead ? sec("play", `
+    <label title="곡이 시작할 때 소리를 0 에서 서서히 키움 (0 = 끔)">페이드 인 <b data-fade-v="fadeIn"></b><input type="range" min="0" max="5" step="0.5" data-fade="fadeIn"></label>
+    <label title="곡이 끝나기 전 이만큼 동안 소리를 서서히 줄임 (0 = 끔)">페이드 아웃 <b data-fade-v="fadeOut"></b><input type="range" min="0" max="8" step="0.5" data-fade="fadeOut"></label>
+    <p class="muted">비리비리 영상은 음원 플레이어 확장 프로그램이 있어야 적용돼요 (배속 버튼에서 넣을 수 있어요).</p>
+    <label class="inline" title="곡마다 실제 소리 크기를 재서 모든 곡을 같은 크기로 (국제 표준 측정 방식 · 한 번 잰 곡은 다음부터 처음부터 맞춤)"><input type="checkbox" data-level> 소리 크기 맞추기</label>
+    <p class="muted">영상은 음원 플레이어 확장 프로그램(PC) 또는 앱이 있어야 돼요. 없으면 사이트가 맞춘 크기 그대로예요. 음원 파일 링크는 안 돼요.</p>`) : ""}</div></div>`;
   // PC: the picked part only (remembered) · phone: each part folds by its title (open ones remembered)
   const pick = k => {
     store.set("set.sec", k);
@@ -288,6 +293,15 @@ async function openPlayerSettings() {
   for (const i of ins) { if (i.type === "checkbox") i.checked = !!c[i.dataset.k]; else i.value = String(c[i.dataset.k]).replace(/\.exe$/i, ""); }
   const showVals = () => d.querySelectorAll("[data-v]").forEach(b => b.textContent = d.querySelector(`[data-k=${b.dataset.v}]`).value + (b.dataset.v === "opacity" ? "%" : ""));
   showVals();
+  d.querySelectorAll("[data-level]").forEach(c => {  // 소리 크기 맞추기 (browser key level — play_engine.js levelOn)
+    c.checked = store.get("level", true);
+    c.addEventListener("change", () => { store.set("level", c.checked); SHELL.audio.applyFx(); });
+  });
+  d.querySelectorAll("[data-fade]").forEach(r => {  // 페이드 (browser keys fadeIn · fadeOut — play_engine.js fadeSecs)
+    const k = r.dataset.fade, v = d.querySelector(`[data-fade-v=${k}]`), show = () => v.textContent = +r.value ? (+r.value).toFixed(1) + "초" : "끔";
+    r.value = +store.get(k, 0) || 0; show();
+    r.addEventListener("input", () => { store.set(k, +r.value); show(); SHELL.audio.fadeTick(); });
+  });
   if (lead) {  // 가사 먼저 보이기: 오버레이 설정 파일이 아니라 재생기 값 (브라우저 저장값 · play_engine.js setLead)
     const r = d.querySelector("[data-lead-r]"), showLead = () => d.querySelector("[data-lead]").textContent = SHELL.lead.toFixed(2) + "초";
     r.value = SHELL.lead; showLead();
