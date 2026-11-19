@@ -101,7 +101,7 @@ body:not(.m) .side-head .top .onoff .lb{min-width:40px;padding:1px 6px 0;font-si
 .item .no{--bc:var(--muted);flex:none;min-width:30px;font-size:12px;font-variant-numeric:tabular-nums;text-align:center;padding:0 5px;border-radius:999px;
   color:color-mix(in srgb,var(--bc) 78%,#fff);background:color-mix(in srgb,var(--bc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--bc) 55%,transparent)}
 body.simple .item .thumb{display:none}  /* 간단 표시: 목록 썸네일 숨김 (player_screen.js applySimple) */
-body.simple .item .badges{filter:saturate(.2)}  /* 간단: lyrics / sync state badges at 20% saturation (user request 2026-11-18) */
+body.simple .item .badges{filter:brightness(.7) saturate(.6)}  /* 간단: lyrics / sync state badges a little dimmer (user request 2026-11-19: 밝기 70% · 채도 60%) */
 .thumb{flex:none;width:48px;height:27px;border-radius:4px;object-fit:cover;background:var(--chip);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted)}
 .item .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .item .a{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -332,7 +332,10 @@ input.masked{-webkit-text-security:disc;text-security:disc}
 .mnav button.blink{color:var(--warn)}
 .ltmembers li.me{box-shadow:inset 0 0 0 1px var(--accent);font-weight:600}
 /* 대표색상 (2026-11-17): the nickname chip in that color, see-through · 간단 mode stays plain */
-body:not(.simple) .ltmembers li.mc{background:color-mix(in srgb,var(--mc) 38%,transparent)}
+/* 대표색상 chips like the vocal chips (user request 2026-11-19): see-through color, colored text and a thin ring */
+body:not(.simple) .ltmembers li.mc{color:var(--mc);background:color-mix(in srgb,var(--mc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--mc) 55%,transparent)}
+body:not(.simple) .ltmembers li.mc.me{box-shadow:inset 0 0 0 1.5px var(--mc)}
+html[data-theme=light] body:not(.simple) .ltmembers li.mc{color:color-mix(in srgb,var(--mc) 62%,#000)}
 .ltcrown{color:#facc15;flex:none;vertical-align:-2px}  /* host: yellow crown (user request) */
 .ltstatus{margin:10px 0 0;color:var(--warn)}
 /* 같이듣기 손님: 재생 조작은 방장만 — 목록에서 곡을 눌러도 안 틂, 영상 클릭(재생/멈춤)도 막음 */
@@ -361,6 +364,7 @@ body.lt-guest #streamHost:has(.vguide:not([hidden])){pointer-events:auto}  /* Bi
 .nbadge.open{right:-38px;top:-9px;height:15px;line-height:11px;padding:0 3px;border:2px solid #111;border-radius:4px;
   background:linear-gradient(180deg,#ff1a0e,#ff4a2e);color:#fff;font-size:10px;font-weight:900;letter-spacing:0;
   font-family:"Arial Black","Segoe UI Black",Impact,sans-serif;box-shadow:0 1px 2px rgb(0 0 0 / .35)}
+body.simple .nbadge.open{filter:brightness(.7) saturate(.6)}  /* 간단: ONAIR a little dimmer (user request 2026-11-19: 밝기 70% · 채도 60%) */
 /* OPEN CHANNEL row: always first, set apart from the rooms (user request 2026-11-17) */
 #ltChRow[hidden]{display:none}
 .ltroom.ltch{border:1.5px solid var(--ok);background:linear-gradient(90deg,rgb(21 128 61 / .12),transparent 70%)}
@@ -373,9 +377,14 @@ body.lt-guest #streamHost:has(.vguide:not([hidden])){pointer-events:auto}  /* Bi
 .ltchtag{display:inline-flex;align-items:center;gap:5px;margin:4px 0;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:700;letter-spacing:.08em;
   color:#f87171;background:rgb(239 68 68 / .1);box-shadow:inset 0 0 0 1px rgb(239 68 68 / .45)}
 .ltchtag::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;animation:ltchpulse 1.4s ease-in-out infinite}
-body.simple .ltchtag{color:var(--muted);background:transparent;box-shadow:inset 0 0 0 1px var(--line)}
-body.simple .ltchtag::before{animation:none}
+/* 간단: the 'OPEN CHANNEL' filter tag keeps its color at 60% saturation (user request 2026-11-19 — was plain grey); inside the
+   같이듣기 window the window's own filter does it (rule below), so only the playlist's '현재 설정된 필터' gets one here */
+body.simple .plfilter .ltchtag{filter:saturate(.6)}
 @keyframes ltchpulse{50%{opacity:.3}}
+/* 간단: every colored part of the screen at 60% saturation (user request 2026-11-19 — was 50% for OPEN CHANNEL only):
+   the switches under the name · count badges · the whole 같이듣기 window + the room card above the playlist · song tag
+   chips · the [오버레이] button. One filter per box (nested ones would stack). ONAIR and the playlist badges have their own. */
+body.simple :is(.modes .onoff,.nbadge:not(.open),.ltcard,#listenDlg,#songMeta,.ovpow.on){filter:saturate(.6)}  /* #listenDlg: the whole 같이듣기 window — status lines (입장 중 …), rooms, chips (2026-11-19) */
 .khead{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .kmrow{display:flex;gap:6px;margin-top:8px}  /* 노래방 모드's machine, shown while it is on (the switch is under the name since 2026-11-16) */
 .kmrow[hidden]{display:none}
@@ -556,7 +565,15 @@ a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.
 #btnReport{order:99;margin-left:auto}
 #btnReport,#sReport{padding:0;border:0;background:none;color:var(--muted);font-size:11px;font-weight:400;text-decoration:underline;text-underline-offset:2px;cursor:pointer}  /* user request: small underlined text, right end (곡 검색 창에도 같은 모양 — 2026-11-15) */
 #btnReport:hover,#sReport:hover{color:var(--text)}
-.ctrl .play{font-size:30px;color:var(--text);min-width:40px}  /* 재생/일시정지: 동그라미 없이 아이콘만 (조금 크게) */
+/* 이전 · 재생/일시정지 · 다음: sharp SVG icons on one centre line (playIcon, user request 2026-11-19 — the letters were too
+   big and not lined up); play a little bigger and brighter, no circle */
+.ctrl .skip,.ctrl .play{width:30px;height:30px;padding:0}
+.ib.skip svg{width:18px;height:18px;display:block}
+.ib.play svg{width:22px;height:22px;display:block}
+.ctrl .play{color:var(--text)}
+.ib.play:hover:not(:disabled),.ib.skip:hover:not(:disabled){color:var(--accent)}
+#miniBar .ib.play svg{width:22px;height:22px}
+#miniBar .ib.skip svg{width:18px;height:18px}
 #btnSettings svg{width:20px;height:20px}  /* ⚙ 설정 at the toolbar's right end (user request 2026-11-18) */
 /* 설정 새 항목 수 (user request 2026-11-19, shared_screen_helpers.js setBadge): a red notification badge, gone once looked at */
 #btnSettings{position:relative}
@@ -567,8 +584,11 @@ a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.
 /* 음량 (user request 2026-11-15): speaker (mute toggle) + slider always shown right of it — hidden on touch phones */
 .volpop{display:inline-flex;align-items:center;gap:6px}
 /* 배속 (play_speed.js, user request 2026-11-19): text button right of the volume · greyed where it can't apply · menu of speeds */
-.ib.ratebtn{font-size:12px;font-weight:700;min-width:38px;padding:3px 6px;border-radius:6px;font-variant-numeric:tabular-nums}
+/* 배속 · 키 · A-B: no fixed width, so the gaps look like the 무작위 · 반복 icons' · one size and one height for all three, so
+   they sit on one line (user request 2026-11-19 — a bigger 1× alone threw the line off) */
+.ib.ratebtn{font-size:15px;font-weight:700;padding:0 3px;height:24px;line-height:1;border-radius:6px;font-variant-numeric:tabular-nums}
 .ib.ratebtn.on{background:var(--accent-soft)}
+#btnRate .rx{font-size:1.15em;line-height:1;margin-left:1px}
 .ib.ratebtn.off{opacity:.4;text-decoration:line-through}
 .ratemenu{position:fixed;z-index:50;display:flex;flex-direction:column;gap:2px;padding:4px;border-radius:8px;background:var(--card);
   border:1px solid var(--line);box-shadow:0 8px 24px rgb(0 0 0 / .4)}
@@ -579,7 +599,6 @@ a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.
 .keymenu .krow{display:flex;align-items:center;gap:4px}
 .keymenu .krow button{font-size:18px;font-weight:700;padding:2px 12px}
 .keymenu .kval{min-width:34px;text-align:center;font-variant-numeric:tabular-nums}
-.ib.abbtn{min-width:44px}
 .time{font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted);white-space:nowrap;min-width:34px;text-align:center}
 /* 곡 정보: 나무위키 곡 문서의 분류(칩) · 각주(작게) — 재생 막대와 영상 버튼 사이 한 줄 */
 .songmeta{flex:1 0 100%;min-width:0}
@@ -813,9 +832,19 @@ body.simple #lyrics .vcm{background:none;-webkit-text-fill-color:currentColor}
 .editing .g .stamp{display:flex}
 .editing .g{opacity:1}
 .g.cursor{outline:2px dashed var(--warn);outline-offset:-2px}
-.g.guess .o::after{content:"추정";font-size:10px;font-weight:400;color:var(--warn);border:1px solid var(--warn);border-radius:4px;padding:0 4px;margin-left:8px;vertical-align:middle}
+/* '추정' · '자동' badges: their own font and box (user report 2026-11-19 — with a ⚙ 글꼴 font they took the lyrics' font, its
+   line height and baseline, and went out of shape; on a several-vocal line they also took its see-through letters) */
+.g.guess .o::after,.g .auto::after{display:inline-block;font:400 10px/14px -apple-system,"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+  -webkit-text-fill-color:currentColor;background:none;filter:none;border:1px solid currentColor;border-radius:4px;padding:0 4px;margin-left:8px;vertical-align:middle;white-space:nowrap}
+.g.guess .o::after{content:"추정";color:var(--warn)}
 /* program-made line (자동 가사, user request 2026-11-14): same badge as 추정, its own color */
-.g .auto::after{content:"자동";font-size:10px;font-weight:400;color:#3b82f6;border:1px solid #3b82f6;border-radius:4px;padding:0 4px;margin-left:8px;vertical-align:middle;opacity:.9}
+.g .auto::after{content:"자동";color:#3b82f6;opacity:.9}
+/* ⚙ › 글꼴 preview (font_setting.js fontPreview, user request 2026-11-19): drawn like the lyrics view, with its font stack */
+.fprev{margin:6px 0 14px;padding:8px 10px 4px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--text) 4%,transparent);
+  font-family:var(--font-user,) -apple-system,"Segoe UI",CscJa,"Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+.fprev .fprevhd{font:600 11px -apple-system,"Segoe UI","Malgun Gothic",sans-serif;color:var(--muted);margin-bottom:2px}
+.fprev .g,.fprev .g:hover{opacity:1;cursor:default;margin:0;padding:4px 2px;max-width:none;background:none}  /* no focus / hover look (user request 2026-11-19) */
+.fprev .g .o,.fprev .g .r,.fprev .g .t{font-size:17px}
 .stamp button{padding:0 6px;font-size:12px}
 .stamp .tv{font-variant-numeric:tabular-nums;color:var(--muted);min-width:46px;text-align:center}
 /* 대화상자 */
@@ -867,11 +896,18 @@ html[data-theme=light] .ctxm,html[data-theme=light] .fddpop,html[data-theme=ligh
 html[data-theme=light] body.simple #lyrics .g.cur .o,html[data-theme=light] body.simple #lyrics .o.vc,html[data-theme=light] body.simple #lyrics .t.vc{color:var(--text)!important}
 html[data-theme=light] body.simple #lyrics .r.vc{color:var(--muted)!important}
 html[data-theme=light] body.simple #lyrics .vcm{filter:none}
-/* 테마 버튼: 제목 줄 오른쪽 끝, 단색 달(어두운 화면) / 해(밝은 화면) */
+/* 테마 버튼: 제목 줄 오른쪽 끝, 단색 — 해(밝게) · 가는 초승달(조금 어둡게) · 초승달(어둡게) · 꽉 찬 달(검게) (4 steps, 2026-11-19) */
 #btnTheme{flex:none;padding:4px}
 #btnTheme svg{width:18px;height:18px}
-#btnTheme .sun,html[data-theme=light] #btnTheme .moon{display:none}
-html[data-theme=light] #btnTheme .sun{display:block}
+#btnTheme .th{display:none}
+html:not([data-theme]) #btnTheme .th-dark,html[data-theme=light] #btnTheme .th-light,html[data-theme=dim] #btnTheme .th-dim,html[data-theme=black] #btnTheme .th-black{display:block}
+#btnTheme.turn svg{animation:themeTurn .35s ease-out}
+@keyframes themeTurn{from{transform:rotate(-90deg) scale(.5);opacity:.2}to{transform:none;opacity:1}}
+/* 조금 어두운 화면 (dim) · 검은 화면 (black): dark-page variants — only the surface tokens change */
+html[data-theme=dim]{--bg:rgb(50 50 54);--card:rgb(60 60 65);--text:rgb(222 222 226);--muted:rgb(168 168 176);--line:rgb(82 82 88);--chip:rgb(72 72 78);
+  --log-bg:rgb(42 42 46);--sb-thumb:rgb(102 102 108);--sb-thumb-hover:rgb(132 132 138);--warn-bg:#40381f}
+html[data-theme=black]{--bg:#000;--card:rgb(12 12 12);--text:rgb(208 208 208);--muted:rgb(140 140 140);--line:rgb(38 38 38);--chip:rgb(26 26 26);
+  --log-bg:#000;--sb-thumb:rgb(60 60 62);--sb-thumb-hover:rgb(90 90 92);--warn-bg:#1f1a0d}
 /* 필터 프리셋 추천 (강조) · 저장된 필터 — 필터 버튼 오른쪽 (user request 2026-11-14) */
 #btnPreset{font-weight:700;color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
 #btnPreset:hover,#btnPreset.open{background:var(--accent);color:var(--accent-text)}
@@ -947,7 +983,8 @@ body.m .mnav{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;heig
 .msetdlg .mset .onoff{flex:none}
 .msetdlg .mset .onoff .lb{min-width:44px}
 .msetdlg .hint{margin:0}
-.msetdlg .mzoom input{flex:1;min-width:0;accent-color:var(--accent)}
+.msetdlg .mzoom span{flex:none}
+.msetdlg .mzoom input{flex:1;min-width:0}
 .msetdlg .mzoom b{flex:none;min-width:48px;text-align:right;font-variant-numeric:tabular-nums}
 .msetdlg .isnew:not([data-set]){margin-left:-8px;padding-left:5px;border-left:3px solid var(--err)}  /* a row added since last time */
 .msetdlg [data-set].isnew{box-shadow:inset 3px 0 0 var(--err)}
@@ -1025,6 +1062,10 @@ body.m .songmeta{order:2}
 .pchip{display:inline-block;font-size:10.5px;font-weight:700;line-height:1;padding:3px 6px;border-radius:9px;margin-right:6px;vertical-align:1px}
 .pchip.sv{background:rgba(37,99,235,.18);color:#3b82f6;box-shadow:inset 0 0 0 1px rgba(59,130,246,.35)}  /* translucent (user request 2026-11-17) */
 .pchip.web{background:rgba(22,163,74,.18);color:#22a35a;box-shadow:inset 0 0 0 1px rgba(34,197,94,.35)}
+/* ★ 강조 기능 (user request 2026-11-19): a feature named '★ …' in a commit — warm gradient row, '꼭 보세요' chip, details open */
+.pchip.hot{background:linear-gradient(90deg,#ffcf1f,#ff7a1a 60%,#ef4444);color:#2a1000;box-shadow:0 0 0 1px rgba(239,68,68,.45),0 0 10px rgba(255,138,28,.45)}
+.pn-hot{font-weight:800;background:linear-gradient(90deg,#ffcf1f,#ff8a1c 55%,#ef4444);-webkit-background-clip:text;background-clip:text;color:transparent}
+li.hot{margin:6px 0;padding:6px 8px;border-radius:8px;background:linear-gradient(90deg,rgba(255,200,30,.16),rgba(239,68,68,.10));box-shadow:inset 3px 0 0 #ff8a1c}
 .pn-b li.fold summary{cursor:pointer}
 .pn-b li.fold summary::marker{color:var(--muted)}
 .pn-b li.fold details:not([open]) summary::after{content:" 펼치기";font-size:11px;font-weight:400;color:var(--muted)}

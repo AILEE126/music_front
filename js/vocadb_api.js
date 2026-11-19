@@ -101,6 +101,7 @@ const VSONG_GET = {
   vkind() { return vcol(this, "vocal_kind") || ""; },
   origId() { return vcol(this, "original_id") || ""; },  // 같은 곡 묶기 (원곡 번호)
   rating() { return +vcol(this, "rating_score") || 0; },
+  secs() { return +vcol(this, "length_seconds") || 0; },  // 곡 길이 (songs col length_seconds, 2026-11-19 — Bilibili plays only with it)
   sources() { return vdbSources([unUrl(vcol(this, "video_url")), ...String(vcol(this, "alt_urls") || "").split(" ").map(u => unUrl(u))]); },
   tags() { const t = String(vcol(this, "tags") || "").split("|").filter(Boolean), x = this.ki.extraTags; return x.length ? [...t, ...x] : t.length ? t : NONE_ARR; },
   nums() { return this.ki.nums; }, gone() { return this.ki.gone; }, only() { return this.ki.only; }, ord() { return this.ki.ord; },

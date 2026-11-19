@@ -218,7 +218,14 @@ function renderModeButtons(shBtn, rpBtn, shuffle, repeat) {
   rpBtn.title = {off: "반복: 끔 (누르면 전체 반복)", all: "반복: 전체 (누르면 한 곡 반복)", one: "반복: 한 곡 (누르면 끔)"}[repeat];
 }
 /* 막대의 채운 부분 (.bar-range 의 CSS --p) */
-function fillRange(el) { el.style.setProperty("--p", ((el.value - el.min) / (el.max - el.min) * 100 || 0) + "%"); }
+/* 재생 / 일시정지 icon (user request 2026-11-19: the ▶︎ / ❚❚ letters were too big and sat off-centre) — sharp-edged SVG like ⏮ ⏭ (also SVG now), icon only */
+const playIcon = paused => paused
+  ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15L19.5 12z" fill="currentColor"/></svg>'
+  : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 5h4v14h-4zM13.5 5h4v14h-4z" fill="currentColor"/></svg>';
+function fillRange(el) {  // --p: percent (bar-range) · --pf: 0…1 (설정 sliders)
+  const f = (el.value - el.min) / (el.max - el.min) || 0;
+  el.style.setProperty("--p", f * 100 + "%"); el.style.setProperty("--pf", f);
+}
 /* 음량 버튼·막대 그리기: 소리 크기에 따라 물결 0~2개, 음소거면 X */
 function renderVolume(btn, range, audio) {
   const v = audio.muted ? 0 : audio.volume;
@@ -227,7 +234,7 @@ function renderVolume(btn, range, audio) {
     + (v === 0 ? '<path d="m16 9 5 6M21 9l-5 6"/>' : '<path d="M15.5 9.5a3.5 3.5 0 0 1 0 5"/>' + (v > .5 ? '<path d="M18.5 6.5a7.5 7.5 0 0 1 0 11"/>' : "")) + "</svg>";
 }
 
-/* ---- 설정 창 (⚙, user request 2026-11-18: 가사 · 오버레이 as separate parts — 2026-11-19 the 글꼴 part became 가사 (fonts + 굵기) — PC: the parts listed on the left,
+/* ---- 설정 창 (⚙, user request 2026-11-18: 가사 · 오버레이 as separate parts — 2026-11-19: 글꼴 (fonts + 굵기) first — PC: the parts listed on the left,
    one shown at a time · phone: every part foldable) ----
    가사 오버레이 = tools\lyrics_overlay.bat 로 켜는 파워쉘 창 (바탕 투명 · 어느 브라우저든). 이 창에서 바꾸면 곧바로 반영.
    local_files.js 가 오버레이의 창구(127.0.0.1:47613)로 보냄 → 오버레이가 overlay\lyrics_overlay.json 에 씀 (꺼져 있으면 이 브라우저에만).
@@ -241,8 +248,11 @@ const SET_KEYS = {
   ov: ["ov.lead", "ov.target", "ov.clickthrough", "ov.info", "ov.size", "ov.info_size", "ov.outline", "ov.opacity", "ov.width", "ov.reset"],
   font: ["font.ja", "font.etc", "font.bold_ja", "font.bold_etc"],
   m: ["m.report", "m.overlay", "m.zoom", "m.ear.connectPlay", "m.ear.unplugPause", "m.ear.ask"],
-  play: ["play.fadein", "play.fadeout", "play.level"],  // ⚙ › 재생 (2026-11-19)
+  play: ["play.fadein", "play.fadeout"],  // ⚙ › 재생 (2026-11-19; 소리 크기 맞추기 dropped — always on with the extension)
+  addon: ["addon.get"],  // ⚙ › 추가기능 (2026-11-19, PC only)
 };
+/* ⚙ › 추가기능 (user request 2026-11-19): the PC add-ons (overlay + extension, play_engine.js openSetupGuide) — not on phones */
+const addonOk = () => typeof openSetupGuide === "function" && !APP.on && !BILI_TOUCH();
 const SETNEW = {fonts: []};
 function setKeys(all = false) {
   const phone = !all && (APP.on || document.body.classList.contains("m"));
@@ -250,7 +260,9 @@ function setKeys(all = false) {
     ov: SET_KEYS.ov.filter(k => all || !(phone && k === "ov.target")),  // 앞에 있을 때만: PC only
     font: [...SET_KEYS.font, ...SETNEW.fonts.map(f => "font:" + f.id)],
     m: all || phone ? SET_KEYS.m : [],
-    play: SET_KEYS.play,
+    // 페이드 is an extension feature → shown in 추가기능 where that part exists (user request 2026-11-19)
+    play: all || !addonOk() ? SET_KEYS.play : [],
+    addon: all ? SET_KEYS.addon : addonOk() ? [...SET_KEYS.addon, ...SET_KEYS.play] : [],
   };
 }
 const setNew = sec => { const seen = new Set(store.get("set.seen", [])); return (sec ? setKeys()[sec] || [] : Object.values(setKeys()).flat()).filter(k => !seen.has(k)); };
@@ -262,7 +274,7 @@ function setSeen(keys) {
 /* the badges: ⚙ (PC toolbar) · the phone menu's 설정 and its '가사 · 오버레이 설정' button */
 function setBadge() {
   const put = (el, n) => { if (el) { el.hidden = !n; el.textContent = n; } };
-  const win = setNew("ov").length + setNew("font").length + setNew("play").length;
+  const win = setNew("ov").length + setNew("font").length + setNew("play").length + setNew("addon").length;
   put(document.getElementById("setBadge"), win);
   put(document.getElementById("mSetBadge"), win + setNew("m").length);
   put(document.getElementById("mOvBadge"), win);
@@ -274,7 +286,7 @@ async function setNewInit() {
   setBadge();
 }
 const OVSET_DEFAULTS ={x: -1, y: -1, width: 1100, size: 22, info_size: 12, outline: 2, opacity: 100, clickthrough: false, target: "ffxiv_dx11", info: true, editing_at: 0, quit_at: 0, enabled: true, font_ja: "", font_etc: "", font_bold_ja: false, font_bold_etc: false};  // font_*: font_setting.js
-async function openPlayerSettings() {
+async function openPlayerSettings(want = "") {  // want: the part to show (e.g. "addon" from the Bilibili warning)
   let c, progs = [];
   LOCAL.ovEnable();  // from now on this browser talks to the overlay (no folder picking — user request)
   try { c ={...OVSET_DEFAULTS, ...(await api("/api/ovset"))}; } catch (e) { return uiAlert(e.message); }
@@ -289,42 +301,49 @@ async function openPlayerSettings() {
   d.className = "uidlg ovset " + (phoneUi ? "setfold" : "setnav");
   const lead = typeof SHELL !== "undefined" && SHELL.setLead;  // 플레이어 화면에서만
   const fonts = typeof fontSettingsHtml === "function" ? await fontSettingsHtml() : "";  // 글꼴 (font_setting.js, player only)
-  const secs = [fonts && ["font", "가사"], lead && ["play", "재생"], ["ov", "오버레이"]].filter(Boolean);  // 재생: 페이드 (2026-11-19, player only)  // 가사 먼저 보이기 moved into 오버레이 (user request 2026-11-18) · 글꼴 → 가사, first (2026-11-19)
+  const addon = lead && addonOk();
+  const secs = [fonts && ["font", "글꼴"], lead && !addon && ["play", "재생"], ["ov", "오버레이"], addon && ["addon", '추가기능<small class="setsub">확장프로그램 필요</small>']].filter(Boolean);  // 추가기능: last (2026-11-19)  // 재생: 페이드 (2026-11-19, player only)  // 가사 먼저 보이기 moved into 오버레이 (user request 2026-11-18) · 글꼴 first (2026-11-19; named 가사 for a while)
   if (fonts) SETNEW.fonts = FONT.list || [];  // just read fresh by fontSettingsHtml
   const fresh = Object.fromEntries(secs.map(([k]) => [k, setNew(k)]));  // new items, as they were when the window opened
   const nb = k => `<b class="setnb"${fresh[k].length ? "" : " hidden"}>${fresh[k].length}</b>`;
+  // extension features (user request 2026-11-19): 페이드 in 추가기능 on a PC (its own 재생 part only where 추가기능 isn't shown — app).
+  // 소리 크기 맞추기 has no switch any more: always on wherever the extension / app can do it
+  const fadeHtml = `
+    <label class="rng" title="곡이 시작할 때 소리를 0 에서 서서히 키움 (0 = 끔)">페이드 인 <b data-fade-v="fadeIn"></b><input type="range" min="0" max="5" step="0.5" data-fade="fadeIn"></label>
+    <label class="rng" title="곡이 끝나기 전 이만큼 동안 소리를 서서히 줄임 (0 = 끔)">페이드 아웃 <b data-fade-v="fadeOut"></b><input type="range" min="0" max="8" step="0.5" data-fade="fadeOut"></label>`;
   const sec = (k, html) => `<section class="setsec" data-sec="${k}"><button type="button" class="sethead" data-fold="${k}">${secs.find(s => s[0] === k)[1]}${nb(k)}</button><div class="setbody">${html}</div></section>`;
   d.innerHTML = `<div class="dlg-head hx">설정<button class="ib dlgx" data-act="close" title="닫기 (Esc)" aria-label="닫기">✕</button></div><div class="dlg-body">
-    <nav class="setlist">${secs.map(([k, t]) => `<button type="button" data-pick="${k}">${t}${nb(k)}</button>`).join("")}</nav><div class="setpanes">${fonts ? sec("font", fonts) : ""}${lead ? sec("play", `
-    <label title="곡이 시작할 때 소리를 0 에서 서서히 키움 (0 = 끔)">페이드 인 <b data-fade-v="fadeIn"></b><input type="range" min="0" max="5" step="0.5" data-fade="fadeIn"></label>
-    <label title="곡이 끝나기 전 이만큼 동안 소리를 서서히 줄임 (0 = 끔)">페이드 아웃 <b data-fade-v="fadeOut"></b><input type="range" min="0" max="8" step="0.5" data-fade="fadeOut"></label>
-    <p class="muted">비리비리 영상은 음원 플레이어 확장 프로그램이 있어야 적용돼요 (배속 버튼에서 넣을 수 있어요).</p>
-    <label class="inline" title="곡마다 실제 소리 크기를 재서 모든 곡을 같은 크기로 (국제 표준 측정 방식 · 한 번 잰 곡은 다음부터 처음부터 맞춤)"><input type="checkbox" data-level> 소리 크기 맞추기</label>
-    <p class="muted">영상은 음원 플레이어 확장 프로그램(PC) 또는 앱이 있어야 돼요. 없으면 사이트가 맞춘 크기 그대로예요. 음원 파일 링크는 안 돼요.</p>`) : ""}${sec("ov", `${lead ? `
-    <label title="싱크는 그대로 두고, 재생할 때 가사만 이만큼 먼저 넘어감 (0.10 ~ 1.00초, 0.01초 단위 · 기본 0.50초)">가사 먼저 보이기 <b data-lead></b><input type="range" min="0.1" max="1" step="0.01" data-lead-r></label>` : ""}
+    <nav class="setlist">${secs.map(([k, t]) => `<button type="button" data-pick="${k}">${t}${nb(k)}</button>`).join("")}</nav><div class="setpanes">${fonts ? sec("font", fonts) : ""}${lead && !addon ? sec("play", fadeHtml) : ""}${sec("ov", `${lead ? `
+    <label class="rng" title="싱크는 그대로 두고, 재생할 때 가사만 이만큼 먼저 넘어감 (0.10 ~ 1.00초, 0.01초 단위 · 기본 0.50초)">가사 먼저 보이기 <b data-lead></b><input type="range" min="0.1" max="1" step="0.01" data-lead-r></label>` : ""}
     <p class="muted">바탕이 투명한 가사 창 (어느 브라우저든) — 켜기·끄기는 가사 도구 줄의 [오버레이] 단추. 이 창을 열어 둔 동안은 오버레이가 늘 보이고 끌어서 옮길 수 있어요.</p>
-    <label${phoneUi ? " hidden" : ""}>이 프로그램이 앞에 있을 때만 보이기 <select data-k="target">
+    <label class="sel"${phoneUi ? " hidden" : ""}>이 프로그램이 앞에 있을 때만 보이기 <select data-k="target">
       <option value="">(늘 보임)</option>${opts.map(p => `<option value="${esc(p.exe)}">${esc(p.exe)}${p.title ? ` — ${esc(p.title)}` : ""}</option>`).join("")}</select>
       <span class="muted">그 프로그램이 꺼져 있으면 늘 보임 · 목록은 오버레이가 켜져 있을 때 채워짐</span></label>
     <label class="inline"><input type="checkbox" data-k="clickthrough"> 클릭 통과 (가사를 눌러도 뒤 창으로 — 끄면 가사를 끌어 옮김)</label>
     <label class="inline"><input type="checkbox" data-k="info"> 곡 정보 줄 (제목 — 프로듀서 feat. 가수)</label>
-    <label>글자 크기 <b data-v="size"></b><input type="range" min="9" max="30" step="1" data-k="size"></label>
-    <label>곡 정보 줄 글자 크기 <b data-v="info_size"></b><input type="range" min="6" max="30" step="1" data-k="info_size"></label>
-    <label>테두리 두께 <b data-v="outline"></b><input type="range" min="0" max="6" step="0.5" data-k="outline"></label>
-    <label>불투명도 <b data-v="opacity"></b><input type="range" min="10" max="100" step="5" data-k="opacity"></label>
-    <label>가로 폭 <b data-v="width"></b><input type="range" min="300" max="3000" step="50" data-k="width"></label>
+    <label class="rng">글자 크기 <b data-v="size"></b><input type="range" min="6" max="30" step="1" data-k="size"></label>
+    <label class="rng">곡 정보 줄 글자 크기 <b data-v="info_size"></b><input type="range" min="6" max="30" step="1" data-k="info_size"></label>
+    <label class="rng">테두리 두께 <b data-v="outline"></b><input type="range" min="0" max="6" step="0.5" data-k="outline"></label>
+    <label class="rng">불투명도 <b data-v="opacity"></b><input type="range" min="10" max="100" step="5" data-k="opacity"></label>
+    <label class="rng">가로 폭 <b data-v="width"></b><input type="range" min="300" max="3000" step="50" data-k="width"></label>
     <p class="muted">발음·번역 줄은 플레이어의 '발음'·'번역' 체크를 따릅니다.</p>
-    <div class="row"><button data-act="reset">위치 처음으로 (화면 아래 가운데)</button></div>`)}</div></div>`;
+    <div class="row"><button data-act="reset">위치 처음으로 (화면 아래 가운데)</button></div>`)}${addon ? sec("addon", `
+    <p class="muted">가사 오버레이(바탕이 투명한 가사 창)와 확장 프로그램을 한 파일로 받아 한 번에 넣어요. 확장 프로그램이 있어야 니코니코 · 유튜브 · SoundCloud · Vimeo · 비리비리 영상에 배속 · 키 변경 · 소리 크기 맞추기가 되고, 비리비리 볼륨 조절 · 유튜브 광고 건너뛰기도 돼요.</p>
+    <ul class="addst" data-addst><li class="muted">확인하는 중…</li></ul>
+    <div class="row"><button class="primary" data-act="addon">추가기능 내려받기 · 넣기</button></div>
+    <p class="muted">새 버전이 나오면 다시 내려받아 전에 압축을 푼 곳에 덮어쓰고 lyrics_overlay.bat 만 다시 실행하면 돼요 (안내가 알려 줘요).</p>
+    <div class="setsubhd">확장 프로그램 기능</div>${fadeHtml}
+    <p class="muted">소리 크기 맞추기는 확장 프로그램을 넣으면 늘 켜져요 · 배속 · 키 변경은 재생 막대의 버튼에서.</p>`) : ""}</div></div>`;
   // new rows: marked '새로' while this window is open (a new font: its pick and the option)
-  const rowOf = {"play.fadein": "[data-fade=fadeIn]", "play.fadeout": "[data-fade=fadeOut]", "play.level": "[data-level]", "ov.lead": "[data-lead-r]", "ov.reset": "[data-act=reset]", "font.ja": "select[data-font=ja]", "font.etc": "select[data-font=etc]", "font.bold_ja": "[data-fbold=ja]", "font.bold_etc": "[data-fbold=etc]"};
+  const rowOf = {"play.fadein": "[data-fade=fadeIn]", "play.fadeout": "[data-fade=fadeOut]", "ov.lead": "[data-lead-r]", "ov.reset": "[data-act=reset]", "font.ja": "select[data-font=ja]", "font.etc": "select[data-font=etc]", "font.bold_ja": "[data-fbold=ja]", "font.bold_etc": "[data-fbold=etc]", "addon.get": "[data-act=addon]"};
   for (const k of Object.values(fresh).flat()) {
     if (k.startsWith("font:")) {
       const o = d.querySelector(`select[data-font] option[value="${CSS.escape(k.slice(5))}"]`);
-      if (o) { o.textContent += " (새로)"; o.closest("label").classList.add("isnew"); }
+      if (o) { o.textContent += " (새로)"; o.closest(".frow, label").classList.add("isnew"); }
       continue;
     }
     const el = d.querySelector(rowOf[k] || `[data-k="${k.slice(3)}"]`);
-    if (el) (el.closest("label") || el).classList.add("isnew");
+    if (el) (el.closest(".frow, label") || el).classList.add("isnew");
   }
   // a part counts as seen once it is shown (PC) or opened (phone) — its badge goes, the row marks stay till the window closes
   const seen = k => { setSeen(fresh[k]); d.querySelectorAll(`[data-pick="${k}"] .setnb,[data-fold="${k}"] .setnb`).forEach(b => b.hidden = true); };
@@ -338,7 +357,18 @@ async function openPlayerSettings() {
   const opened = new Set(store.get("set.open", ["ov"]));
   d.querySelectorAll(".setsec").forEach(s => s.classList.toggle("open", opened.has(s.dataset.sec)));
   if (phoneUi) secs.forEach(([k]) => opened.has(k) && seen(k));
-  pick(secs.some(s => s[0] === store.get("set.sec", "")) ? store.get("set.sec", "") : secs[0][0]);
+  const first = [want, store.get("set.sec", "")].find(k => secs.some(s => s[0] === k));
+  if (phoneUi && want && first === want) { opened.add(want); d.querySelector(`.setsec[data-sec="${want}"]`).classList.add("open"); seen(want); }
+  pick(first || secs[0][0]);
+  // 추가기능: what this PC has (overlay running / up to date · extension version) — again after the guide
+  const addonState = async () => {
+    const ul = d.querySelector("[data-addst]"); if (!ul) return;
+    const ov = await ovNeed(), ext = extNeed();
+    const line = (name, st, ok) => `<li class="${ok ? "ok" : "warn"}"><b>${name}</b> ${st}</li>`;
+    ul.innerHTML = line("가사 오버레이", {"": "켜져 있음 · 최신", old: "새 버전이 있어요", off: "꺼져 있음 ([오버레이] 단추 또는 lyrics_overlay.bat)", new: "아직 없음"}[ov], !ov || ov === "off")
+      + line("확장 프로그램", {"": "있음 · 최신", old: "새 버전이 있어요", new: "아직 없음"}[ext], !ext);
+  };
+  if (addon) addonState();
   d.addEventListener("click", e => {
     const p = e.target.closest("[data-pick]"); if (p) return pick(p.dataset.pick);
     const f = e.target.closest("[data-fold]"); if (!f) return;
@@ -352,10 +382,6 @@ async function openPlayerSettings() {
   for (const i of ins) { if (i.type === "checkbox") i.checked = !!c[i.dataset.k]; else i.value = String(c[i.dataset.k]).replace(/\.exe$/i, ""); }
   const showVals = () => d.querySelectorAll("[data-v]").forEach(b => b.textContent = d.querySelector(`[data-k=${b.dataset.v}]`).value + (b.dataset.v === "opacity" ? "%" : ""));
   showVals();
-  d.querySelectorAll("[data-level]").forEach(c => {  // 소리 크기 맞추기 (browser key level — play_engine.js levelOn)
-    c.checked = store.get("level", true);
-    c.addEventListener("change", () => { store.set("level", c.checked); SHELL.audio.applyFx(); });
-  });
   d.querySelectorAll("[data-fade]").forEach(r => {  // 페이드 (browser keys fadeIn · fadeOut — play_engine.js fadeSecs)
     const k = r.dataset.fade, v = d.querySelector(`[data-fade-v=${k}]`), show = () => v.textContent = +r.value ? (+r.value).toFixed(1) + "초" : "끔";
     r.value = +store.get(k, 0) || 0; show();
@@ -379,9 +405,15 @@ async function openPlayerSettings() {
   post("/api/ovset", {editing_at: Date.now()}).catch(() => {});
   d.addEventListener("click", e => {
     const b = e.target.closest("[data-act]"); if (!b) return;
+    if (b.dataset.act === "addon") {
+      openSetupGuide("추가기능", () => { if (SHELL.audio.biliGuide) SHELL.audio.recheckBili(); });  // a Bilibili song waiting: try again
+      return setupDlg.addEventListener("close", addonState, {once: true});
+    }
     if (b.dataset.act === "reset") save({x: -1, y: -1}); else d.close();
   });
   d.addEventListener("close", () => { clearInterval(beat); clearTimeout(t); save({editing_at: 0}, true); d.remove(); });
+  // sliders: the part left of the knob filled (--p, user request 2026-11-19 — the plain browser slider looked bad)
+  d.querySelectorAll("input[type=range]").forEach(r => { fillRange(r); r.addEventListener("input", () => fillRange(r)); });
   document.body.appendChild(d);
   d.showModal();
 }
@@ -390,9 +422,13 @@ async function openPlayerSettings() {
    오버레이 프로그램은 한 번 켜 두면 뒤에서 계속 돌고(서버를 켜면 서버가 띄움 · 서버 없이는 lyrics_overlay.bat 한 번),
    이 단추는 설정 파일의 enabled(보이기·숨기기)만 바꿈 → 어느 브라우저든, 서버가 없어도 바로 됨.
    프로그램이 돌고 있는지: 창구(127.0.0.1:47613)가 답하면 돌고 있음.
-   프로그램이 꺼져 있을 때 '켜기': 'musicoverlay:' 링크 (못 켜 주는 브라우저면 bat 안내) */
+   프로그램이 꺼져 있을 때 '켜기': 'musicoverlay:' 링크 (못 켜 주는 브라우저면 bat 안내)
+   추가기능 안내 (user request 2026-11-19, play_engine.js openSetupGuide — player only): the overlay never ran in this
+   browser → the guide at once (the zip with the overlay + extension, run the bat …); the link failed → the guide too;
+   the running overlay is older than this player's tools/ files → the guide once per page (download again, overwrite) */
 function bindOverlayPower(btn, label) {  // label: fixed text, on/off by color only (toolbar)
-  let alive = false, enabled = true, starting = 0;
+  let alive = false, enabled = true, starting = 0, ver = 0, oldShown = false;
+  const guide = () => typeof openSetupGuide === "function" && OV_PC();
   const on = () => alive && enabled;
   const show = () => {
     btn.textContent = starting ? "오버레이 켜는 중…" : label || (on() ? "오버레이 끄기" : "오버레이 켜기");
@@ -403,7 +439,8 @@ function bindOverlayPower(btn, label) {  // label: fixed text, on/off by color o
     const was = alive;
     try {
       const [r, c] = await Promise.all([api("/api/ovprograms"), api("/api/ovset")]);
-      alive = !!r.running; enabled = c.enabled !== false;
+      alive = !!r.running; enabled = c.enabled !== false; ver = +r.ver || 0;
+      if (alive) store.set("ovSeen", true);
     } catch (e) { alive = false; }
     if (alive && !was && typeof fontToOverlay === "function") fontToOverlay();  // overlay (re)started: give it the picked fonts
     if (on()) starting = 0;
@@ -414,6 +451,8 @@ function bindOverlayPower(btn, label) {  // label: fixed text, on/off by color o
     const first = !LOCAL.ovOn;
     LOCAL.ovEnable();  // from now on this browser talks to the overlay (no folder picking — user request)
     await check();
+    if (guide() && alive && !oldShown && ver < await ovLatest()) { oldShown = true; openSetupGuide("오버레이"); }
+    if (guide() && !alive && !store.get("ovSeen", false)) return openSetupGuide("오버레이");  // never ran here: nothing to start yet
     if (first && on()) return show();  // first press while the bat-started overlay already shows: keep it on
     try { await post("/api/ovset", {enabled: !on()}); } catch (e) { return uiAlert(e.message); }
     if (on()) { enabled = false; return show(); }  // 끄기 = 숨기기 (프로그램은 뒤에서 계속 — 다시 켜면 바로)
@@ -427,6 +466,7 @@ function bindOverlayPower(btn, label) {  // label: fixed text, on/off by color o
       await check();
       if (on() || !starting) return;
       starting = 0; show();
+      if (guide()) return openSetupGuide("오버레이");
       uiAlert("가사 오버레이 프로그램이 꺼져 있습니다.\n플레이어 폴더의 tools\\lyrics_overlay.bat 을 한 번 더블클릭해 주세요."
         + "\n(한 번 켜 두면 컴퓨터를 끌 때까지 뒤에서 돌고, 그동안은 이 단추로 바로 켜고 끕니다)");
     }, 8000);

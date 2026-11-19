@@ -1,6 +1,6 @@
 /* 음원 플레이어 확장 · 앱 공용 (user request 2026-11-19: only what works both on a PC (extension) and in the app).
    ONE file, three uses:
-   · PC extension: its content script (play_engine.js extZip wraps mpxMedia as media.js, world MAIN, document_start)
+   · PC extension: its content script (play_engine.js setupZip wraps mpxMedia as media.js, world MAIN, document_start)
    · phone app: injected at document start into the same frames (music_app AdBlock.java · MusicAppPlugin.swift read it from
      the bundled music_front js/)
    · the player page loads it too: there it only hands its audio chain to the player (our own mp3 — key change · 소리 크기)

@@ -1142,13 +1142,13 @@ function ltRender() {
   // the room above the playlist (user request 2026-11-15): title · how many (no names) · guest hint — click = this window
   $("ltCard").innerHTML = `<div class="lcr">${LT.chOn ? '<span class="ltchdot"></span>' : ltLockSvg(LT.open)}<b class="tt">${esc(title)}</b><span class="n">${LT.chOn ? "" : "참여자 "}${(LT.members.length || 1)}명${LT.chOn ? " 듣는 중" : ""}</span>`
     + `</div>`
-    + (LT.chOn ? `<div class="lch">채널은 아무도 재생을 조작할 수 없습니다.</div>` : LT.role === "guest" ? `<div class="lch">곡 재생 제어는 방장만 가능합니다.</div>` : "");
+    + (LT.chOn ? `<div class="lch">인기곡이 무작위로 계속 재생됩니다.</div>`  /* same words in 간단 · 기본 (user request 2026-11-19) */ : LT.role === "guest" ? `<div class="lch">곡 재생 제어는 방장만 가능합니다.</div>` : "");
   if (LT.chOn) $("ltRoomTitle").innerHTML = `<span class="ltchdot"></span><span class="tt ltchname">OPEN CHANNEL</span>${LT.title ? `<span class="ltchsub">${esc(LT.title)}</span>` : ""}`;
   else if (!LT.titleEdit) $("ltRoomTitle").innerHTML = `${ltLockSvg(LT.open)}<span class="tt">${esc(title)}</span>${
     LT.role === "host" ? `<button type="button" class="ltpen" title="방 제목 바꾸기">${ltPenSvg()}</button>` : ""}`;  // user request: lock always before the title, big and centred · host: ✏ renames
   // user request 2026-11-17: short, two lines
-  // user request 2026-11-17: the app's name — 'CSC' in 간단 mode (css swaps the two)
-  if (LT.chOn) $("ltRoomHint").innerHTML = '<span class="t-full">사이버노인정</span><span class="t-simple">CSC</span>에서 인기있는 곡을 무작위로 계속 재생합니다.';
+  // one wording for 간단 and 기본 mode (user request 2026-11-19)
+  if (LT.chOn) $("ltRoomHint").textContent = "인기곡이 무작위로 계속 재생됩니다.";
   else $("ltRoomHint").textContent = "곡 재생 제어는 방장만 가능합니다.";
   $("ltRoomHint").hidden = LT.role === "host" && !LT.chOn;
   const mem = LT.members.length ? LT.members : [hostName];

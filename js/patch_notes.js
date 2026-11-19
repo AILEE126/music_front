@@ -12,7 +12,8 @@ const pnName = () => document.querySelector(".side-head h1");
 
 /* body text → html: '## x' sub title · '- x' item · other lines plain (same rules as the manage screen) */
 const pnInline = t => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")  // **글자** → bold
-  .replace(/^\[(서버|웹)\]\s*/, (m, w) => w === "서버" ? '<span class="pchip sv">서버</span>' : "");  // only 서버 gets a chip — 웹 not shown (user request 2026-11-17)
+  .replace(/^\[(서버|웹)\]\s*/, (m, w) => w === "서버" ? '<span class="pchip sv">서버</span>' : "")  // only 서버 gets a chip — 웹 not shown (user request 2026-11-17)
+  .replace(/(^|<\/span>)★\s*(.+)$/, '$1<span class="pchip hot">★ 꼭 보세요</span><span class="pn-hot">$2</span>');  // ★ 강조 (user request 2026-11-19)
 function pnHtml(text) {
   // '- x' item · '  - x' (indented) detail under the item above (user request 2026-11-17: feature + its details)
   let html = "", lvl = 0, top = null;  // top: feature line not written yet (it becomes a fold when details follow)
@@ -20,7 +21,7 @@ function pnHtml(text) {
   let pics = "";
   const outPics = () => { html += pics; pics = ""; };
   // details under a feature are folded — the feature name opens them (user request 2026-11-17)
-  const flush = () => { if (top != null) { html += `<li>${top}`; top = null; } };
+  const flush = () => { if (top != null) { html += `<li${/pn-hot/.test(top) ? ' class="hot"' : ""}>${top}`; top = null; } };
   const close = to => { while (lvl > to) { if (lvl === 2) { html += "</ul></details>"; outPics(); } else { flush(); outPics(); html += "</li></ol>"; } lvl--; } };
   for (const ln of String(text || "").split(/\r?\n/)) {
     const li = /^(\s*)[-*]\s+(.*)$/.exec(ln), h = /^\s*#{1,3}\s+(.*)$/.exec(ln);
@@ -32,7 +33,7 @@ function pnHtml(text) {
     } else if (li && li[1].length >= 2) {
       if (lvl === 0) { html += "<ol>"; lvl = 1; top = ""; }
       // a feature's details start folded (user request 2026-11-19)
-      if (lvl === 1) { html += `<li class="fold"><details><summary>${top || ""}</summary><ul>`; top = null; lvl = 2; }
+      if (lvl === 1) { html += /pn-hot/.test(top || "") ? `<li class="fold hot"><details open><summary>${top}</summary><ul>` : `<li class="fold"><details><summary>${top || ""}</summary><ul>`; top = null; lvl = 2; }  // ★: open, highlighted
       html += `<li>${pnInline(li[2])}</li>`;
     } else if (li) {
       close(1);

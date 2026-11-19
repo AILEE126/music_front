@@ -1,7 +1,7 @@
 /* 플레이어 공통: 색 토큰(차콜 테마), 기본 글꼴, 버튼, 입력칸, 대화상자 (음원 관리는 Server\ui\css 의 사본) */
 /* 테마: 차콜(어두운 회색) 바탕 + 회백색 메인 색 (--accent-rgb 의 R G B 숫자로 정함) */
 :root{--accent-rgb:200 200 200;--accent:rgb(var(--accent-rgb));--accent-text:#111;--accent-soft:rgb(var(--accent-rgb) / .16);--bg:rgb(24 24 24);--card:rgb(31 31 31);--text:rgb(204 204 204);--muted:rgb(150 150 150);--line:rgb(52 52 52);--warn:#fbbf24;--err:#f87171;--ok:#4ade80;--chip:rgb(43 43 43);--hl:rgb(var(--accent-rgb) / .12);--warn-bg:#2e2716;--log-bg:rgb(18 18 18);--log-text:#cbd5e1}
-*{box-sizing:border-box}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}  /* phones: no blue flash on every tap (user request 2026-11-19) */
 /* 화면 전체 크기: 브라우저 배율 100% 에서도 80% 로 본 크기 (--ui-zoom). 화면이 자기 문서를 줄임 —
    100vh 처럼 창 크기에 맞추는 높이는 calc(100vh / var(--ui-zoom)) 로, @media 너비 기준은 원래 값 × .8 로 (미디어 쿼리는 줄이기 전 창 너비) */
 :root{--ui-zoom:.8}
@@ -103,7 +103,38 @@ a.ctxi:hover,button.ctxi:hover,.ctxsub:hover>.ctxi{background:var(--accent-soft)
   background:var(--err);color:#fff;font-size:10.5px;font-weight:800;line-height:16px;text-align:center}
 .ovset .setnb[hidden]{display:none}
 .ovset .setbody .isnew{margin-left:-8px;padding-left:5px;border-left:3px solid var(--err)}
-.ovset select{max-width:100%}
+.ovset select{max-width:100%;min-width:0}
+/* ⚙ › 추가기능 (user request 2026-11-19): the part's name, then '확장프로그램 필요' small on its own line · what this PC has */
+.ovset .setsub{display:block;font-size:10.5px;font-weight:400;opacity:.7;margin-top:1px}
+.ovset.setfold .sethead .setsub{display:inline;margin-left:8px}
+.ovset .setsubhd{margin:16px 0 4px;padding-top:12px;border-top:1px solid var(--line);font-size:12px;font-weight:600;color:var(--muted)}
+.ovset .addst{list-style:none;margin:10px 0;padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px;display:flex;flex-direction:column;gap:4px}
+.ovset .addst li{display:flex;gap:8px;align-items:baseline}
+.ovset .addst li::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:var(--warn);align-self:center}
+.ovset .addst li.ok::before{background:var(--ok,#5ad08a)}
+.ovset .addst li.muted::before{display:none}
+.ovset .addst b{min-width:7.5em}
+/* one line per setting (user request 2026-11-19): name | slider | value · name | select (+ its note under it) ·
+   글꼴: name | font | 굵기 | weight. The name column is the same width everywhere so the controls line up */
+.ovset .setbody>label.rng,.ovset .setbody>label.sel,.ovset .frow{display:grid;grid-template-columns:minmax(7em,10em) minmax(0,1fr) 3.6em;align-items:center;gap:6px 12px}
+.ovset .setbody>label.sel{grid-template-columns:minmax(7em,10em) minmax(0,1fr)}
+.ovset .setbody>label.sel .muted{grid-column:1/-1;margin:0}
+.ovset label.rng input{order:1}
+.ovset label.rng b{order:2;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ovset .frow{grid-template-columns:minmax(7em,10em) minmax(0,1fr) auto minmax(0,auto);margin:10px 0 0;font-size:13px}
+.ovset .frow>label{display:contents}
+.ovset .frow.isnew{margin-left:-8px;padding-left:5px;border-left:3px solid var(--err)}
+/* 설정 sliders (user request 2026-11-19): a thick rounded track filled up to the value, no visible knob (the thumb is a
+   clear 14px hit area; --pf = 0…1, fillRange) */
+.ovset input[type=range],.msetdlg input[type=range]{-webkit-appearance:none;appearance:none;width:100%;min-width:0;height:22px;margin:0;background:transparent;cursor:pointer;--pf:.5}
+.ovset input[type=range]::-webkit-slider-runnable-track,.msetdlg input[type=range]::-webkit-slider-runnable-track{height:14px;border-radius:7px;
+  background:linear-gradient(to right,var(--accent) calc(100% * var(--pf)),color-mix(in srgb,var(--text) 14%,transparent) 0)}
+.ovset input[type=range]::-webkit-slider-thumb,.msetdlg input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;margin:0;border:0;background:transparent;box-shadow:none}
+.ovset input[type=range]:focus-visible,.msetdlg input[type=range]:focus-visible{outline:none}
+.ovset input[type=range]:focus-visible::-webkit-slider-runnable-track,.msetdlg input[type=range]:focus-visible::-webkit-slider-runnable-track{box-shadow:0 0 0 3px var(--accent-soft)}
+.ovset input[type=range]::-moz-range-track,.msetdlg input[type=range]::-moz-range-track{height:14px;border-radius:7px;background:color-mix(in srgb,var(--text) 14%,transparent)}
+.ovset input[type=range]::-moz-range-progress,.msetdlg input[type=range]::-moz-range-progress{height:14px;border-radius:7px;background:var(--accent)}
+.ovset input[type=range]::-moz-range-thumb,.msetdlg input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;background:transparent}
 /* 오버레이 켜기/끄기 단추 (켜져 있으면 초록) */
 .ovpow{white-space:nowrap}
 .ovpow.on{color:var(--ok,#5ad08a);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ok,#5ad08a) 60%,transparent)}
@@ -171,6 +202,8 @@ button.onoff.on .lb.on{color:var(--ok)}
 :is(#streamHost,#extDlg) .vguide .vg-cta{background:var(--accent);color:var(--accent-text);border:2px dashed var(--accent-text);font-weight:700;
   box-shadow:0 0 0 3px var(--accent-soft);animation:vguideCta 1.6s ease-in-out infinite}
 @keyframes vguideCta{50%{box-shadow:0 0 0 7px var(--accent-soft)}}
+:is(#streamHost,#extDlg) .vguide .vg-warn{margin:0 0 6px;padding-left:18px;color:var(--err);font-size:13.5px}  /* 추가기능 안내 notes in red (user request 2026-11-19) */
+:is(#streamHost,#extDlg) .vguide .vg-list{margin:0 0 4px;padding-left:22px}
 :is(#streamHost,#extDlg) .vguide .vg-note{font-size:13px;color:var(--muted)}
 :is(#streamHost,#extDlg) .vguide .vg-nav{display:flex;align-items:center;justify-content:space-between;gap:8px}
 :is(#streamHost,#extDlg) .vguide .vg-nav span{display:flex;gap:6px}
@@ -181,4 +214,17 @@ button.onoff.on .lb.on{color:var(--ok)}
   #streamHost .vguide{font-size:13px;padding:8px 10px;gap:6px}
   #streamHost .vguide .vg-h{font-size:14px}
 }
+/* Bilibili volume warning (user request 2026-11-19): a real warning box — yellow → red, hazard header, pulsing red ring */
+#streamHost .vguide.vwarn{border:0;padding:0;gap:0;overflow:hidden;background:#2b1d0a;color:#fff3dc;animation:vwarnPulse 1.2s ease-in-out infinite;
+  box-shadow:0 0 0 3px #ffc21a,0 0 0 6px #e0392b,0 10px 30px rgb(0 0 0 / .55)}
+@keyframes vwarnPulse{50%{box-shadow:0 0 0 3px #ffc21a,0 0 0 10px rgb(224 57 43 / .55),0 10px 30px rgb(0 0 0 / .55)}}
+#streamHost .vwarn .vw-h{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:16px;font-weight:800;color:#2a1000;
+  background:repeating-linear-gradient(-45deg,transparent 0 14px,rgb(0 0 0 / .08) 14px 28px),linear-gradient(90deg,#ffd21f,#ff8a1c 55%,#e0392b)}
+#streamHost .vwarn .vw-i{display:inline-flex;align-items:flex-end;justify-content:center;width:22px;height:20px;padding-bottom:1px;box-sizing:border-box;
+  font-size:13px;font-weight:900;color:#ffd21f;background:#2a1000;clip-path:polygon(50% 0,100% 100%,0 100%)}
+#streamHost .vwarn .vw-b{padding:10px 14px 4px;font-size:14.5px;line-height:1.55}
+#streamHost .vwarn .vw-b b{color:#ffc21a}
+#streamHost .vwarn .vg-nav{padding:8px 14px 12px}
+#streamHost .vwarn .vg-later{color:#e9d3b0}
+#streamHost .vwarn .primary{background:#e0392b;border-color:#e0392b;color:#fff}
 #streamHost iframe.pre{position:absolute;left:0;top:0;opacity:.01;pointer-events:none;z-index:-1}  /* 미리 띄워 둔 다음 곡 (안 보이게 뒤에) */

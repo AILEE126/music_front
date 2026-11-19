@@ -2,7 +2,7 @@
    right of the volume in the play bar.
    배속: A menu of speeds (browser key rate, kept for
    every song). YouTube · files · our mp3 take it themselves; Niconico · SoundCloud · Vimeo · Bilibili only with the
-   음원 플레이어 확장 (play_engine.js extZip). Where it can't apply the button is greyed and the song plays at 1×:
+   음원 플레이어 확장 (play_engine.js setupZip). Where it can't apply the button is greyed and the song plays at 1×:
    · no extension → a click opens the extension guide (the same three steps as Bilibili's volume guide)
    · phone / tablet → a notice (no extensions there) · 같이듣기 · OPEN CHANNEL → everyone at 1×
    키: −12 ~ +12 (speed unchanged), kept per song (browser key keys) — online songs through the extension / app (v3), our mp3
@@ -29,7 +29,7 @@ const rateText = r => (Math.round(r * 100) / 100) + "×";
     const key = want + "|" + block;
     if (key === shown) return;
     shown = key;
-    btn.textContent = rateText(want);
+    btn.innerHTML = `${Math.round(want * 100) / 100}<span class="rx">×</span>`;  // a bigger × — "1×" looked smaller than 키 · A-B (user request 2026-11-19)
     btn.classList.toggle("off", !!block);
     btn.classList.toggle("on", !block && want !== 1);
     btn.setAttribute("aria-disabled", !!block);
@@ -64,31 +64,8 @@ const rateText = r => (Math.round(r * 100) / 100) + "×";
   document.addEventListener("click", e => { if (!menu.hidden && !menu.contains(e.target)) closeMenu(); });
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeMenu(); });
 
-  /* the extension guide as a window (Bilibili's sits on its video instead) */
-  let dlg = null, guide = null;
-  function openExtGuide(what) {
-    if (!dlg) {
-      dlg = document.createElement("dialog");
-      dlg.id = "extDlg"; dlg.className = "uidlg extdlg";
-      dlg.innerHTML = '<div class="dlg-head hx"><span class="eg-what"></span> — 확장 프로그램 넣기<button class="ib dlgx" title="닫기 (Esc)" aria-label="닫기">✕</button></div><div class="dlg-body"><div class="vguide"></div></div>';
-      document.body.appendChild(dlg);
-      dlg.querySelector(".dlgx").onclick = () => dlg.close();
-      guide = extGuide(dlg.querySelector(".vguide"), {
-        intro: "니코니코 · 유튜브 · SoundCloud · Vimeo · 비리비리 영상은 그 사이트 플레이어가 배속 · 키 변경 · 소리 크기 맞추기를 막아 두었어요. 작은 확장 프로그램을 한 번 넣으면 다 돼요 (비리비리는 볼륨도, 유튜브는 광고 건너뛰기도).",
-        touch: WHY.touch, later: () => dlg.close(), touchOk: () => dlg.close(),
-        done: () => {
-          extProbe().then(v => {
-            if (!dlg.open) return;
-            if (v >= EXT_VER) { dlg.close(); refresh(); keyRender(); return; }
-            guide.note("아직 확장 프로그램이 확인되지 않아요. 개발자 모드와 폴더를 다시 확인해 주세요.");
-          });
-          return "확장 프로그램을 확인하는 중…";
-        }});
-    }
-    dlg.querySelector(".eg-what").textContent = what;
-    guide.reset();
-    dlg.showModal();
-  }
+  /* the add-on guide as a window (play_engine.js openSetupGuide — the same guide as the 오버레이 button; Bilibili's sits on its video) */
+  const openExtGuide = what => openSetupGuide(what, () => { refresh(); keyRender(); });
 
   /* ---- 키 ---- */
   const kbtn = document.createElement("button");
@@ -105,7 +82,7 @@ const rateText = r => (Math.round(r * 100) / 100) + "×";
   const keyText = k => k ? (k > 0 ? "+" : "−") + Math.abs(k) : "0";
   function keyRender() {
     const k = audio.semis, block = fxBlock(audio.kind);
-    kbtn.textContent = "키 " + keyText(k);
+    kbtn.textContent = "Key" + keyText(k);  // short English, no space (user request 2026-11-19 — was "키 0")
     kbtn.classList.toggle("off", !!block);
     kbtn.classList.toggle("on", !block && !!k);
     kbtn.setAttribute("aria-disabled", !!block);

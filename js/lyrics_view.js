@@ -320,8 +320,8 @@ on(window, "appscreen", e => { if (e.detail.on) tick(true); });
 on(document, "visibilitychange", () => { if (!document.hidden) tick(true); });
 cleanups.push(() => clearInterval(tickTimer));
 // ❚❚ not ⏸︎: Samsung phones ignore the text selector and draw ⏸ as an orange emoji (user report 2026-11-16)
-on(audio, "play", () => { $("btnPlay").textContent = "❚❚"; tick(false); });
-on(audio, "pause", () => { $("btnPlay").textContent = "▶︎"; tick(false); });
+on(audio, "play", () => { $("btnPlay").innerHTML = playIcon(false); tick(false); });
+on(audio, "pause", () => { $("btnPlay").innerHTML = playIcon(true); tick(false); });
 on(audio, "seeked", () => tick(true));
 on(audio, "loadedmetadata", () => { $("tDur").textContent = fmt(audio.duration); });
 // audio.error 가 없으면 이미 다음 곡으로 넘어간 것 (재생기가 못 튼 곡을 건너뜀) → 새 곡에 오류 글을 적지 않음

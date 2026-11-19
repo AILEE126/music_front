@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>음원 플레이어</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><g fill='%23000000'><path d='M22 11L56 4V14L22 21Z'/><rect x='22' y='11' width='6' height='38'/><rect x='50' y='4' width='6' height='38'/><ellipse cx='17' cy='49' rx='11' ry='8' transform='rotate(-20 17 49)'/><ellipse cx='45' cy='42' rx='11' ry='8' transform='rotate(-20 45 42)'/></g></svg>">  <!-- 탭 아이콘: 검정 단색 음표 -->
-<script>try{if(JSON.parse(localStorage.getItem("player.theme"))==="light")document.documentElement.dataset.theme="light"}catch(e){}</script>  <!-- theme before first paint (no dark flash) -->
+<script>try{var t=JSON.parse(localStorage.getItem("player.theme"));if(["light","dim","black"].indexOf(t)>=0)document.documentElement.dataset.theme=t}catch(e){}</script>  <!-- theme before first paint (no dark flash) · 4 steps (2026-11-19) -->
 <link rel="stylesheet" href="../css/shared_screen_style.css">
 <link rel="stylesheet" href="../css/player_screen.css">
 </head>
@@ -13,7 +13,7 @@
 <div class="app">
   <aside class="side">
     <div class="side-head">
-      <div class="top"><h1 class="rainbow"><span class="t-full"><span class="t-ol" aria-hidden="true">사이버노인정</span><span class="t-rb">사이버노인정</span></span><span class="t-simple" hidden>CSC</span></h1><span class="hello" id="hello" hidden></span><!-- user request 2026-11-17 --><button class="ib" id="btnTheme" title="밝은 화면 / 어두운 화면" aria-label="밝은 화면 / 어두운 화면 바꾸기"><svg class="moon" viewBox="0 0 24 24" fill="currentColor"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg><svg class="sun" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4.6"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"/></g></svg></button><div class="modes"><button type="button" class="onoff" id="onOff" title="누르면 온라인 ↔ 오프라인 — 온라인: 재생목록의 곡을 원곡 영상으로 재생 / 오프라인: 고른 mp3 폴더의 mp3 를 그대로 (같은 이름의 json 이 있으면 그 가사·싱크)"><span class="lb off">OFFLINE</span><span class="lb on">ONLINE</span></button><button type="button" class="onoff" id="btnSimple" title="간단 표시 — 목록의 썸네일 · 오른쪽 위 썸네일을 숨기고 영상도 접음 (소리는 그대로)"><span class="lb off">기본</span><span class="lb on">간단</span></button><button type="button" class="onoff" id="btnKaraMode" title="노래방 모드 — 켜면 재생목록에 고른 기기의 노래방 번호가 있는 곡만 보이고, 싱크율 자리에 그 번호가 보임 (2시간 지나면 저절로 꺼짐)"><span class="lb off">일반</span><span class="lb on">노래방</span></button></div><!-- user request 2026-11-16: under the name, a row of switches in one look — 온/오프라인 · 간단 · 노래방 모드; the theme button stays at the right of the name --></div>  <!-- user request: theme toggle at the right end of the title row — moon in dark mode, sun in light mode (single color) -->  <!-- user request: name + diagonal rainbow text (old PPT style); 간단 mode: "CSC" in plain text color (names changed 2026-11-15, user request) -->
+      <div class="top"><h1 class="rainbow"><span class="t-full"><span class="t-ol" aria-hidden="true">사이버노인정</span><span class="t-rb">사이버노인정</span></span><span class="t-simple" hidden>CSC</span></h1><span class="hello" id="hello" hidden></span><!-- user request 2026-11-17 --><button class="ib" id="btnTheme" title="화면 밝기" aria-label="화면 밝기 바꾸기 (밝게 · 조금 어둡게 · 어둡게 · 검게)"><svg class="th th-light" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4.6"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"/></g></svg><svg class="th th-dim" viewBox="0 0 24 24"><defs><mask id="thMaskDim"><rect width="24" height="24" fill="#fff"/><circle cx="14.2" cy="10" r="8.6" fill="#000"/></mask></defs><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".35"/><circle cx="12" cy="12" r="8.5" fill="currentColor" mask="url(#thMaskDim)"/></svg><svg class="th th-dark" viewBox="0 0 24 24"><defs><mask id="thMaskDark"><rect width="24" height="24" fill="#fff"/><circle cx="16" cy="8.4" r="8" fill="#000"/></mask></defs><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".35"/><circle cx="12" cy="12" r="8.5" fill="currentColor" mask="url(#thMaskDark)"/></svg><svg class="th th-black" viewBox="0 0 24 24" fill="currentColor"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg></button><div class="modes"><button type="button" class="onoff" id="onOff" title="누르면 온라인 ↔ 오프라인 — 온라인: 재생목록의 곡을 원곡 영상으로 재생 / 오프라인: 고른 mp3 폴더의 mp3 를 그대로 (같은 이름의 json 이 있으면 그 가사·싱크)"><span class="lb off">OFFLINE</span><span class="lb on">ONLINE</span></button><button type="button" class="onoff" id="btnSimple" title="간단 표시 — 목록의 썸네일 · 오른쪽 위 썸네일을 숨기고 영상도 접음 (소리는 그대로)"><span class="lb off">기본</span><span class="lb on">간단</span></button><button type="button" class="onoff" id="btnKaraMode" title="노래방 모드 — 켜면 재생목록에 고른 기기의 노래방 번호가 있는 곡만 보이고, 싱크율 자리에 그 번호가 보임 (2시간 지나면 저절로 꺼짐)"><span class="lb off">일반</span><span class="lb on">노래방</span></button></div><!-- user request 2026-11-16: under the name, a row of switches in one look — 온/오프라인 · 간단 · 노래방 모드; the theme button stays at the right of the name --></div>  <!-- user request: theme toggle at the right end of the title row — 4 steps (2026-11-19): sun · thin crescent · crescent · full moon icon (single color) -->  <!-- user request: name + diagonal rainbow text (old PPT style); 간단 mode: "CSC" in plain text color (names changed 2026-11-15, user request) -->
       <!-- user request 2026-11-14: no full song list — the side panel is the playlist; songs are found in the search popup (VocaDB API) -->
       <!-- user request 2026-11-15 (like the phone): 온/오프라인 in the title row, then 같이듣기 · 검색 · 노래방 in one row — icon on top, name below, the phone menu's icons -->
       <div class="filters side-tools">
@@ -79,8 +79,8 @@
       <div class="mprog"><i id="miniProg"></i></div>
       <img id="miniCover" alt="" hidden>
       <div class="minfo"><b id="miniTitle"></b><span id="miniArtist"></span></div>
-      <button class="ib" id="miniPlay" title="재생 / 일시정지">▶&#xFE0E;</button>
-      <button class="ib" id="miniNext" title="다음 곡">⏭&#xFE0E;</button>
+      <button class="ib play" id="miniPlay" title="재생 / 일시정지"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15L19.5 12z" fill="currentColor"/></svg></button>
+      <button class="ib skip" id="miniNext" title="다음 곡"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 5H18v14h-2.5zM5 5v14l10-7z" fill="currentColor"/></svg></button>
     </div>
   </aside>
 
@@ -101,9 +101,9 @@
         </div>
       </div>
       <div class="ctrl">
-        <button class="ib" id="btnPrev" title="이전 곡">⏮&#xFE0E;</button>
-        <button class="ib play" id="btnPlay" title="재생 / 일시정지 (Space)">▶&#xFE0E;</button>
-        <button class="ib" id="btnNext" title="다음 곡">⏭&#xFE0E;</button>
+        <button class="ib skip" id="btnPrev" title="이전 곡"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2.5v14H6zM19 5v14L9 12z" fill="currentColor"/></svg></button>
+        <button class="ib play" id="btnPlay" title="재생 / 일시정지 (Space)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15L19.5 12z" fill="currentColor"/></svg></button>
+        <button class="ib skip" id="btnNext" title="다음 곡"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 5H18v14h-2.5zM5 5v14l10-7z" fill="currentColor"/></svg></button>
         <div class="seek"><span class="time" id="tCur">0:00</span><input type="range" class="bar-range" id="seek" min="0" max="1000" value="0"><span class="time" id="tDur">0:00</span></div>
         <button class="ib mode" id="btnShuffle" title="무작위 재생"></button>
         <button class="ib mode" id="btnRepeat" title="반복"></button>
@@ -161,8 +161,8 @@
   <div class="dlg-body">
     <button data-set="report" data-nk="m.report">오류신고 · 텍스트 대치 제안</button>
     <button data-set="overlay" data-nk="m.overlay">가사 · 오버레이 설정<b class="nbadge" id="mOvBadge" hidden></b></button>
-    <div class="msetsec">화면 크기</div>
-    <div class="mset mzoom" data-nk="m.zoom"><input type="range" id="mZoom" min="100" max="160" step="5" value="100" aria-label="화면 크기"><b id="mZoomVal">100%</b></div>
+    <div class="msetsec">화면</div>
+    <label class="mset mzoom" data-nk="m.zoom"><span>화면 크기</span><input type="range" id="mZoom" min="100" max="160" step="5" value="100"><b id="mZoomVal">100%</b></label><!-- text and slider on one line (user request 2026-11-19) -->
     <div class="msetsec">이어폰</div>
     <div class="mset" data-nk="m.ear.connectPlay"><span>이어폰 연결 시 바로 재생</span><button type="button" class="onoff" data-ear="connectPlay"><span class="lb off">OFF</span><span class="lb on">ON</span></button></div>
     <div class="mset" data-nk="m.ear.unplugPause"><span>이어폰 해제 시 재생 중지</span><button type="button" class="onoff" data-ear="unplugPause"><span class="lb off">OFF</span><span class="lb on">ON</span></button></div>

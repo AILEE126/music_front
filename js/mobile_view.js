@@ -95,7 +95,7 @@
     const p = zoomPct();
     if (mq.matches && p !== 100) document.documentElement.style.setProperty("--ui-zoom", ZOOM_BASE * p / 100);
     else document.documentElement.style.removeProperty("--ui-zoom");
-    $("mZoom").value = p; $("mZoomVal").textContent = p + "%";
+    $("mZoom").value = p; fillRange($("mZoom")); $("mZoomVal").textContent = p + "%";
   };
   $("mZoom").addEventListener("input", e => { store.set("mZoom", +e.target.value); applyZoom(); });
   const apply = () => {
@@ -117,7 +117,7 @@
     const url = has && hasCover(SHELL.now) ? coverUrl(SHELL.now) : "";
     $("miniCover").hidden = !url;
     if (url && $("miniCover").getAttribute("src") !== url) $("miniCover").src = url;
-    $("miniPlay").textContent = audio.paused ? "▶︎" : "❚❚";  // not ⏸︎ — an orange emoji on Samsung (player_screen.js)
+    $("miniPlay").innerHTML = playIcon(audio.paused);  // SVG (shared_screen_helpers.js) — never ⏸︎, an orange emoji on Samsung
     body.classList.toggle("mbar", has);  // the bar takes its room above the bottom menu only when a song is there
   }
   // only the title · artist · cover (the whole .now box also changed with the play time every second)

@@ -1,4 +1,4 @@
-/* 글꼴 (user request 2026-11-18) — ⚙ 설정 › 가사 (was its own part 글꼴, moved 2026-11-19), two picks: 일본어 글꼴 (kana · kanji, Chinese hanzi too) and 한글 글꼴 (the rest; was 나머지 글꼴).
+/* 글꼴 (user request 2026-11-18) — ⚙ 설정 › 글꼴 (named 가사 for a while on 2026-11-19), two picks: 일본어 글꼴 (kana · kanji, Chinese hanzi too) and 한글 글꼴 (the rest; was 나머지 글꼴).
    Each: 기본 (the built-in stack, as before) · 시스템 글꼴 (phones only — the phone's own UI font, system-ui; not offered on a
    PC, user request 2026-11-18 — the pick stays saved and acts as 기본 there) · fonts registered in the server's Manage › 글꼴 (Server/data/fonts/fonts.json + the files, data branch).
    Only the lyrics view and the overlays use them (user request 2026-11-18 — PC and phone; the rest of the screen keeps its font).
@@ -16,9 +16,11 @@ const FONT_RANGE = {
   etc: "U+0-2FFF,U+3100-31EF,U+3200-33FF,U+4DC0-4DFF,U+A000-F8FF,U+FB00-FEFF,U+FFF0-FFFF,U+10000-1FFFF,U+40000-10FFFF",
 };
 const FONT_FAMILY = {ja: "CscFontJa", etc: "CscFontEtc"};
-const FONT = {list: null, faces: {}, run: 0};
+const FONT = {list: null, def: {}, faces: {}, run: 0};
 const fontDb = idbKV("music-fonts");
-const fontPick = k => store.get("font." + k, "");  // "" 기본 · "system" · registered font id
+/* "" 기본 가사 글꼴 (built-in) · "system" · registered font id. Never picked in this browser → the server's 기본 글꼴 for that
+   pick (Manage › 글꼴 ★, fonts.json default — user request 2026-11-19), the built-in one when it has none */
+const fontPick = k => { const v = store.get("font." + k, null); return v === null ? FONT.def[k] || "" : v; };
 const fontBold = k => !!store.get("font.bold." + k, false);
 const fontPhone = () => APP.on || document.body.classList.contains("m");
 /* a font is registered as 일본어 (use "ja") or 한글 ("etc") and offered only in that pick (user request 2026-11-19;
@@ -27,7 +29,9 @@ const fontFor = (f, k) => (f.use || "ja") === k;
 
 async function fontList(fresh = false) {
   if (FONT.list && !fresh) return FONT.list;
-  const d = LOCAL.ready ? await LOCAL.readJson(`${LOCAL.data}fonts/fonts.json`, null).catch(() => null) : null;
+  if (!LOCAL.ready) return [];  // not kept: read again once our data can be read
+  const d = await LOCAL.readJson(`${LOCAL.data}fonts/fonts.json`, null).catch(() => null);
+  FONT.def = (d && d.default) || {};
   return (FONT.list = (d && d.fonts) || []);
 }
 async function fontFace(k, f) {
@@ -52,8 +56,8 @@ function fontStack() {
 /* load the picked registered fonts (a file that fails or was removed from the server → 기본 for that pick) */
 async function fontApply() {
   const run = ++FONT.run;
+  const list = await fontList();  // also brings the server's 기본 글꼴 (fontPick)
   const ids = ["ja", "etc"].map(fontPick);
-  const list = ids.some(v => v && v !== "system") ? await fontList() : [];
   for (const [i, k] of ["ja", "etc"].entries()) {
     const f = list.find(x => x.id === ids[i] && fontFor(x, k)), old = FONT.faces[k];
     if (old && old.sha === (f && f.sha) && old.bold === fontBold(k)) continue;
@@ -87,17 +91,31 @@ async function fontToOverlay() {
 }
 new MutationObserver(fontStack).observe(document.body, {attributes: true, attributeFilter: ["class"]});
 
-/* ⚙ 설정 › 가사 (shared_screen_helpers.js openPlayerSettings puts it in as a part; 2026-11-19: part renamed 글꼴 → 가사) */
+/* ⚙ 설정 › 글꼴 (shared_screen_helpers.js openPlayerSettings puts it in as a part; 2026-11-19: 글꼴 → 가사 → 글꼴 again, user request).
+   One line per pick: 글꼴 + 굵기 (user request 2026-11-19), and under it a preview drawn the way the lyrics view draws it
+   (same font stack — --font-user — and the lyrics' line styles): parts split like a duet, カンタレラ (KAITO · 初音ミク).
+   Not the song's words (copyright) — each singer's greeting. 일본어 preview = the original lines, 한글 = 발음 · 번역 lines. */
+const FONT_PREV = [
+  {name: "カイト", ko: "KAITO", color: "#4f6fd8", o: "はじめまして、カイトです", r: "하지메마시테, 카이토데스", t: "처음 뵙겠습니다, 카이토입니다"},
+  {name: "初音ミク", ko: "하츠네 미쿠", color: "#39c5bb", o: "初音ミクです、よろしくね！", r: "하츠네 미쿠데스, 요로시쿠네!", t: "하츠네 미쿠예요, 잘 부탁해!"},
+];
+function fontPreview(k) {
+  const part = p => `<div class="part" style="--pc:${p.color}"><i></i>${esc(k === "ja" ? p.name : p.ko || p.name)}</div>`;  // 한글 preview: Korean names (user request 2026-11-19)
+  const roles = k === "ja" ? ["o"] : ["r", "t"];
+  return `<div class="fprev" aria-hidden="true"><div class="fprevhd">미리보기</div>${FONT_PREV.map(p => `<div class="g">${part(p)}${
+    roles.map(r => lyrLine(r, p[r], [p.color])).join("")}</div>`).join("")}</div>`;
+}
 async function fontSettingsHtml() {
   const list = await fontList(true);
-  const sel = (k, label, hint) => `<label title="${hint}">${label}<select data-font="${k}">
-      <option value="">기본</option>${fontPhone() ? '<option value="system">시스템 글꼴</option>' : ""}
-      ${list.filter(f => fontFor(f, k)).map(f => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join("")}</select></label>
-    <label title="원문 줄은 굵은 글씨라, 굵기가 하나뿐인 글꼴은 '굵게'면 가짜로 두껍게 그려짐 · 기본 글꼴은 늘 원래 굵기">${label} 굵기<select data-fbold="${k}">
-      <option value="">글꼴 그대로</option><option value="1">굵게</option></select></label>`;
+  const sel = (k, label, hint) => `<div class="frow"><label title="${hint}">${label}<select data-font="${k}">
+      <option value="">기본 가사 글꼴</option>${fontPhone() ? '<option value="system">시스템 글꼴</option>' : ""}
+      ${list.filter(f => fontFor(f, k)).map(f => `<option value="${esc(f.id)}">${esc(f.name)}${FONT.def[k] === f.id ? " ★" : ""}</option>`).join("")}</select></label>
+    <label title="원문 줄은 굵은 글씨라, 굵기가 하나뿐인 글꼴은 '굵게'면 가짜로 두껍게 그려짐 · 기본 글꼴은 늘 원래 굵기">굵기<select data-fbold="${k}">
+      <option value="">글꼴 그대로</option><option value="1">굵게</option></select></label></div>${fontPreview(k)}`;
   return sel("ja", "일본어 글꼴", "일본어(가나)와 한자(중국어 한자 포함)를 이 글꼴로")
     + sel("etc", "한글 글꼴", "한글 · 영어 · 숫자 등 일본어 · 한자가 아닌 글자를 이 글꼴로")
     + (list.length ? "" : `<p class="muted">서버에 등록된 글꼴이 아직 없습니다.</p>`)
+    + (FONT.def.ja || FONT.def.etc ? `<p class="muted">★ = 따로 고르지 않으면 쓰이는 기본 글꼴 (음원 관리 › 글꼴에서 정함)</p>` : "")
     + `<p class="muted" data-font-note hidden></p>`;
 }
 function fontSettingsBind(d) {

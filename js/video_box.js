@@ -19,12 +19,21 @@ function applySimple() {
 }
 $("btnSimple").onclick = () => { SIMPLE = !SIMPLE; store.set("simple", SIMPLE); applySimple(); showVideo(); renderRows(true); SHELL.notify(); };  // 썸네일이 빠져 줄 높이가 바뀜 → 다시 잼 · 오버레이 글자색도 바로
 applySimple();
-/* 라이트 모드 (제목 줄 오른쪽 끝 달/해 버튼): html[data-theme=light] 로 색 토큰을 바꿈 — 기억함 (첫 그림 전 적용은 player_screen.html <head>) */
+/* 화면 밝기 (제목 줄 오른쪽 끝 버튼): html[data-theme] 로 색 토큰을 바꿈 — 기억함 (첫 그림 전 적용은 player_screen.html <head>).
+   4 steps (user request 2026-11-19): light · dim (between light and dark) · dark (the default, no attribute) · black; a click
+   goes one step on (black → light). Icon: sun · thin crescent · crescent · full moon, swapped with a small turn. */
+const THEMES = ["light", "dim", "dark", "black"], THEME_NAME = {light: "밝은 화면", dim: "조금 어두운 화면", dark: "어두운 화면", black: "검은 화면"};
 function applyTheme(t) {
-  if (t === "light") document.documentElement.dataset.theme = "light"; else delete document.documentElement.dataset.theme;
-  $("btnTheme").title = t === "light" ? "어두운 화면으로" : "밝은 화면으로";
+  if (!THEMES.includes(t)) t = "dark";
+  if (t === "dark") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  const next = THEMES[(THEMES.indexOf(t) + 1) % THEMES.length];
+  $("btnTheme").title = `지금: ${THEME_NAME[t]} — 누르면 ${THEME_NAME[next]}`;
 }
-$("btnTheme").onclick = () => { const t = store.get("theme", "dark") === "light" ? "dark" : "light"; store.set("theme", t); applyTheme(t); };
+$("btnTheme").onclick = () => {
+  const cur = THEMES.indexOf(store.get("theme", "dark")), t = THEMES[((cur < 0 ? 2 : cur) + 1) % THEMES.length];  // default = dark (3rd step)
+  store.set("theme", t); applyTheme(t);
+  const b = $("btnTheme"); b.classList.remove("turn"); void b.offsetWidth; b.classList.add("turn");
+};
 applyTheme(store.get("theme", "dark"));
 function showVideo() {
   const guide = audio.biliGuide;  // Bilibili volume guide: the video shows even when folded / 간단 (play_engine.js)

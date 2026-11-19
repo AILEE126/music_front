@@ -19,11 +19,9 @@
   #box { padding: 6px 10px; display: flex; flex-direction: column; align-items: center; gap: 0; font-family: system-ui, CscJa, "Malgun Gothic", sans-serif; }
   .ln { position: relative; text-align: center; line-height: 1.15;  /* tighter, same as the PC overlay (user request 2026-11-19) */ max-width: 100%; overflow-wrap: anywhere; }
   .ln span { display: block; }
-  /* 불투명도 (user request 2026-11-18: over a pure-black phone theme the see-through letters went too dark): outline + letters
-     are drawn as one layer that turns see-through (.grp — like the SNS card's name tag), and under the letters lies an opaque
-     white copy (.base), so the letters fade toward white instead of the black screen; only the outline lets the screen through */
-  .ln .base, .ln .edge { position: absolute; inset: 0; }
-  .ln .base { color: #fff; }
+  /* 불투명도: outline + letters turn see-through as one layer (.grp). The opaque white copy under the letters (2026-11-18)
+     was dropped — it stayed white at any opacity (user report 2026-11-19) */
+  .ln .edge { position: absolute; inset: 0; }
   .ln .grp { position: relative; }
   .ln .edge { color: transparent; -webkit-text-stroke: var(--o) #000; }
   .ln .fill { position: relative; color: var(--c, #fff); }
@@ -47,7 +45,7 @@ function line(text, size, weight, opacity, colors) {
   const a = opacity * Math.max(0.1, Math.min(1, (+set.opacity || 100) / 100));
   const style = `font-size:${size}px;font-weight:${weight};--o:${2 * Math.max(0, +set.outline || 0)}px;`
     + (cs.length === 1 ? `--c:${cs[0]};` : cs.length > 1 ? `--g:linear-gradient(to bottom,${cs.join(",")});` : "");
-  return `<div class="ln${cs.length > 1 ? " grad" : ""}" style="${style}">${a < 1 ? `<span class="base">${esc(text)}</span>` : ""}<span class="grp" style="opacity:${a}"><span class="edge">${esc(text)}</span><span class="fill">${esc(text)}</span></span></div>`;
+  return `<div class="ln${cs.length > 1 ? " grad" : ""}" style="${style}"><span class="grp" style="opacity:${a}"><span class="edge">${esc(text)}</span><span class="fill">${esc(text)}</span></span></div>`;
 }
 function render() {
   const s = Math.max(6, +set.size || 22), d = now;

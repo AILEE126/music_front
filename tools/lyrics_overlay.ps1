@@ -39,7 +39,12 @@ public class OvWin {
 $GWL_EXSTYLE = -20
 $WS_EX_TRANSPARENT = 0x20; $WS_EX_TOOLWINDOW = 0x80; $WS_EX_LAYERED = 0x80000; $WS_EX_NOACTIVATE = 0x8000000
 
-$script:Root = Split-Path -Parent $PSScriptRoot                         # WEB 폴더
+# 오버레이 버전 (user request 2026-11-19): the player compares it (/ovprograms ver) with this file in its own tools/ folder
+# and asks for the new zip when the running one is older — bump it with every change of this file
+$OV_VER = 3   # 3: a newer bat replaces a running older overlay by itself
+# data folder overlay\: next to tools\ in the player repo; in the 추가기능 zip (folder 오버레이\, play_engine.js setupZip)
+# inside that folder, so unzipping a new version over it keeps the settings
+$script:Root = if ((Split-Path -Leaf $PSScriptRoot) -eq 'tools') { Split-Path -Parent $PSScriptRoot } else { $PSScriptRoot }
 $script:NowFile = if ($NowFile) { $NowFile } else { Join-Path $script:Root 'overlay\now_playing.json' }
 $script:CfgFile = if ($CfgFile) { $CfgFile } else { Join-Path $script:Root 'overlay\lyrics_overlay.json' }
 $script:ProgFile = Join-Path (Split-Path $script:NowFile) 'overlay_programs.json'
@@ -83,6 +88,16 @@ $script:editing = Test-Editing
 # ---- 한 번만 켜기 ----
 $created = $false
 $script:mutex = New-Object System.Threading.Mutex($true, 'MusicManagerLyricsOverlay', [ref]$created)
+# 새 버전 (user request 2026-11-19: unzip the new version over the old one and double-click the bat — nothing else): a
+# running overlay older than this file is told to quit (quit_at through its own /ovset), and this one takes over once it is gone
+if (-not $created -and -not $Test) {
+    $old = $null
+    try { $old = Invoke-RestMethod -Uri 'http://127.0.0.1:47613/ovprograms' -TimeoutSec 3 } catch {}
+    if ($old -and [int]$old.ver -lt $OV_VER) {
+        try { Invoke-RestMethod -Uri 'http://127.0.0.1:47613/ovset' -Method Post -Body (@{ quit_at = (Get-Epoch) } | ConvertTo-Json) -TimeoutSec 3 | Out-Null } catch {}
+        try { $created = $script:mutex.WaitOne(15000) } catch [System.Threading.AbandonedMutexException] { $created = $true }
+    }
+}
 if (-not $created -and -not $Test) {
     if (-not $Background) { Update-CfgFile @{ enabled = $true } }   # 이미 뒤에서 도는 중: bat·링크로 켰으면 보이기만
     return
@@ -213,15 +228,9 @@ function Add-Line($text, [double]$size, $brush, [double]$opacity, $weight) {
     $geo = $ft.BuildGeometry((New-Object System.Windows.Point($o, $o)))
     $box = New-Object System.Windows.Controls.Grid
     $box.Width = $ft.MaxTextWidth + 2 * $o; $box.Height = $ft.Height + 2 * $o; $box.Tag = $text
-    # 불투명도 (user request 2026-11-18: see-through letters went too dark over black screens): outline + letters turn
-    # see-through as one layer ($grp — like the SNS card's name tag) over an opaque white copy of the letters, so the letters
-    # fade toward white instead of the screen behind; only the outline lets the screen through
+    # 불투명도: outline + letters turn see-through as one layer ($grp). The opaque white copy under the letters (2026-11-18)
+    # was dropped — it stayed white at any opacity (user report 2026-11-19)
     $a = $opacity * [Math]::Max(0.1, [Math]::Min(1.0, [double]$script:cfg.opacity / 100.0))
-    if ($a -lt 1) {
-        $base = New-Object System.Windows.Shapes.Path
-        $base.Data = $geo; $base.Fill = [System.Windows.Media.Brushes]::White
-        [void]$box.Children.Add($base)
-    }
     $grp = New-Object System.Windows.Controls.Grid
     $grp.Opacity = $a
     [void]$box.Children.Add($grp)
@@ -331,7 +340,7 @@ function Invoke-Http($r) {
         '/ovprograms' {
             $items = '[]'; try { $items = [IO.File]::ReadAllText($script:ProgFile, [Text.Encoding]::UTF8).TrimStart([char]0xFEFF) } catch {}
             if (-not $items.Trim()) { $items = '[]' }
-            return '{"running":true,"items":' + $items + '}'
+            return '{"running":true,"ver":' + $OV_VER + ',"items":' + $items + '}'
         }
     }
     '{"error":"unknown"}'
