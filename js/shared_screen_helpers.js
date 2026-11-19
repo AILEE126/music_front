@@ -227,13 +227,53 @@ function renderVolume(btn, range, audio) {
     + (v === 0 ? '<path d="m16 9 5 6M21 9l-5 6"/>' : '<path d="M15.5 9.5a3.5 3.5 0 0 1 0 5"/>' + (v > .5 ? '<path d="M18.5 6.5a7.5 7.5 0 0 1 0 11"/>' : "")) + "</svg>";
 }
 
-/* ---- 설정 창 (⚙, user request 2026-11-18: 가사 · 오버레이 · 글꼴 as separate parts — PC: the parts listed on the left,
+/* ---- 설정 창 (⚙, user request 2026-11-18: 가사 · 오버레이 as separate parts — 2026-11-19 the 글꼴 part became 가사 (fonts + 굵기) — PC: the parts listed on the left,
    one shown at a time · phone: every part foldable) ----
    가사 오버레이 = tools\lyrics_overlay.bat 로 켜는 파워쉘 창 (바탕 투명 · 어느 브라우저든). 이 창에서 바꾸면 곧바로 반영.
    local_files.js 가 오버레이의 창구(127.0.0.1:47613)로 보냄 → 오버레이가 overlay\lyrics_overlay.json 에 씀 (꺼져 있으면 이 브라우저에만).
    창이 열려 있는 동안은 editing_at 을 계속 알려 줌 → 오버레이가 붙일 프로그램과 상관없이 보이고 끌어 옮길 수 있음 (닫으면 원래대로).
    켜기·끄기는 가사 도구 줄의 [오버레이] 단추 (2026-11-18 — not in this window any more) */
-const OVSET_DEFAULTS = {x: -1, y: -1, width: 1100, size: 22, info_size: 12, outline: 2, opacity: 100, clickthrough: false, target: "ffxiv_dx11", info: true, editing_at: 0, quit_at: 0, enabled: true, font_ja: "", font_etc: ""};  // font_*: font_setting.js
+/* 설정 새 항목 알림 (user request 2026-11-19): a setting added later, or a font registered in Manage › 글꼴, counts as new
+   until its part of the settings is looked at — the count is a badge on ⚙ (phone: the 설정 menu) and on the part, and the
+   new rows are marked '새로' while that window is open. A new setting = add its key here (ov · font = the ⚙ window's parts,
+   m = the phone 설정 page, data-nk in player_screen.html). The first time, everything there counts as seen. */
+const SET_KEYS = {
+  ov: ["ov.lead", "ov.target", "ov.clickthrough", "ov.info", "ov.size", "ov.info_size", "ov.outline", "ov.opacity", "ov.width", "ov.reset"],
+  font: ["font.ja", "font.etc", "font.bold_ja", "font.bold_etc"],
+  m: ["m.report", "m.overlay", "m.zoom", "m.ear.connectPlay", "m.ear.unplugPause", "m.ear.ask"],
+  play: ["play.fadein", "play.fadeout", "play.level"],  // ⚙ › 재생 (2026-11-19)
+};
+const SETNEW = {fonts: []};
+function setKeys(all = false) {
+  const phone = !all && (APP.on || document.body.classList.contains("m"));
+  return {
+    ov: SET_KEYS.ov.filter(k => all || !(phone && k === "ov.target")),  // 앞에 있을 때만: PC only
+    font: [...SET_KEYS.font, ...SETNEW.fonts.map(f => "font:" + f.id)],
+    m: all || phone ? SET_KEYS.m : [],
+    play: SET_KEYS.play,
+  };
+}
+const setNew = sec => { const seen = new Set(store.get("set.seen", [])); return (sec ? setKeys()[sec] || [] : Object.values(setKeys()).flat()).filter(k => !seen.has(k)); };
+function setSeen(keys) {
+  const seen = new Set(store.get("set.seen", []));
+  if (!keys.some(k => !seen.has(k))) return;
+  keys.forEach(k => seen.add(k)); store.set("set.seen", [...seen]); setBadge();
+}
+/* the badges: ⚙ (PC toolbar) · the phone menu's 설정 and its '가사 · 오버레이 설정' button */
+function setBadge() {
+  const put = (el, n) => { if (el) { el.hidden = !n; el.textContent = n; } };
+  const win = setNew("ov").length + setNew("font").length + setNew("play").length;
+  put(document.getElementById("setBadge"), win);
+  put(document.getElementById("mSetBadge"), win + setNew("m").length);
+  put(document.getElementById("mOvBadge"), win);
+}
+/* at start, once our data can be read (registered fonts come from it) */
+async function setNewInit() {
+  if (typeof fontList === "function") SETNEW.fonts = await fontList().catch(() => []);
+  if (store.get("set.seen", null) === null) store.set("set.seen", Object.values(setKeys(true)).flat());
+  setBadge();
+}
+const OVSET_DEFAULTS ={x: -1, y: -1, width: 1100, size: 22, info_size: 12, outline: 2, opacity: 100, clickthrough: false, target: "ffxiv_dx11", info: true, editing_at: 0, quit_at: 0, enabled: true, font_ja: "", font_etc: "", font_bold_ja: false, font_bold_etc: false};  // font_*: font_setting.js
 async function openPlayerSettings() {
   let c, progs = [];
   LOCAL.ovEnable();  // from now on this browser talks to the overlay (no folder picking — user request)
@@ -249,10 +289,18 @@ async function openPlayerSettings() {
   d.className = "uidlg ovset " + (phoneUi ? "setfold" : "setnav");
   const lead = typeof SHELL !== "undefined" && SHELL.setLead;  // 플레이어 화면에서만
   const fonts = typeof fontSettingsHtml === "function" ? await fontSettingsHtml() : "";  // 글꼴 (font_setting.js, player only)
-  const secs = [["ov", "오버레이"], fonts && ["font", "글꼴"], lead && ["play", "재생"]].filter(Boolean);  // 재생: 페이드 · 소리 크기 (2026-11-19, player only)  // 가사 먼저 보이기 moved into 오버레이 (user request 2026-11-18)
-  const sec = (k, html) => `<section class="setsec" data-sec="${k}"><button type="button" class="sethead" data-fold="${k}">${secs.find(s => s[0] === k)[1]}</button><div class="setbody">${html}</div></section>`;
+  const secs = [fonts && ["font", "가사"], lead && ["play", "재생"], ["ov", "오버레이"]].filter(Boolean);  // 재생: 페이드 (2026-11-19, player only)  // 가사 먼저 보이기 moved into 오버레이 (user request 2026-11-18) · 글꼴 → 가사, first (2026-11-19)
+  if (fonts) SETNEW.fonts = FONT.list || [];  // just read fresh by fontSettingsHtml
+  const fresh = Object.fromEntries(secs.map(([k]) => [k, setNew(k)]));  // new items, as they were when the window opened
+  const nb = k => `<b class="setnb"${fresh[k].length ? "" : " hidden"}>${fresh[k].length}</b>`;
+  const sec = (k, html) => `<section class="setsec" data-sec="${k}"><button type="button" class="sethead" data-fold="${k}">${secs.find(s => s[0] === k)[1]}${nb(k)}</button><div class="setbody">${html}</div></section>`;
   d.innerHTML = `<div class="dlg-head hx">설정<button class="ib dlgx" data-act="close" title="닫기 (Esc)" aria-label="닫기">✕</button></div><div class="dlg-body">
-    <nav class="setlist">${secs.map(([k, t]) => `<button type="button" data-pick="${k}">${t}</button>`).join("")}</nav><div class="setpanes">${sec("ov", `${lead ? `
+    <nav class="setlist">${secs.map(([k, t]) => `<button type="button" data-pick="${k}">${t}${nb(k)}</button>`).join("")}</nav><div class="setpanes">${fonts ? sec("font", fonts) : ""}${lead ? sec("play", `
+    <label title="곡이 시작할 때 소리를 0 에서 서서히 키움 (0 = 끔)">페이드 인 <b data-fade-v="fadeIn"></b><input type="range" min="0" max="5" step="0.5" data-fade="fadeIn"></label>
+    <label title="곡이 끝나기 전 이만큼 동안 소리를 서서히 줄임 (0 = 끔)">페이드 아웃 <b data-fade-v="fadeOut"></b><input type="range" min="0" max="8" step="0.5" data-fade="fadeOut"></label>
+    <p class="muted">비리비리 영상은 음원 플레이어 확장 프로그램이 있어야 적용돼요 (배속 버튼에서 넣을 수 있어요).</p>
+    <label class="inline" title="곡마다 실제 소리 크기를 재서 모든 곡을 같은 크기로 (국제 표준 측정 방식 · 한 번 잰 곡은 다음부터 처음부터 맞춤)"><input type="checkbox" data-level> 소리 크기 맞추기</label>
+    <p class="muted">영상은 음원 플레이어 확장 프로그램(PC) 또는 앱이 있어야 돼요. 없으면 사이트가 맞춘 크기 그대로예요. 음원 파일 링크는 안 돼요.</p>`) : ""}${sec("ov", `${lead ? `
     <label title="싱크는 그대로 두고, 재생할 때 가사만 이만큼 먼저 넘어감 (0.10 ~ 1.00초, 0.01초 단위 · 기본 0.50초)">가사 먼저 보이기 <b data-lead></b><input type="range" min="0.1" max="1" step="0.01" data-lead-r></label>` : ""}
     <p class="muted">바탕이 투명한 가사 창 (어느 브라우저든) — 켜기·끄기는 가사 도구 줄의 [오버레이] 단추. 이 창을 열어 둔 동안은 오버레이가 늘 보이고 끌어서 옮길 수 있어요.</p>
     <label${phoneUi ? " hidden" : ""}>이 프로그램이 앞에 있을 때만 보이기 <select data-k="target">
@@ -266,26 +314,37 @@ async function openPlayerSettings() {
     <label>불투명도 <b data-v="opacity"></b><input type="range" min="10" max="100" step="5" data-k="opacity"></label>
     <label>가로 폭 <b data-v="width"></b><input type="range" min="300" max="3000" step="50" data-k="width"></label>
     <p class="muted">발음·번역 줄은 플레이어의 '발음'·'번역' 체크를 따릅니다.</p>
-    <div class="row"><button data-act="reset">위치 처음으로 (화면 아래 가운데)</button></div>`)}${fonts ? sec("font", fonts) : ""}${lead ? sec("play", `
-    <label title="곡이 시작할 때 소리를 0 에서 서서히 키움 (0 = 끔)">페이드 인 <b data-fade-v="fadeIn"></b><input type="range" min="0" max="5" step="0.5" data-fade="fadeIn"></label>
-    <label title="곡이 끝나기 전 이만큼 동안 소리를 서서히 줄임 (0 = 끔)">페이드 아웃 <b data-fade-v="fadeOut"></b><input type="range" min="0" max="8" step="0.5" data-fade="fadeOut"></label>
-    <p class="muted">비리비리 영상은 음원 플레이어 확장 프로그램이 있어야 적용돼요 (배속 버튼에서 넣을 수 있어요).</p>
-    <label class="inline" title="곡마다 실제 소리 크기를 재서 모든 곡을 같은 크기로 (국제 표준 측정 방식 · 한 번 잰 곡은 다음부터 처음부터 맞춤)"><input type="checkbox" data-level> 소리 크기 맞추기</label>
-    <p class="muted">영상은 음원 플레이어 확장 프로그램(PC) 또는 앱이 있어야 돼요. 없으면 사이트가 맞춘 크기 그대로예요. 음원 파일 링크는 안 돼요.</p>`) : ""}</div></div>`;
+    <div class="row"><button data-act="reset">위치 처음으로 (화면 아래 가운데)</button></div>`)}</div></div>`;
+  // new rows: marked '새로' while this window is open (a new font: its pick and the option)
+  const rowOf = {"play.fadein": "[data-fade=fadeIn]", "play.fadeout": "[data-fade=fadeOut]", "play.level": "[data-level]", "ov.lead": "[data-lead-r]", "ov.reset": "[data-act=reset]", "font.ja": "select[data-font=ja]", "font.etc": "select[data-font=etc]", "font.bold_ja": "[data-fbold=ja]", "font.bold_etc": "[data-fbold=etc]"};
+  for (const k of Object.values(fresh).flat()) {
+    if (k.startsWith("font:")) {
+      const o = d.querySelector(`select[data-font] option[value="${CSS.escape(k.slice(5))}"]`);
+      if (o) { o.textContent += " (새로)"; o.closest("label").classList.add("isnew"); }
+      continue;
+    }
+    const el = d.querySelector(rowOf[k] || `[data-k="${k.slice(3)}"]`);
+    if (el) (el.closest("label") || el).classList.add("isnew");
+  }
+  // a part counts as seen once it is shown (PC) or opened (phone) — its badge goes, the row marks stay till the window closes
+  const seen = k => { setSeen(fresh[k]); d.querySelectorAll(`[data-pick="${k}"] .setnb,[data-fold="${k}"] .setnb`).forEach(b => b.hidden = true); };
   // PC: the picked part only (remembered) · phone: each part folds by its title (open ones remembered)
   const pick = k => {
     store.set("set.sec", k);
     d.querySelectorAll("[data-pick]").forEach(b => b.classList.toggle("on", b.dataset.pick === k));
     d.querySelectorAll(".setsec").forEach(s => s.classList.toggle("cur", s.dataset.sec === k));
+    if (!phoneUi) seen(k);
   };
   const opened = new Set(store.get("set.open", ["ov"]));
   d.querySelectorAll(".setsec").forEach(s => s.classList.toggle("open", opened.has(s.dataset.sec)));
+  if (phoneUi) secs.forEach(([k]) => opened.has(k) && seen(k));
   pick(secs.some(s => s[0] === store.get("set.sec", "")) ? store.get("set.sec", "") : secs[0][0]);
   d.addEventListener("click", e => {
     const p = e.target.closest("[data-pick]"); if (p) return pick(p.dataset.pick);
     const f = e.target.closest("[data-fold]"); if (!f) return;
     const s = f.closest(".setsec"), on = s.classList.toggle("open");
     on ? opened.add(s.dataset.sec) : opened.delete(s.dataset.sec);
+    if (on) seen(s.dataset.sec);
     store.set("set.open", [...opened]);
   });
   if (fonts) fontSettingsBind(d);

@@ -98,6 +98,11 @@ a.ctxi:hover,button.ctxi:hover,.ctxsub:hover>.ctxi{background:var(--accent-soft)
 .ovset.setfold .setsec:not(.open) .setbody{display:none}
 .ovset.setfold .setbody{padding:0 2px 10px}
 .ovset .muted{font-size:12px;opacity:.75;margin:6px 0}
+/* 새 항목 (user request 2026-11-19): count on the part, red line beside the new rows while the window is open */
+.ovset .setnb{display:inline-block;min-width:16px;height:16px;margin-left:6px;padding:0 4px;box-sizing:border-box;border-radius:8px;
+  background:var(--err);color:#fff;font-size:10.5px;font-weight:800;line-height:16px;text-align:center}
+.ovset .setnb[hidden]{display:none}
+.ovset .setbody .isnew{margin-left:-8px;padding-left:5px;border-left:3px solid var(--err)}
 .ovset select{max-width:100%}
 /* 오버레이 켜기/끄기 단추 (켜져 있으면 초록) */
 .ovpow{white-space:nowrap}

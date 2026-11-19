@@ -39,6 +39,8 @@ function reportKindChanged() {
 }
 $("reportNow").onclick = () => { const it = SHELL.now || cur; if (!it) return uiAlert("재생 중인 곡이 없습니다."); $("reportQ").value = ""; setReportSong(it); };
 $("reportKind").addEventListener("change", reportKindChanged);
+// VocaDB에서 검색하기: searches what is typed in the request box (empty = the search page)
+$("reportVdb").onclick = () => { const q = $("reportQ").value.trim(); $("reportVdb").href = "https://vocadb.net/Search?searchType=Song" + (q ? "&filter=" + encodeURIComponent(q) : ""); };
 $("reportFrom").addEventListener("input", reportCanSend);
 /* 그림 붙이기 (user request 2026-11-15): 최대 5장 — Ctrl+V · 창에 끌어 놓기 · 파일 고르기. 보내기 전에 줄여서 (긴 변 1600px JPEG)
    신고 파일 안에 data URL 로 (깃허브엔 신고 하나 = 커밋 하나 그대로) → 음원 관리 › 오류 신고에서 봄 */
@@ -152,7 +154,7 @@ $("reportQ").addEventListener("input", () => {
   if (reportReq()) { reportCanSend(); return; }  // request: the box is the song name, no search
   const raw = $("reportQ").value.trim(), seq = ++reportSeq;
   const show = (hits, more) => {
-    $("reportList").innerHTML = hits.map((it, i) => `<div class="ri" data-i="${i}">${titleHtml(it)} <span class="hint">${esc(shortName(it.artist || ""))}${it.deleted ? " · 삭제됨" : ""}${it.api ? " · VocaDB" : ""}</span></div>`).join("")
+    $("reportList").innerHTML = hits.map((it, i) => `<div class="ri" data-i="${i}">${verChipHtml(it)}${titleHtml(it)} <span class="hint">${esc(shortName(it.artist || ""))}${it.deleted ? " · 삭제됨" : ""}${it.api ? " · VocaDB" : ""}</span></div>`).join("")
       + (more ? '<div class="hint">우리 DB 에서 찾는 중…</div>' : "") || (raw ? '<div class="hint">맞는 곡이 없습니다</div>' : "");
     $("reportList").onclick = e => { const r = e.target.closest(".ri[data-i]"); if (!r) return; $("reportQ").value = ""; setReportSong(LOCAL.remember(hits[+r.dataset.i])); };
   };

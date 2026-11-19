@@ -58,6 +58,7 @@ async function offlineOpened() {
   LOCAL.userSyncSoon();  // registers the nickname · uploads 저장된 필터 (only when changed)
   LOCAL.ovReopen();  // 이 브라우저에서 오버레이를 쓴 적이 있으면 바로 오버레이와 주고받음
   fontApply();  // 고른 글꼴 (font_setting.js) — in the background, the screen doesn't wait for font files
+  setNewInit();  // 설정 새 항목 badge (shared_screen_helpers.js) — needs the registered fonts
   // the song shown first: tab reloaded while a song played (e.g. the browser reloaded it by itself) → go on playing it from
   // there; else the last song, paused. Only its block is read before the screen opens
   const res = SHELL.takeResume(), vid = k => (/\/vocadb_(\d+)$/.exec(k || "") || [])[1];
@@ -168,10 +169,10 @@ document.addEventListener("keydown", e => {
   else if (e.key === "ArrowLeft") audio.currentTime = Math.max(0, audio.currentTime - 5);
 });
 
-/* 가사 도구 줄 접기 · 펴기 (user request; remembered) */
+/* 가사 도구 줄 접기 · 펴기 (user request) — always opens unfolded, the fold is not remembered (user request 2026-11-19) */
 function applyBar(fold) { document.body.classList.toggle("barfold", fold); $("btnBar").title = fold ? "가사 도구 펴기" : "가사 도구 접기"; }
-applyBar(!!store.get("barFold", false));
-$("btnBar").onclick = () => { const f = !document.body.classList.contains("barfold"); store.set("barFold", f); applyBar(f); };
+applyBar(false);
+$("btnBar").onclick = () => applyBar(!document.body.classList.contains("barfold"));
 
 /* ================= 시작 ================= */
 (async () => {

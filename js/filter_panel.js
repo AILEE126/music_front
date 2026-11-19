@@ -515,7 +515,7 @@ const warmSearch = () => warmP || (warmP = (async () => {
   await searchBase();
   const all = VDB.all();
   if (!$("searchDlg").open) searchReset();  // the state the window opens in
-  for (let i = 0; i < all.length; i++) { sameKeyOf(all[i], all); if (!(i & 1023)) { warmStep("family", i, all.length); await tick(); } }  // 같은 곡 묶음 (song_filter.js) — once per song
+  for (let i = 0; i < all.length; i++) { verOf(all[i], all); if (!(i & 1023)) { warmStep("family", i, all.length); await tick(); } }  // 같은 곡 묶음 · 공식 여부 (song_filter.js) — once per song
   warmStep("rank");
   // title places: kept from today's list, else made in the worker (the screen free meanwhile) — every sort below needs them
   if (!await titleRanksKept(all, tick)) await titleRanks(all, tick);

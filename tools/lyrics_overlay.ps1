@@ -49,7 +49,7 @@ $EDIT_MS = 8000     # 설정 창이 3초마다 '열려 있음'을 알려 줌 →
 $UTF8 = New-Object Text.UTF8Encoding $false
 
 # ---- 설정 (⚙ 설정 창에서 바꿈 · 위치는 끌어 옮길 때 이 창이 씀) — 서버 web_api\lyrics_overlay_files.py 와 같은 기본값 ----
-$DEFAULTS = @{ x = -1; y = -1; width = 1100; size = 22; info_size = 12; outline = 2; opacity = 100; clickthrough = $false; target = 'ffxiv_dx11'; info = $true; editing_at = 0; quit_at = 0; enabled = $true; font_ja = ''; font_etc = '' }
+$DEFAULTS = @{ x = -1; y = -1; width = 1100; size = 22; info_size = 12; outline = 2; opacity = 100; clickthrough = $false; target = 'ffxiv_dx11'; info = $true; editing_at = 0; quit_at = 0; enabled = $true; font_bold_ja = $false; font_bold_etc = $false; font_ja = ''; font_etc = '' }
 $script:cfg = $DEFAULTS.Clone()
 $script:cfgWrite = [datetime]::MinValue
 function Read-Json($path) { [IO.File]::ReadAllText($path, [Text.Encoding]::UTF8).TrimStart([char]0xFEFF) | ConvertFrom-Json }
@@ -195,9 +195,17 @@ $JA_RE = '(?:[\u3000-\u30FF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\
 function Add-Line($text, [double]$size, $brush, [double]$opacity, $weight) {
     $o = [Math]::Max(0.0, [double]$script:cfg.outline)
     $etc = Get-OvFont ([string]$script:cfg.font_etc); $ja = $(if ([string]$script:cfg.font_ja) { Get-OvFont ([string]$script:cfg.font_ja) } else { $script:fontJa })
-    $tf = New-Object System.Windows.Media.Typeface($etc, [System.Windows.FontStyles]::Normal, $weight, [System.Windows.FontStretches]::Normal)
+    # 굵기 (user request 2026-11-19): a picked font is drawn at its own weight (WPF fakes bold for a one-weight font) unless
+    # the player's ⚙ 글꼴 '굵게' is on for that pick
+    $normal = [System.Windows.FontWeights]::Normal
+    $wEtc = $(if ([string]$script:cfg.font_etc -and -not $script:cfg.font_bold_etc) { $normal } else { $weight })
+    $wJa = $(if ([string]$script:cfg.font_ja -and -not $script:cfg.font_bold_ja) { $normal } else { $weight })
+    $tf = New-Object System.Windows.Media.Typeface($etc, [System.Windows.FontStyles]::Normal, $wEtc, [System.Windows.FontStretches]::Normal)
     $ft = New-Object System.Windows.Media.FormattedText($text, [Globalization.CultureInfo]::CurrentUICulture, [System.Windows.FlowDirection]::LeftToRight, $tf, $size, $brush)
-    if ($ja -ne $etc) { foreach ($m in [regex]::Matches([string]$text, $JA_RE)) { $ft.SetFontFamily($ja, $m.Index, $m.Length) } }
+    foreach ($m in [regex]::Matches([string]$text, $JA_RE)) {
+        if ($ja -ne $etc) { $ft.SetFontFamily($ja, $m.Index, $m.Length) }
+        if ($wJa -ne $wEtc) { $ft.SetFontWeight($wJa, $m.Index, $m.Length) }
+    }
     # fixed line height (user request 2026-11-19): the font's own was taller for lines with Yu Gothic (Japanese) than Malgun
     # Gothic ones, so the gap after a Japanese line looked wider; 1.15 × size = tighter and the same for every line
     $ft.LineHeight = $size * 1.15

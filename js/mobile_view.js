@@ -284,6 +284,13 @@
     $("mSetEarNote").hidden = APP.on && APP.ear !== null;
   }
   dlg.addEventListener("toggle", renderEar);  // fresh each time it opens
+  // 새 항목 (shared_screen_helpers.js setNew): rows added since last time are marked while the page is open, then count as seen
+  dlg.addEventListener("toggle", () => {
+    if (!dlg.open) return;
+    const fresh = setNew("m");
+    dlg.querySelectorAll("[data-nk]").forEach(el => el.classList.toggle("isnew", fresh.includes(el.dataset.nk)));
+    setSeen(fresh);
+  });
   renderEar();
 
   /* 이어폰 (user request 2026-11-15 — phone app only, it tells plugged / unplugged; defaults above):

@@ -135,8 +135,8 @@ function ltChRetrySoon(ms) { LT.retryAt = Date.now() + ms; setTimeout(ltChRetry,
 /* host: start playing (first one in) or carry on (took over from a host that left — the song is already playing here) */
 async function ltChStart(took) {
   const conf = ltChConf();
-  if (!conf) { ltLeave(true); LT.status = "OPEN CHANNEL 이 꺼져 있습니다"; return ltRender(); }
-  LT.title = conf.title || "";
+  if (!conf && !(took && LT.chList)) { ltLeave(true); LT.status = "OPEN CHANNEL 이 꺼져 있습니다"; return ltRender(); }  // took over: its list goes on
+  LT.title = conf ? conf.title || "" : LT.title;
   if (!LT.chList) {  // a guest taking over already has it (ltChGuestPl)
     LT.status = "채널 재생목록을 만드는 중…"; ltRender();
     const list = await ltChSongs(conf.groups);
@@ -149,7 +149,7 @@ async function ltChStart(took) {
   LT.coolKey = SHELL.now ? keyOf(SHELL.now) : "";
   ltMembers(); ltSendReqs();
   if (took && SHELL.now) { if (!SHELL.upcoming.length) SHELL.plan(SHELL.now); ltSendQueue(); return ltBroadcast(); }
-  if (ltChRestore(conf)) return;
+  if (conf && ltChRestore(conf)) return;
   SHELL.pinned = []; SHELL.plan(null); SHELL.next(true);
 }
 /* 마지막 사람이 나가도 1분 동안은 이어지는 것처럼 (user request 2026-11-17): the last listener leaving (나가기 · closing ·
@@ -639,6 +639,7 @@ function ltGuestGot(m) {
     try { c.close(); } catch (e) {}
     return;
   }
+  if (m.t === "bye" && LT.chOn) return ltGuestGot({t: "handover", to: ""});  // the channel never closes on guests (user 2026-11-19)
   if (m.t === "bye") { const code = LT.code; ltLeave(true); LT.status = "방장이 방을 닫았습니다"; return ltRescan(code, 800); }
   if (m.t === "members") { LT.members = m.list || []; LT.colors = m.colors || {}; LT.title = m.title || ""; LT.open = m.open !== false; return ltRender(); }
   if (m.t === "state") return ltApply(m.s, performance.now());
@@ -739,20 +740,37 @@ function ltLeave(quiet) {
   ltRender();
 }
 
-/* OPEN CHANNEL: stopped from outside → leave (user request 2026-11-18). Phone: another app playing media takes the sound and
-   the player pauses; nobody controls the channel, so the one paused leaves it — the others go on (holder → handover), and
-   alone = the usual 1-min snapshot. Our own pauses never get here (audio.pause is blocked in the channel); song end, a song
-   change, lining up (prep) and a failing song are not "outside". Checked after a moment: a pause that comes right back isn't one. */
-const ltOuter = {timer: 0, ended: false};
+/* OPEN CHANNEL is left only by 나가기 (user 2026-11-19: never thrown out otherwise). One exception, phones only (app or a touch
+   browser — user request 2026-11-18): another app playing media takes the sound and the player pauses → that one person leaves
+   (the others go on: holder → handover; alone = the usual 1-min snapshot). Everywhere else a pause we didn't make is undone:
+   play again. Our own pauses never get here (audio.pause is blocked in the channel); song end, a song change, lining up (prep)
+   and a failing song are not "outside". Checked after a moment: a pause that comes right back isn't one.
+   User report 2026-11-19 (the whole channel thrown out at once): at a song start every guest gets "go" together → play(); the
+   embed's late answer to the priming pause (Niconico: paused after playing) looked like an outside pause. So on phones too a
+   pause within a few seconds of our own play / load / seek is the player settling → play again, not leave. */
+const ltOuter = {timer: 0, ended: false, cmdAt: 0, again: {}};
+const LT_SETTLE = 4000;
+const ltPhone = () => (typeof APP !== "undefined" && APP.on) || matchMedia("(pointer: coarse)").matches && !matchMedia("(any-pointer: fine)").matches;
 function ltChOuterPause() {
   if (!LT.chOn || !LT.role || ltApplying || LT.prep || LT.gprep || audio.priming || LT.reloading) return;
   const k = SHELL.now ? keyOf(SHELL.now) : "";
   ltOuter.ended = false;
   clearTimeout(ltOuter.timer);
+  const still = () => LT.chOn && LT.role && k && !ltOuter.ended && audio.paused && !audio.error && !LT.prep && !LT.gprep && !LT.reloading
+    && SHELL.now && keyOf(SHELL.now) === k;
+  const settling = performance.now() - ltOuter.cmdAt < LT_SETTLE && (ltOuter.again[k] || 0) < 2;  // twice per song at most
+  if (!ltPhone() || settling) {
+    if (settling) ltOuter.again = {[k]: (ltOuter.again[k] || 0) + 1};
+    ltOuter.timer = setTimeout(() => {
+      if (!still()) return;
+      diag("lt", "channel: paused not by us — play again");
+      ltQuiet(() => { audio.play().catch(() => {}); });
+    }, 1500);
+    return;
+  }
   ltOuter.timer = setTimeout(() => {
-    if (!LT.chOn || !LT.role || !k || ltOuter.ended || !audio.paused || audio.error || LT.prep || LT.gprep || LT.reloading) return;
-    if (!SHELL.now || keyOf(SHELL.now) !== k) return;
-    ltLeave(true); LT.status = "다른 곳에서 재생이 멈춰 OPEN CHANNEL 에서 나왔습니다"; ltRender();
+    if (!still()) return;
+    ltLeave(true); LT.status = "다른 앱에서 재생이 시작돼 OPEN CHANNEL 에서 나왔습니다"; ltRender();
   }, 2500);
 }
 
@@ -781,8 +799,8 @@ function ltKeep() {
     if (LT.host) {
       ltSend(LT.host, {t: "ping", at: performance.now()});
       if (now - LT.lastHeard > LT_SILENT) { const c = LT.host; ltGuestLost(); try { c.close(); } catch (e) {} }
-    } else if (now - LT.lostAt > LT_GIVE_UP) { ltLeave(true); LT.status = "방장과 연결이 끊겼습니다 (3분 동안 다시 잇지 못함)"; ltRender(); }
-    else if (LT.chOn) ltChRetry();
+    } else if (!LT.chOn && now - LT.lostAt > LT_GIVE_UP) { ltLeave(true); LT.status = "방장과 연결이 끊겼습니다 (3분 동안 다시 잇지 못함)"; ltRender(); }
+    else if (LT.chOn) { ltChRetry(); if (now - LT.lostAt > LT_GIVE_UP) { LT.status = "채널과 다시 잇는 중… (인터넷 확인)"; ltRender(); } }  // channel: never gives up (user 2026-11-19)
     else if (now >= LT.retryAt) {
       LT.retryAt = now + 16000;  // 한 번 잇기에 최대 15초
       const old = LT.peer;
@@ -801,6 +819,7 @@ function ltKeep() {
   SHELL.load = function (it, autoplay = true, how = "") {
     if (locked() || chLocked() && how !== "next") return Promise.resolve();
     ltPrepEnd();
+    ltOuter.cmdAt = performance.now();
     const prep = LT.role === "host" && autoplay && [...LT.conns.keys()].some(c => c.open);  // guests here → start together
     if (prep) ltPrepStart();
     const r = load.call(this, it, autoplay && !prep, how);  // prep: loaded paused at 0 — ltGo starts it
@@ -832,9 +851,9 @@ function ltKeep() {
   Object.defineProperty(audio, "currentTime", {
     configurable: true,
     get() { return ct.get.call(this); },
-    set(t) { if (!locked() && !chLocked()) ct.set.call(this, t); else setTimeout(() => tick(true), 0); },  // 막으면 위치 막대를 제자리로
+    set(t) { if (!locked() && !chLocked()) { ltOuter.cmdAt = performance.now(); ct.set.call(this, t); } else setTimeout(() => tick(true), 0); },  // 막으면 위치 막대를 제자리로
   });
-  audio.play = function () { return locked() ? Promise.resolve() : proto.play.call(this); };
+  audio.play = function () { if (locked()) return Promise.resolve(); ltOuter.cmdAt = performance.now(); return proto.play.call(this); };
   audio.pause = function () { if (!locked() && !chLocked()) return proto.pause.call(this); };
   ["play", "playing", "pause", "seeked", "loadedmetadata"].forEach(ev => audio.addEventListener(ev, ltBroadcast));
   audio.addEventListener("playing", ltWant);
@@ -955,10 +974,11 @@ function ltRenderCh() {
   const here = LT.chOn && !!LT.role;
   const info = here ? {n: LT.members.length || 1, song: SHELL.now ? SHELL.now.title || "" : ""} : LTS.ch;
   const n = info ? info.n || 1 : 0;
-  // one line only (user request 2026-11-17: the description / '늘 열려 있음' text pushed 입장 down) — count only while live
-  row.innerHTML = `<div class="ltroom ltch${here ? " here" : ""}${n ? " on" : ""}" title="${esc(conf.title || "OPEN CHANNEL")}${n && info.song ? " · ♪ " + esc(info.song) : ""}">
+  // one line only (user request 2026-11-17: the description / '늘 열려 있음' text pushed 입장 down)
+  // always on air (user request 2026-11-19: shown playing whether anyone is in or not) — the count only while someone is
+  row.innerHTML = `<div class="ltroom ltch on${here ? " here" : ""}" title="${esc(conf.title || "OPEN CHANNEL")}${n && info.song ? " · ♪ " + esc(info.song) : ""}">
     <span class="who"><span class="ltchdot"></span><span class="ltchname">OPEN CHANNEL</span></span>
-    <span class="meta">${n ? `${n}명` : ""}</span>
+    <span class="meta">${n ? `${n}명 듣는 중` : "재생 중"}</span>
     ${here ? `<span class="here">지금 있는 채널</span>` : `<button class="primary" data-ch="1">${LT.role ? "채널로 옮기기" : "입장"}</button>`}
   </div>`;
 }
@@ -1073,7 +1093,7 @@ $("ltRefresh").onclick = () => { LTS.retry = 0; ltScan(); };
 /* ---------- 화면 ---------- */
 function ltRender() {
   const b = $("btnListen"), n = LT.members.length, rooms = LTS.rooms ? LTS.rooms.length : 0, ch = !!ltChConf();
-  const chLive = ch && (!!LTS.ch || LT.chOn && !!LT.role);  // someone is in the channel
+  const chLive = ch;  // OPEN CHANNEL always looks on air, listeners or not (user request 2026-11-19)
   b.classList.toggle("on", !!LT.role);
   b.classList.toggle("live", rooms > 0 || chLive);  // a room is open → a moving wave on the button (user request 2026-11-15)
   b.classList.toggle("reqwait", LT.role === "host" && LT.reqs.some(r => r.state === "wait"));  // blinks (also the phone menu's 같이듣기)
@@ -1132,14 +1152,13 @@ function ltRender() {
   else $("ltRoomHint").textContent = "곡 재생 제어는 방장만 가능합니다.";
   $("ltRoomHint").hidden = LT.role === "host" && !LT.chOn;
   const mem = LT.members.length ? LT.members : [hostName];
-  // channel (user request 2026-11-17): no name chips — just how many are listening
+  // channel: how many are listening + their name chips (user request 2026-11-19 — was count only), no crown (nobody leads)
   document.querySelector("#ltRoom .ltmemhead").firstChild.textContent = LT.chOn ? "" : "참여자 ";
   $("ltMemCount").textContent = LT.chOn ? `${mem.length}명 듣는 중` : `${mem.length}명`;
-  $("ltMembers").hidden = LT.chOn;
-  // 대표색상 (user request 2026-11-17): chip see-through in that person's color (rooms only — the channel shows no chips)
+  // 대표색상 (user request 2026-11-17): chip see-through in that person's color — the channel too (2026-11-19)
   $("ltMembers").innerHTML = mem.map((m, i) => {
     const k = ltKey(ltNick(m)), c = okColor((LT.colors || {})[k] || (k === ltKey(LT.me) ? ltMyColor() : ""));
-    return `<li class="${k === ltKey(LT.me) ? "me" : ""}${c ? " mc" : ""}"${c ? ` style="--mc:${c}"` : ""}>${i === 0 && !LT.chOn ? ltCrownSvg() : ""}${esc(ltNick(m))}</li>`;
+    return `<li class="${k === ltKey(LT.me) ? "me" : ""}${c ? " mc" : ""}"${c ? ` style="--mc:${c}"` : ""}>${i === 0 && !LT.chOn ? ltCrownSvg() : ""}${esc(ltNick(m) || "익명")}</li>`;
   }).join("");
   // 방장의 재생목록 필터 (user request 2026-11-15) — host: mine · guest: what the host sent
   const plf = LT.role === "host" && !LT.chOn ? PLF : LT.hostPlf;
@@ -1256,7 +1275,7 @@ function ltRenderPop() {
       + (ltOpt.busy ? '<div class="fdd-none">우리 DB 에서 찾는 중…</div>' : os.length ? "" : '<div class="fdd-none">맞는 곡이 없습니다</div>')
       + os.map((o, i) => {
         const r = LT.reqs.find(r => r.key === keyOf(o.it));
-        return `<div class="fdd-opt${i === ltHl ? " hl" : ""}" data-i="${i}"><span class="t">${titleHtml(o.it)} <span class="a">${esc(shortName(o.it.artist || ""))}</span></span>${
+        return `<div class="fdd-opt${i === ltHl ? " hl" : ""}" data-i="${i}"><span class="t">${verChipHtml(o.it)}${titleHtml(o.it)} <span class="a">${esc(shortName(o.it.artist || ""))}</span></span>${
           r ? `<span class="st ${r.state}">${LT_REQ_STATE[r.state]}</span>` : `<span class="go">신청</span>`}</div>`;
       }).join("");
   } else {

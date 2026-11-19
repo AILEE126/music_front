@@ -97,6 +97,27 @@ function sameFam(it, byId) {
 }
 const sameIds = new WeakMap();  // 목록(배열) → {VocaDB 번호: 곡}
 const peopleSet = s => new Set(String(s || "").split(/\s*[,，、&＆/]\s*/).map(x => x.trim()).filter(Boolean));
+/* 공식 여부 (user request 2026-11-19: 공식 곡엔 공식, 그 밖은 우타이테(사람 커버) · 엔진 커버 — 태그를 넣지 않고 코드로 가름,
+   곡 검색 결과에 싱크처럼 보임). 규칙 = 서버 vocadb/filter_settings.py vers() 와 같음 (음원 관리 › 필터 › 하위 태그에 펼쳐 보는 설명).
+   공식: 커버가 아니면 _own (같은 곡 묶음 맨 위 곡이거나 그 프로듀서가 참여 — '원작자 먼저' 와 같음) · 커버면 원곡 번호를 제목과
+   상관없이 끝까지 따라간 곡의 프로듀서가 참여 (사람 원곡의 원작자 보카로판 — HoneyWorks 등은 VocaDB 에서 커버, 영어 커버는 제목이 다름).
+   공식 아닌 커버: 보컬 종류 엔진 · 섞임 → 엔진 커버, 사람 → 우타이테. 나머지(남의 리믹스 …)는 값 없음. its 없이 부르면 정해 둔 값만 */
+const VERS = ["공식", "엔진 커버", "우타이테"];
+function verOf(it, its) {
+  if (it._ver !== undefined) return it._ver;
+  if (!its) return "";
+  sameKeyOf(it, its);
+  const cover = it.type === "Cover", self = String(it.vocadb || it.name);
+  let own = it._own;
+  if (cover) {
+    const byId = sameIds.get(its);
+    let top = null;
+    for (let o = it.origId, i = 0; byId && o && i < 20 && String(o) !== self && byId.has(String(o)); i++) { top = byId.get(String(o)); o = top.origId; }
+    const tp = top ? peopleSet(top.composer) : null;
+    own = !!tp && [...peopleSet(it.composer)].some(p => tp.has(p));
+  }
+  return it._ver = own ? "공식" : !cover ? "" : it.vkind === "사람" ? "우타이테" : it.vkind === "엔진" || it.vkind === "섞임" ? "엔진 커버" : "";
+}
 /* 묶음 열쇠는 곡마다 한 번만 (it._fam — 곡 데이터를 다시 읽으면 곡도 새로 만들어짐) · it._own: 묶음 맨 위 곡의 프로듀서가 참여 */
 function sameKeyOf(it, its) {
   if (it._fam !== undefined) return it._fam;
@@ -189,6 +210,7 @@ const FKIND = {
   same_sort: ["같은 곡 정렬", () => true],  // 곡 하나로는 안 정함 — filterGroups 가 그룹 단위로
   same_cut: ["같은 곡 자르기", () => true],
   flag: ["곡 상태", (it, v) => (it.flags || []).includes(v)],
+  ver: ["공식 여부", (it, v) => verOf(it) === v],
   file: ["파일 포맷", (it, v) => fileKindsOf(it).includes(v)],
   song: ["곡", (it, v) => String(it.vocadb || it.name) === v],  // 그 곡 자체 (user request 2026-11-14: 검색 결과의 '필터에 추가') — v: VocaDB 번호
   composer: ["프로듀서", (it, v) => it._composers.includes(v)],
@@ -208,7 +230,7 @@ const firstV = c => Array.isArray(c.v) ? c.v[0] || "" : c.v;
 const chipKind = c => c.k === "tag" && tagGroupOf(firstV(c)) || FKIND[c.k][0];
 /* 곡 조건의 값(VocaDB 번호) → 제목 — 플레이어가 우리 DB 로 정함 (player_screen.js) */
 var songTitleOf = v => v;
-const oneLabel = (k, v) => k === "same_cut" ? `상위 ${v}곡` : k === "vcount" ? vcountLabel(v) : k === "song" ? songTitleOf(v) : k === "flag" || k === "file" || k === "vkind" || k === "same_sort" ? v : k === "tag" ? v : k === "year" ? v + "년" : k === "state" ? STATES[v] || v
+const oneLabel = (k, v) => k === "same_cut" ? `상위 ${v}곡` : k === "vcount" ? vcountLabel(v) : k === "song" ? songTitleOf(v) : k === "flag" || k === "ver" || k === "file" || k === "vkind" || k === "same_sort" ? v : k === "tag" ? v : k === "year" ? v + "년" : k === "state" ? STATES[v] || v
   : k === "kara" && (v === "한국" || v === "일본") ? v + " 전체" : shortName(v);
 const vcountLabel = v => v.endsWith("+") ? `${parseInt(v)}인 이상` : v + "인";
 const chipLabel = c => c.k === "song" && Array.isArray(c.v) && c.v.length > 2 ? `${c.v.slice(0, 2).map(v => oneLabel(c.k, v)).join(", ")} 외 ${c.v.length - 2}곡`
@@ -241,7 +263,7 @@ const sortCounts = m => [...m.entries()].sort((a, b) => b[1] - a[1] || KO_COLLAT
    turns in between (user request 2026-11-18: counting 25만 곡 at once stalled the player 1.5 s) */
 function filterCatsCounter(online) {
   const m = {ini: new Map(), singer: new Map(), vcount: new Map(), vkind: new Map(), composer: new Map(), kara: new Map(), tags: new Map(),
-             cat: new Map(), year: new Map(), state: new Map(), flag: new Map(), file: new Map()};
+             cat: new Map(), year: new Map(), state: new Map(), flag: new Map(), ver: new Map(), file: new Map()};
   const inc = (map, x) => map.set(x, (map.get(x) || 0) + 1);
   const states = Object.keys(STATES).filter(k => !online || !/^(lyrics|nolyrics|src:)/.test(k));  // 온라인: 싱크 상태만 (가사는 그때 읽음)
   return {
@@ -257,6 +279,7 @@ function filterCatsCounter(online) {
       if (it._year) inc(m.year, it._year);
       for (const k of states) if (FKIND.state[1](it, k)) inc(m.state, k);
       for (const f of it.flags || []) inc(m.flag, f);
+      const vr = verOf(it); if (vr) inc(m.ver, vr);
       for (const f of fileKindsOf(it)) inc(m.file, f);
     },
     done() {
@@ -275,6 +298,7 @@ function filterCatsCounter(online) {
       add("year", "투고년도", "year", sortCounts(m.year).sort((a, b) => b[0].localeCompare(a[0])), k => k + "년");
       add("state", "가사·싱크 상태", "state", states.filter(k => m.state.has(k)).map(k => [k, m.state.get(k)]), k => STATES[k]);
       add("flag", "곡 상태", "flag", FLAGS.filter(f => m.flag.has(f)).map(f => [f, m.flag.get(f)]));
+      add("ver", "공식 여부", "ver", VERS.filter(v => m.ver.has(v)).map(v => [v, m.ver.get(v)]));
       add("file", "파일 포맷", "file", FILE_KINDS.filter(f => m.file.has(f)).map(f => [f, m.file.get(f)]));
       return cats.sort((a, b) => a.label.localeCompare(b.label, "ko"));  // 대분류는 가나다순
     },
@@ -294,7 +318,7 @@ async function filterCatsAsync(its, online, tick) {
    컬러 이모지는 눈에 안 들어와서 (user request) 글자색 한 가지로 그려지는 단순한 기호 — U+FE0E: 이모지 그림으로 바꾸지 말고 글자로.
    태그 분류(장르·테마 …)는 VocaDB 분류의 한글 이름 (filter_panel.js TAG_CAT_KO) — 새 분류가 생기면 여기 한 줄 더, 없으면 # */
 const CAT_ICON = {
-  "가나다": "ㄱ", "보컬": "♪", "보컬 인원수": "Ⅲ", "프로듀서": "✎", "노래방": "♫", "나무위키 분류": "▤", "투고년도": "◷", "가사·싱크 상태": "✓", "곡 상태": "◇", "파일 포맷": "⤓", "곡 종류": "◉", "보컬 종류": "◐", "같은 곡 정렬": "⇅", "같은 곡 자르기": "✂",
+  "가나다": "ㄱ", "보컬": "♪", "보컬 인원수": "Ⅲ", "프로듀서": "✎", "노래방": "♫", "나무위키 분류": "▤", "투고년도": "◷", "가사·싱크 상태": "✓", "곡 상태": "◇", "공식 여부": "✪", "파일 포맷": "⤓", "곡 종류": "◉", "보컬 종류": "◐", "같은 곡 정렬": "⇅", "같은 곡 자르기": "✂",
   "장르": "◆", "테마": "◈", "분위기": "☁", "악기": "♩", "곡 구성": "▦", "보컬 관련": "✧", "원작": "❖", "시리즈": "⟳", "애니메이션": "▶",
   "게임": "✦", "MMD 모델": "☺", "출처": "↗", "배포": "⇩", "편집 메모": "✐", "음성 합성 엔진": "⚙", "가사": "❝", "2차 창작": "⧉",
   "디자인": "✿", "이벤트": "⚑", "매체": "▣", "역할": "☰", "언어": "◎",

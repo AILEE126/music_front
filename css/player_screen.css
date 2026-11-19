@@ -174,7 +174,7 @@ body.simple .item .badges{filter:saturate(.2)}  /* 간단: lyrics / sync state b
 #reportDlg .rlabel{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);margin-bottom:8px}
 #reportDlg select,#reportQ,#reportWho{width:100%;box-sizing:border-box}
 #reportDlg .req,.rreq{color:#ff4d4f}  /* required mark · 신곡 추가 요청 note (user request 2026-11-17) */
-.rreq{margin:2px 0 0;font-size:12px}.rreq[hidden],#reportNow[hidden]{display:none}
+.rreq{margin:2px 0 0;font-size:12px}.rreq a{color:inherit;text-decoration:underline}.rreq[hidden],#reportNow[hidden]{display:none}
 .rqrow{display:flex;gap:6px}.rqrow #reportQ{flex:1;min-width:0}
 #reportNow{flex:none;background:#fff;color:#111;border-color:#ccc}  /* 현재 곡: white (user request 2026-11-17) */
 #reportNow:hover{background:#eee}
@@ -558,6 +558,11 @@ a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.
 #btnReport:hover,#sReport:hover{color:var(--text)}
 .ctrl .play{font-size:30px;color:var(--text);min-width:40px}  /* 재생/일시정지: 동그라미 없이 아이콘만 (조금 크게) */
 #btnSettings svg{width:20px;height:20px}  /* ⚙ 설정 at the toolbar's right end (user request 2026-11-18) */
+/* 설정 새 항목 수 (user request 2026-11-19, shared_screen_helpers.js setBadge): a red notification badge, gone once looked at */
+#btnSettings{position:relative}
+#setBadge,#mSetBadge,#mOvBadge{background:var(--err);color:#fff}
+#setBadge{top:-4px;right:-6px}
+#mOvBadge{position:static;display:inline-block;margin-left:6px;vertical-align:1px}
 .seek{display:flex;align-items:center;gap:8px;flex:1;min-width:220px}
 /* 음량 (user request 2026-11-15): speaker (mute toggle) + slider always shown right of it — hidden on touch phones */
 .volpop{display:inline-flex;align-items:center;gap:6px}
@@ -749,6 +754,9 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
 .sitem .b.kara{--bc:var(--muted);color:var(--bc);border:1px solid var(--bc);background:none}
 .b.kara.gone{text-decoration:line-through;text-decoration-thickness:2px;opacity:.6}
 /* 하위 태그 색 (user request 2026-11-15 — 음원 관리 › 필터): the karaoke-number look in the tag's color */
+/* 공식 여부 (user request 2026-11-19: 중요한 태그 — 반투명 바탕 색, 맨 앞) — 0 공식 · 1 엔진 커버 · 2 우타이테; 하위 태그 색이 있으면 --vc */
+.b.ver{--vc:#8b93a7;color:var(--vc);background:color-mix(in srgb,var(--vc) 22%,transparent);font-weight:700;margin-right:4px}
+.b.ver.ver-0{--vc:#22c55e}.b.ver.ver-1{--vc:#60a5fa}.b.ver.ver-2{--vc:#f472b6}
 .b.tc,.songmeta .b.tc,.songmeta .b.inner.tc{color:var(--tc);background:none;box-shadow:inset 0 0 0 1px var(--tc)}
 /* ⋯ song options (user request 2026-11-15, like Spotify): web = shows on hover (and while its menu is open) · phone = always */
 .sitem .sacts{display:flex;gap:6px;flex:none;align-items:center}
@@ -941,6 +949,8 @@ body.m .mnav{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;heig
 .msetdlg .hint{margin:0}
 .msetdlg .mzoom input{flex:1;min-width:0;accent-color:var(--accent)}
 .msetdlg .mzoom b{flex:none;min-width:48px;text-align:right;font-variant-numeric:tabular-nums}
+.msetdlg .isnew:not([data-set]){margin-left:-8px;padding-left:5px;border-left:3px solid var(--err)}  /* a row added since last time */
+.msetdlg [data-set].isnew{box-shadow:inset 3px 0 0 var(--err)}
 .earsnooze{display:flex;align-items:center;gap:6px;margin-top:12px;font-size:13px;color:var(--muted)}
 /* 폰 (user request 2026-11-15 — phone only): the side panel keeps just the playlist (곡 검색 · 같이듣기 · 노래방 모드 are in the
    bottom menu, the rest in 설정); 곡 검색 and 노래방 번호 추천 open as full pages, not popups */
@@ -966,7 +976,7 @@ body.m #listenDlg .dlgx,body.m #mSetDlg .dlgx{display:none}  /* a page: the bott
 #miniBar .mprog{position:absolute;left:0;right:0;top:-1px;height:2px;background:var(--line)}
 #miniBar .mprog i{display:block;height:100%;background:var(--accent);transform-origin:left;transform:scaleX(0)}
 #miniCover{flex:none;width:48px;height:36px;border-radius:5px;object-fit:cover;background:var(--chip)}
-#miniCover[hidden]{display:none}
+#miniCover[hidden],body.simple #miniCover{display:none}  /* 간단: no thumbnail on the mini bar either (user request 2026-11-19) */
 #miniBar .minfo{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.3}
 #miniBar .minfo b,#miniBar .minfo span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #miniBar .minfo span{font-size:12px;color:var(--muted)}

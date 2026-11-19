@@ -55,6 +55,14 @@ $("searchDlg").addEventListener("click", e => { if (e.target === $("searchDlg"))
 $("sGo").onclick = () => runSearch();
 let sTimer = 0;
 $("sQ").addEventListener("input", () => { clearTimeout(sTimer); sTimer = setTimeout(runSearch, 200); });  // as you type (local, no request)
+/* 공식 여부 칩 (user request 2026-11-19: 중요한 태그 — 곡 검색 · 신고 · 신청곡 찾기에서 맨 앞, 반투명 바탕 색) — 하위 태그 색이
+   있으면 그 색, 없으면 기본 색. 전체 곡이 다 읽히기 전엔 묶음을 모르므로 정해 둔 값만 (verOf) */
+function verChipHtml(it) {
+  const v = VDB.done ? verOf(it, VDB.all()) : verOf(it);
+  if (!v) return "";
+  const c = tagColor("ver", v);
+  return `<span class="b ver ver-${VERS.indexOf(v)}"${c ? ` style="--vc:${esc(c)}"` : ""} title="공식 여부">${esc(v)}</span>`;
+}
 /* small song finder for the report dialog and the listen-together request box: the songs given (already known) first,
    then matches from our whole DB — no duplicates */
 async function findSongs(q, known = [], max = 40) {
@@ -199,11 +207,12 @@ function renderSearch(info) {
     // 우리 곡 표시 · 곡 종류 · 보컬 인원수 — 하위 태그 색이 있으면 그 색 (user request 2026-11-15: 인원수도 태그로 보이게)
     const own = it.api ? "" : it.sync === "ok" ? tagChipHtml("flag", "싱크 있음", "싱크", "src", "우리 데이터가 있는 곡")
       : it.lyrics ? tagChipHtml("flag", "우리 가사 있음", "가사", "src", "우리 데이터가 있는 곡") : `<span class="b src" title="우리 데이터가 있는 곡">노래방</span>`;
+    // 공식 여부: 맨 앞 칩 (verChipHtml)
     const tk = it.type ? VDB_TYPE_KO[it.type] || it.type : "", vc = vcountOf(it);
     return `<div class="sitem${canPlay(it) ? "" : " gone"}" data-i="${i}">${coverHtml(it, "thumb")}
       <div class="meta"><div class="t">${titleHtml(it)}</div>
         <div class="a">${esc(shortName(it.artist || ""))}</div>
-        <div class="tags">${own}${tk ? tagChipHtml("type", tk, tk, "", "곡 종류") : ""}${vc ? tagChipHtml("vcount", vc, vcountLabel(vc), "", "보컬 인원수") : ""}${it.date ? `<span class="d">${esc(it.date)}</span>` : ""}</div></div>
+        <div class="tags">${verChipHtml(it)}${own}${tk ? tagChipHtml("type", tk, tk, "", "곡 종류") : ""}${vc ? tagChipHtml("vcount", vc, vcountLabel(vc), "", "보컬 인원수") : ""}${it.date ? `<span class="d">${esc(it.date)}</span>` : ""}</div></div>
       <div class="sacts">${inPl.has(keyOf(it)) ? `<span class="sin" title="재생목록에 있는 곡">✓</span>` : ""}${inF.has(songId(it)) ? `<span class="sin f" title="필터에 넣은 곡">${FILT_SVG}</span>` : ""}`
         + `<button class="ib smore" data-a="more" title="곡 옵션" aria-label="곡 옵션">${MORE_SVG}</button></div></div>`;
   }).join("") + (S.items.length > show.length ? `<div class="hint">… ${(S.items.length - show.length).toLocaleString()}곡 더 ('상위 … 곡 재생목록 만들기' 는 이 곡들까지 셈)</div>` : "")

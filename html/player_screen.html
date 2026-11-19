@@ -124,7 +124,7 @@
         <label><input type="checkbox" id="showR" checked hidden>발음</label><label><input type="checkbox" id="showT" checked hidden>번역</label><label title="이 줄을 부르는 보컬 (나무위키 가사에 보컬별 색 구분이 있는 곡)"><input type="checkbox" id="showP" checked hidden>파트</label>
       </div>
       <button id="btnOverlay" class="ovpow" title="가사 오버레이 켜기 · 끄기 (바탕 투명 가사 창)">오버레이</button>
-      <button class="ib" id="btnSettings" title="설정 — 오버레이 · 글꼴" aria-label="설정"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button><!-- user request 2026-11-18: 오버레이 on/off its own button again · only the gear at the right end opens the settings (오버레이 · 글꼴) -->
+      <button class="ib" id="btnSettings" title="설정 — 가사 · 오버레이" aria-label="설정"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><b class="nbadge" id="setBadge" hidden></b></button><!-- user request 2026-11-18: 오버레이 on/off its own button again · only the gear at the right end opens the settings (오버레이 · 글꼴) -->
     </div>
 
     <div class="bartab"><button class="tab" id="btnBar" title="가사 도구 접기 · 펴기" aria-label="가사 도구 접기 · 펴기"><svg viewBox="0 0 14 10" aria-hidden="true"><path d="M3 1.5v7M7 1.5v7M11 1.5v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></div><!-- user request: a tab hanging under the lyrics-tool bar folds / unfolds it · stays on the bar, not the sync guide -->
@@ -154,19 +154,19 @@
   <button data-nav="listen"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/></svg><b class="nbadge" id="mLtBadge" hidden></b></span>같이듣기</button><!-- open rooms badge, like the web (user request 2026-11-15) -->
   <button data-nav="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>검색</button>
   <button data-nav="kara"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4"/></svg>노래방</button>
-  <button data-nav="set"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>설정</button>
+  <button data-nav="set"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><b class="nbadge" id="mSetBadge" hidden></b></span>설정</button><!-- new settings count (user request 2026-11-19) -->
 </nav>
 <dialog id="mSetDlg" class="msetdlg"><!-- 폰 설정 (아래 메뉴 '설정', user request 2026-11-15) — mobile_view.js -->
   <div class="dlg-head hx">설정<button class="ib dlgx" data-set="close" title="닫기 (Esc)" aria-label="닫기">✕</button></div>
   <div class="dlg-body">
-    <button data-set="report">오류신고 · 텍스트 대치 제안</button>
-    <button data-set="overlay">오버레이 · 글꼴 설정</button>
+    <button data-set="report" data-nk="m.report">오류신고 · 텍스트 대치 제안</button>
+    <button data-set="overlay" data-nk="m.overlay">가사 · 오버레이 설정<b class="nbadge" id="mOvBadge" hidden></b></button>
     <div class="msetsec">화면 크기</div>
-    <div class="mset mzoom"><input type="range" id="mZoom" min="100" max="160" step="5" value="100" aria-label="화면 크기"><b id="mZoomVal">100%</b></div>
+    <div class="mset mzoom" data-nk="m.zoom"><input type="range" id="mZoom" min="100" max="160" step="5" value="100" aria-label="화면 크기"><b id="mZoomVal">100%</b></div>
     <div class="msetsec">이어폰</div>
-    <div class="mset"><span>이어폰 연결 시 바로 재생</span><button type="button" class="onoff" data-ear="connectPlay"><span class="lb off">OFF</span><span class="lb on">ON</span></button></div>
-    <div class="mset"><span>이어폰 해제 시 재생 중지</span><button type="button" class="onoff" data-ear="unplugPause"><span class="lb off">OFF</span><span class="lb on">ON</span></button></div>
-    <div class="mset"><span>이어폰이 없으면 재생 전에 물어보기</span><button type="button" class="onoff" data-ear="ask"><span class="lb off">OFF</span><span class="lb on">ON</span></button></div>
+    <div class="mset" data-nk="m.ear.connectPlay"><span>이어폰 연결 시 바로 재생</span><button type="button" class="onoff" data-ear="connectPlay"><span class="lb off">OFF</span><span class="lb on">ON</span></button></div>
+    <div class="mset" data-nk="m.ear.unplugPause"><span>이어폰 해제 시 재생 중지</span><button type="button" class="onoff" data-ear="unplugPause"><span class="lb off">OFF</span><span class="lb on">ON</span></button></div>
+    <div class="mset" data-nk="m.ear.ask"><span>이어폰이 없으면 재생 전에 물어보기</span><button type="button" class="onoff" data-ear="ask"><span class="lb off">OFF</span><span class="lb on">ON</span></button></div>
     <p class="hint" id="mSetEarNote" hidden>이어폰 연결은 폰 앱(새 버전)에서만 알 수 있습니다.</p>
   </div>
 </dialog>
@@ -239,7 +239,8 @@
     <div class="rlabel"><span id="reportSongLabel">어느 곡인가요</span>
       <div class="rqrow"><input type="search" id="reportQ" placeholder="다른 곡 찾기 (제목·원제·가수)" autocomplete="off" spellcheck="false"><button type="button" id="reportNow" title="지금 재생 중인 곡을 고름">현재 곡</button></div>
       <div class="rlist" id="reportList"></div>
-      <p class="rreq" id="reportReqNote" hidden>* VocaDB에 검색이 되는 곡일경우 빠른 시일 내 추가예정</p></div>
+      <!-- user request 2026-11-19: red warning — VocaDB changes arrive daily by themselves; the underlined link opens VocaDB search -->
+      <p class="rreq" id="reportReqNote" hidden>* VocaDB에 추가된 곡이나 수정된 정보는 1일 간격으로 반영됩니다. 해당 사이트 외 정보추가건만 신고를 넣어주세요. <a id="reportVdb" href="https://vocadb.net/Search?searchType=Song" target="_blank" rel="noopener">VocaDB에서 검색하기</a></p></div>
     <textarea id="reportText" rows="5" spellcheck="false" placeholder="자세한 내용 (예: 2절부터 가사가 한 줄씩 밀림 · 1:20 쯤부터 재생이 멈춤 · 이런 기능이 있으면 좋겠음)"></textarea>
     <!-- 그림 붙이기 (user request 2026-11-15): up to 5 — Ctrl+V or drop onto the dialog, or pick files -->
     <div class="rimgs" id="reportImgs"><div class="rimg-hint">그림 붙이기 (최대 5장) — <kbd>Ctrl</kbd>+<kbd>V</kbd> 로 붙여 넣거나 이 창에 끌어다 놓기 ·

@@ -87,15 +87,16 @@ const fontSlot = k => new Promise(res => {
 });
 async function useFonts() {
   for (const k of ["ja", "etc"]) {
-    const want = set["font_" + k] || "", old = fonts[k];
-    if ((old ? old.file : "") === want) continue;
+    const want = set["font_" + k] || "", bold = !!set["font_bold_" + k], old = fonts[k];
+    if ((old ? old.file : "") === want && (!old || old.bold === bold)) continue;
     if (old) document.fonts.delete(old.face);
     fonts[k] = null;
     const hit = want ? await fontSlot(k) : null;
     if (!hit || hit.file !== want) continue;
     try {
-      const face = new FontFace(k === "ja" ? "CscFontJa" : "CscFontEtc", hit.buf, {unicodeRange: FONT_RANGE[k]});
-      await face.load(); document.fonts.add(face); fonts[k] = {file: want, face};
+      // not bold (the player's ⚙ 글꼴 굵게 off, user request 2026-11-19): one face for every weight → no fake bold
+      const face = new FontFace(k === "ja" ? "CscFontJa" : "CscFontEtc", hit.buf, {unicodeRange: FONT_RANGE[k], ...(bold ? {} : {weight: "100 900"})});
+      await face.load(); document.fonts.add(face); fonts[k] = {file: want, face, bold};
     } catch (e) {}
   }
   box.style.fontFamily = [fonts.ja && '"CscFontJa"', fonts.etc && '"CscFontEtc"', "system-ui", "CscJa", '"Malgun Gothic"', "sans-serif"].filter(Boolean).join(",");
