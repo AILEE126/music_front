@@ -119,6 +119,37 @@ async function vcReload(sha) {
   location.reload();
 }
 
+/* 앱 새 버전 (user request 2026-11-20, android only): the app shell itself (native features) only changes with a new apk.
+   music_app's build publishes the apk to the public music-bridge release "app" with notes 'build=<n>'; this app's
+   build comes from MusicApp.info (builds before this have none = 0 → offered too). The button opens the apk link — the
+   app hands it to the phone's browser, which downloads it; opening it installs over the old app (same key). */
+const VC_APK = "https://github.com/AILEE126/music-bridge/releases/download/app/music.apk";
+let vcAppShown = false;
+async function vcApp() {
+  if (!APP.on || APP.platform !== "android" || vcAppShown) return;
+  try {
+    const api = "https://api.github.com/repos/AILEE126/music-bridge/releases/tags/app";
+    let r = await fetch(api, {headers: vcHead(), cache: "no-store"});
+    if (r.status === 401) r = await fetch(api, {cache: "no-store"});
+    if (!r.ok) return;
+    const m = /build=(\d+)/.exec((await r.json()).body || ""), latest = m ? +m[1] : 0;
+    const mine = +((await APP.native.info().catch(() => ({}))).build || 0);
+    if (!latest || latest <= mine) return;
+    vcAppShown = true;
+    const box = document.createElement("div");
+    box.id = "vcApp"; box.setAttribute("popover", "manual");
+    box.innerHTML = `<b>📲 앱 새 버전이 나왔어요</b>
+      <span>설치 파일을 받아 열면 지금 앱 위에 덮어 설치돼요 (설정 · 재생목록은 그대로). 처음 한 번은 '출처를 알 수 없는 앱' 허용을 물어볼 수 있어요.</span>
+      <span class="vc-btns"><button id="vcAppLater">나중에</button><button class="primary" id="vcAppGet">설치 파일 받기</button></span>`;
+    document.body.appendChild(box);
+    try { box.showPopover(); } catch (e) { box.classList.add("vc-fallback"); }
+    const close = () => { try { box.hidePopover(); } catch (e) {} box.remove(); };
+    $("vcAppLater").onclick = close;  // asked again at the next start
+    $("vcAppGet").onclick = () => { close(); location.href = VC_APK; };
+  } catch (e) { /* offline: next start */ }
+}
+
 setTimeout(() => vcCheck(true), 4000);
+setTimeout(vcApp, 6000);
 setInterval(() => vcCheck(true), VC_EVERY);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) vcCheck(false); });

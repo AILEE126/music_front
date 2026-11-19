@@ -860,12 +860,12 @@ body.simple #lyrics .vcm{background:none;-webkit-text-fill-color:currentColor}
 .offdlg .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .offdlg .offerr{margin-top:10px;color:var(--err);white-space:pre-wrap;min-height:1em}
 /* 새 버전 알림 (version_check.js) */
-#vcNotice{position:fixed;inset:auto 16px 16px auto;margin:0;max-width:min(420px,calc(100vw - 32px));padding:12px 14px;border:1px solid var(--accent);border-radius:10px;
+#vcNotice,#vcApp{position:fixed;inset:auto 16px 16px auto;margin:0;max-width:min(420px,calc(100vw - 32px));padding:12px 14px;border:1px solid var(--accent);border-radius:10px;
   background:var(--card);color:var(--text);box-shadow:0 10px 30px rgb(0 0 0 / .45);display:flex;flex-direction:column;gap:8px;font-size:13px;line-height:1.5}
-#vcNotice:not(:popover-open):not(.vc-fallback){display:none}
-#vcNotice.vc-fallback{z-index:1000}
-#vcNotice .vc-btns{display:flex;gap:8px;justify-content:flex-end}
-#vcNotice button{white-space:nowrap}
+#vcNotice:not(:popover-open):not(.vc-fallback),#vcApp:not(:popover-open):not(.vc-fallback){display:none}
+#vcNotice.vc-fallback,#vcApp.vc-fallback{z-index:1000}
+#vcNotice .vc-btns,#vcApp .vc-btns{display:flex;gap:8px;justify-content:flex-end}
+#vcNotice button,#vcApp button{white-space:nowrap}
 #vcNotice .vc-gif{width:100%;max-height:200px;object-fit:contain;border-radius:6px;background:#000}
 body.simple #vcNotice .vc-gif{display:none}  /* 간단 mode: no meme clip (user request) */
 
