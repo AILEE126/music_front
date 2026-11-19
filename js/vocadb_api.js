@@ -334,7 +334,9 @@ const VDB = {
     const u = new URL(`${VDB_API}/${path}`);
     for (const [k, v] of Object.entries(params || {})) if (v !== "" && v != null) [].concat(v).forEach(x => u.searchParams.append(k, x));
     let r;
-    try { r = await fetch(u, {headers: {Accept: "application/json"}}); } catch (e) { throw new Error("VocaDB 에 연결하지 못했습니다 (인터넷 확인)."); }
+    // 15 s cap (user report 2026-11-19: VocaDB hung and the lyrics view waited forever)
+    try { r = await fetch(u, {headers: {Accept: "application/json"}, signal: AbortSignal.timeout(15000)}); }
+    catch (e) { throw new Error(e.name === "TimeoutError" ? "VocaDB 응답이 없습니다 (15초)." : "VocaDB 에 연결하지 못했습니다 (인터넷 확인)."); }
     if (!r.ok) throw new Error(`VocaDB 응답 ${r.status}`);
     return r.json();
   },

@@ -329,10 +329,10 @@ const LOCAL = {
      싱크: 그 파일 안의 싱크 (가사와 맞을 때만) — 플레이어에서 고친 싱크가 확인을 기다리면 그것 */
   async lyrics(site, name) {
     const it = this.item(site, name);
-    let d = it.lyrics && it.vocadb ? await this.readJson(`${this.out}/db/lyrics/${it.vocadb}.json`, null) : null;
+    let d = it.lyrics && it.vocadb ? await this.readJson(`${this.out}/db/lyrics/${it.vocadb}.json`, null) : null, vErr = "";
     if (d) d = {site, name, title: it.title, artist: it.artist, sync_fail: null, lyrics_file: "", link: null, ...d};
     else if (it.vocadb) {
-      const v = await VDB.lyricsDoc(it.vocadb).catch(() => null);  // nothing of ours → VocaDB's own lyrics (API)
+      const v = await VDB.lyricsDoc(it.vocadb).catch(e => { vErr = e.message; return null; });  // nothing of ours → VocaDB's own lyrics (API)
       if (v) d = vdbLyrics(await this.withReading(v, it.vocadb), it);
       if (d && it.vsync) {  // a confirmed sync on these VocaDB lines (user request 2026-11-17) — used while the lines still match
         const sj = await this.readJson(this.vsyncPath(it), null);
@@ -343,7 +343,7 @@ const LOCAL = {
       }
     }
     if (!d) return {site, name, title: it.title, artist: it.artist, sync_fail: null, lyrics_src: "", lyrics_kind: "", lyrics_file: "",
-      raw: "", notes: [], groups: [], sync_state: "", sync: null, link: null, live: false};
+      raw: "", notes: [], groups: [], sync_state: "", sync: null, link: null, live: false, load_err: vErr};
     if (it.vocadb && d.groups.length) {
       const pj = await this.readJson(this.pendingPath(it), null);
       if (pj && Array.isArray(pj.times) && pj.times.length === d.groups.length && pj.lyrics_hash === await syncHash(d)) {

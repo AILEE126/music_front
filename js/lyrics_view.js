@@ -48,6 +48,11 @@ async function showSong(it) {
   showVideo();
   document.title = `${titleOf(it)} · 음원 플레이어`;
   renderRows(true);  // 지금 곡 표시만 (목록을 다시 거르지 않음)
+  // the last song's lyrics never stay up while this one's load (user report 2026-11-19: VocaDB API hung → the previous
+  // song's lyrics showed under the new song)
+  song = null; times = null; offset = 0;
+  $("lyrics").className = "nosync"; $("lyrics").innerHTML = `<div class="empty">가사 불러오는 중…</div>`;
+  renderSyncChip();
   await loadSong();
 }
 /* 투고일 (곡 정보의 값) · 니코니코 원곡 재생수 (그때그때 — 서버는 니코니코 정보 API, 서버 없이는 중계 페이지의 니코니코 플레이어. 유튜브 원곡은 안 보임) */
@@ -156,7 +161,7 @@ async function loadSong() {
   const it = cur; if (!it) return;
   let s;
   try { s = await api(`/api/lyrics?site=${encodeURIComponent(it.site)}&name=${encodeURIComponent(it.name)}`); }
-  catch (e) { if (cur !== it) return; song = null; $("lyrics").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  catch (e) { if (cur !== it) return; song = null; $("lyrics").innerHTML = `<div class="empty">가사를 받아오는데 실패했습니다.<br><span class="hint">${esc(e.message)}</span></div>`; renderSyncChip(); return; }
   if (cur !== it) return;  // 가사를 받는 사이 다른 곡으로 넘어감 (온라인 곡은 위키를 읽느라 늦게 옴) → 늦게 온 앞 곡 가사로 덮지 않음
   song = s;
   const sj = song.sync;
@@ -167,7 +172,8 @@ async function loadSong() {
 function renderSyncChip() {
   const c = $("syncChip"), sj = song && song.sync;
   let txt = "싱크 없음", cls = "b sync";
-  if (!song || !song.groups.length) txt = "가사 없음";
+  if (song && song.load_err) { txt = "가사 받기 실패"; cls += " warn"; }
+  else if (!song || !song.groups.length) txt = "가사 없음";
   else if (song.sync_state === "stale") { txt = "가사가 바뀜 · 다시 맞춰야 함"; cls += " warn"; }
   else if (times && sj.method === "manual") { txt = "직접 맞춘 싱크"; cls += " ok"; }
   else if (times && sj.edited) {  // 손으로 고쳤지만 안 고친 '추정' 묶음이 남음 → 직접 싱크 아님
@@ -228,6 +234,8 @@ function renderLyrics() {
   curIdx = -1;
   if (!song || !song.groups.length) {
     box.className = "nosync";
+    // failed load ≠ no lyrics (user request 2026-11-19: say it failed, e.g. VocaDB blocked our IP)
+    if (song && song.load_err) { box.innerHTML = `<div class="empty">가사를 받아오는데 실패했습니다.<br><span class="hint">${esc(song.load_err)}</span></div>`; return; }
     box.innerHTML = `<div class="empty">가사 없음${cur && cur.site === "local" ? '<br><span class="hint">mp3 와 같은 이름의 가사·싱크 json 이 없습니다 (음원 관리 › mp3 다운로드로 받은 곡은 같이 받음)</span>' : ""}</div>`;
     return;
   }
