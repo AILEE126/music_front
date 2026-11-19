@@ -116,22 +116,23 @@ function sameSpec(g) {
 }
 function sameCut(m, g, its) {
   const sp = sameSpec(g); if (!sp) return m;
-  const fam = new Map();
-  for (const it of m) { const k = sameKeyOf(it, its); fam.has(k) ? fam.get(k).push(it) : fam.set(k, [it]); }
-  const keep = new Set();
+  const fam = new Map(), keep = new Set();
+  // _fam1: alone in its family (server column, 2026-11-19 — sized for 1M songs: most songs, no grouping needed)
+  for (const it of m) { if (it._fam1) { keep.add(it); continue; } const k = sameKeyOf(it, its); fam.has(k) ? fam.get(k).push(it) : fam.set(k, [it]); }
   for (const xs of fam.values()) (xs.length > sp.cut ? xs.sort(sp.cmp).slice(0, sp.cut) : xs).forEach(x => keep.add(x));
   return m.filter(it => keep.has(it));
 }
 /* sameCut 을 나눠서 (tick: chunkFilter 와 같음) */
 async function sameCutAsync(m, g, its, tick) {
   const sp = sameSpec(g); if (!sp) return m;
-  const fam = new Map();
+  const fam = new Map(), keep = new Set();
   for (let i = 0; i < m.length; i++) {
     if (!(i & 1023)) await tick();
-    const it = m[i], k = sameKeyOf(it, its);
+    const it = m[i];
+    if (it._fam1) { keep.add(it); continue; }  // alone in its family (sameCut)
+    const k = sameKeyOf(it, its);
     fam.has(k) ? fam.get(k).push(it) : fam.set(k, [it]);
   }
-  const keep = new Set();
   let i = 0;
   for (const xs of fam.values()) {
     if (!(++i & 2047)) await tick();
@@ -171,9 +172,15 @@ const sameCats = () => [{id: "same_sort", label: "같은 곡 정렬", k: "same_s
 const KARA_RE = /^(TJ|금영|DAM|UGA|JOYSOUND)$/;
 const STATES = {lyrics: "가사 있음", nolyrics: "가사 없음", ok: "싱크됨", need: "싱크 필요", stale: "싱크 다시", resync: "재싱크 필요", fail: "싱크 실패",
                 "src:namu": "나무위키 가사", "src:vocaro": "VL 가사", "src:own": "직접 넣은 가사", "src:link": "연결 가사"};
+/* 검색 글자 (user request 2026-11-19, sized for 1M songs: every keystroke folded ~10 fields of every song again — 1.3 s over
+   44만 곡): the song's searchable names folded once and kept (_fq), same parts once, joined by \u0001 (a match never spans
+   two of them). The singer is left out when the artist line already holds it */
+const searchHay = it => it._fq ?? (it._fq = [...new Set([...Object.values(it.nums || {}), it.title, it.kara_title, it.orig, it.ja, it.reading,
+  it.en, it.alt, it.artist, String(it.artist || "").includes(it.singer || "") ? "" : it.singer, it.name].map(fold).filter(Boolean))].join("\u0001"));
+const foldQ = {v: null, f: ""};  // the query folded once per search, not once per song
 const FKIND = {
   // fold drops spaces (user request: no-space query matches) — fields joined by "" so a match never spans two fields
-  text: ["검색", (it, v) => [...Object.values(it.nums || {}), it.title, it.kara_title, it.orig, it.ja, it.reading, it.en, it.alt, it.artist, it.singer, it.name].map(fold).join("").includes(fold(v))],
+  text: ["검색", (it, v) => searchHay(it).includes(v === foldQ.v ? foldQ.f : (foldQ.v = v, foldQ.f = fold(v)))],
   ini: ["가나다", (it, v) => it._ini === v],
   singer: ["보컬", (it, v) => it._singers.includes(v)],
   solo: ["솔로", (it, v) => it._singers.length === 1 && it._singers[0] === v],

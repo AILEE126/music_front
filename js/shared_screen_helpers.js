@@ -129,7 +129,10 @@ function lyrCols(g, head, roles) {
 /* 검색 비교용: 대소문자·전각/반각(Ｍｉｒｒｏｒ = mirror)·띄어쓰기 무시 — 모든 찾기 칸이 씀 (User request: no-space query still matches) */
 /* 화면 표시용: 같은 글자가 10번 넘게 이어지면 '누×53' 처럼 줄임 (프로듀서 '누누누…' 같은 긴 이름). mp3 태그·검색·필터 값은 그대로 */
 const shortName = s => String(s ?? "").replace(/(.)\1{9,}/gu, (m, c) => `${c}×${[...m].length}`);
-const fold = s => String(s ?? "").normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+/* text that NFKC leaves as it is (ASCII · Hangul syllables · kana without compat / combining marks · common CJK · 、。「」『』)
+   skips the normalize call (2026-11-19, sized for 1M songs — same result, checked on 430만 search parts) */
+const FOLD_SAFE = /^[\u0000-\u007f\uac00-\ud7a3\u3041-\u3096\u30a1-\u30fa\u30fc\u4e00-\u9fff\u3001-\u3002\u300c-\u300f]*$/;
+const fold = s => { s = String(s ?? ""); return (FOLD_SAFE.test(s) ? s : s.normalize("NFKC")).toLowerCase().replace(/\s+/g, ""); };
 /* 곡 제목 표시 (user request 2026-11-17, 모든 곡 제목): 앞 이름을 굵게, 옆에 다른 이름을 흐리게 ' · ' 로 — 같은 이름은 한 번.
    앞 이름: VocaDB 기본 이름이 일본어면 한글 제목(번역명, 우리가 가진 것만 — 자동 번역명이 생기면 그건 앞에 두지 않음),
    없으면 기본 이름 / 기본 이름이 영어 등 일본어가 아니면 기본 이름.

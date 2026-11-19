@@ -574,8 +574,17 @@ a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.
 .songmeta .b.inner.ko,.songmeta .b.inner.ja{color:var(--vc);background:color-mix(in srgb,var(--vc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vc) 55%,transparent)}
 /* 불러오는 중 (곡 검색 · 노래방 창 — the window shows at once, this spins until its list is ready) */
 @keyframes spin{to{transform:rotate(360deg)}}
+/* 재생목록 칸 안의 불러오는 중 줄 · 기다려야 할 때의 안내 (user request 2026-11-19) */
+.plload{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:6px 10px;padding:12px 14px;color:var(--muted);font-size:13px}
+.plload .spin{width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+.plload .bar,dialog.loadnote .bar{grid-column:1/-1;display:block;height:4px;border-radius:2px;background:var(--line);overflow:hidden}
+.plload .bar i,dialog.loadnote .bar i{display:block;height:100%;background:var(--accent);transition:width .3s}
+dialog.loadnote .dlg-body{display:grid;gap:10px;min-width:min(320px,80vw)}
+dialog.loadnote .lnrow{display:flex;justify-content:space-between;color:var(--muted);font-size:13px}
+dialog.loadnote .bar{height:6px;border-radius:3px}
+dialog.loadnote .note{color:var(--muted);font-size:12px}
 /* + a line under the spinner (user request 2026-11-18: opened right after a reload, it spun with no word of why) */
-dialog.busy::after{content:"곡 목록을 불러오는 중…\A초기 한번만 불러와요.";white-space:pre;text-align:center;line-height:1.6;position:absolute;inset:0;z-index:50;background:color-mix(in srgb,var(--card) 55%,transparent);
+dialog.busy::after{content:attr(data-busy);white-space:pre;text-align:center;line-height:1.6;position:absolute;inset:0;z-index:50;background:color-mix(in srgb,var(--card) 55%,transparent);
   display:grid;grid-template-rows:calc(55% - 30px);align-content:end;justify-items:center;align-items:start;color:var(--muted);font-size:13px;font-weight:600}  /* lines start 30px under the spinner's center (top 45%) */
 dialog.busy::before{content:"";position:absolute;left:50%;top:45%;z-index:51;width:38px;height:38px;margin:-19px 0 0 -19px;border:4px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
 /* 같이듣기: a room is open → a soft music waveform (equalizer bars, half see-through) along the bottom — user request 2026-11-15

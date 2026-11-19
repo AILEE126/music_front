@@ -29,7 +29,7 @@ const streamRefs = it => [...new Set([it.video_link, ...(it.sources || [])].filt
   .map(r => it.vocadb ? {...r, vocadb: it.vocadb} : r);
 /* 틀 수 있는 곡: 오프라인 곡(고른 mp3 폴더) · 원곡 영상 주소가 있는 온라인 곡.
    deleted: original video confirmed gone (Manage › 오류 신고) — user request: shown greyed, never played or queued */
-const canPlay = it => !!it && (it.site === "local" || (it.site === "stream" && !it.deleted && streamRefs(it).length > 0));
+const canPlay = it => !!it && (it.site === "local" || (it.site === "stream" && !it.deleted && (it._pn ?? streamRefs(it).length) > 0));  // _pn: playable links, counted once (search_dialog.js playableFast)
 
 /* Diagnostic log (user: songs stop while another tab is in front — record what happened while hidden, read it after coming back).
    Last 400 lines kept in this browser (survives reload); playerDiag() in the console or a stall report attaches it. */
@@ -577,7 +577,7 @@ function makePlayer(el) {
       this.queueOnLoad(it, how);  // 지난 곡·다음 곡 순서 (play_queue.js)
       const start = resumeSeek && resumeSeek.it === it ? resumeSeek.t : 0; resumeSeek = null;  // resume after a reload (P.resumeAt)
       this.now = it; this.autoplay = autoplay; store.set("last", keyOf(it));
-      store.set("lastItem", Object.fromEntries(Object.entries(it).filter(([k]) => !k.startsWith("_"))));  // 새로고침해도 (음원 관리 화면이어도) 띄움
+      store.set("lastItem", Object.fromEntries(Object.entries(typeof plainSong === "function" ? plainSong(it) : it).filter(([k]) => !k.startsWith("_"))));  // 새로고침해도 (음원 관리 화면이어도) 띄움
       if (it.site === "local") {
         audio.setSrc(OFFDIR.audioUrl(it));
         if (start) audio.currentTime = start;

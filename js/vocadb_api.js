@@ -42,17 +42,102 @@ const MAIN_URL = /nicovideo\.jp|nico\.ms|youtube\.com|youtu\.be/;
 const OTHER_URL = /soundcloud\.com\/[\w-]+\/[\w-]+|vimeo\.com\/(?:video\/)?\d+|bilibili\.com\/video\/(?:av\d|BV)|^https:\/\/[^?#]+\.(?:mp3|m4a|ogg|opus|wav)(?:[?#]|$)/i;
 const vdbSources = urls => [...urls.filter(u => MAIN_URL.test(u || "")), ...urls.filter(u => u && !MAIN_URL.test(u) && OTHER_URL.test(u))];
 
-/* fields every player item has, derived from the ones above (Niconico first — sources are in that order) */
-function vdbDerive(it) {
-  it.video = it.sources[0] || "";
-  it.videos = it.sources.filter(u => /youtu/.test(u)).slice(0, 1);
-  // 보컬이 VOCAL_SHOW 명 넘으면 앞 VOCAL_SHOW 명 + ' [+N]' (user request 2026-11-16) — 화면의 제목 옆은 artistBase + '+N' 칩
-  const v = String(it.singer || "").split(",").map(x => x.trim()).filter(Boolean);
-  it.vocalMore = v.length > VOCAL_SHOW ? v.length - VOCAL_SHOW : 0;
-  it.artistBase = [it.composer, it.vocalMore ? v.slice(0, VOCAL_SHOW).join(", ") : it.singer].filter(Boolean).join(" feat. ");
-  it.artist = it.artistBase + (it.vocalMore ? ` [+${it.vocalMore}]` : "");
-  it.score = it.score ?? null;
+/* 100만 곡 메모리 (user request 2026-11-19: sized for 1M songs, not today's count): the same text (tag · name · date · type)
+   kept once, not once per song; one shared empty object / array for the karaoke fields of songs on no list, one array per
+   flag set and per vocal — none of these is ever changed in place */
+const STR = new Map(), istr = s => { if (!s) return ""; let v = STR.get(s); if (v === undefined) STR.set(s, v = s); return v; };
+const NONE_OBJ = Object.freeze({}), NONE_ARR = Object.freeze([]);
+const VPAIR = new Map(), vocalPair = n => { let p = VPAIR.get(n); if (!p) VPAIR.set(n, p = Object.freeze([n, vocalColor(n)])); return p; };
+const FLAGSET = new Map(), flagSet = f => { const k = f.join("|"); let s = FLAGSET.get(k); if (!s) FLAGSET.set(k, s = Object.freeze(f)); return s; };
+const KI_NONE = Object.freeze({nums: NONE_OBJ, gone: NONE_OBJ, only: NONE_OBJ, ord: NONE_OBJ, karaoke: false, extraTags: NONE_ARR, namu: ""});
+
+/* 짧은 주소 (user request 2026-11-19): the server sends a known address start as '~' + letter, and a Niconico / YouTube
+   thumbnail that follows from the song's video as '~n' / '~y' — music_backend table_export.py URL_PRE, same table and order */
+const URL_PRE = ["https://nicovideo.cdn.nimg.jp/thumbnails/", "https://i.ytimg.com/vi/", "https://www.nicovideo.jp/watch/", "https://youtu.be/",
+  "https://www.bilibili.com/video/", "http://piapro.jp/content/", "http://nicovideo.cdn.nimg.jp/thumbnails/", "https://f4.bcbits.com/img/",
+  "https://i1.sndcdn.com/", "https://tn.smilevideo.jp/", "https://res.piapro.jp/r/", "http://i0.hdslb.com/bfs/"];
+function unUrl(u, video = "") {
+  if (!u || u[0] !== "~") return u || "";
+  if (u === "~n") { const n = /(?:sm|nm|so)(\d+)$/.exec(unUrl(video)); return n ? `https://nicovideo.cdn.nimg.jp/thumbnails/${n[1]}/${n[1]}` : ""; }
+  if (u === "~y") { const y = /youtu\.be\/([\w-]{11})$/.exec(unUrl(video)); return y ? `https://i.ytimg.com/vi/${y[1]}/default.jpg` : ""; }
+  return (URL_PRE[u.charCodeAt(1) - 97] || "") + u.slice(2);
 }
+
+/* 작은 곡 객체 (user request 2026-11-19, sized for 1M songs: a full object per song took ~1.2 KB and ~7 µs to make — 1.2 GB
+   and 9 s at 1M): a song keeps only its data row (r) and karaoke row (k); every player field is read from them when asked —
+   the same names and values a plain item has. Writing a field keeps the value on that song (it hides the read one).
+   plain() = the fields as a plain object, for whatever copies a song (saved playlist · 같이듣기 · last song) */
+class VSong {
+  constructor(r, k) { this.r = r; this.k = k || null; this.ki = k ? VDB.karaInfo(k) : KI_NONE; }
+  plain() {
+    const o = {};
+    for (const f of Object.keys(VSONG_GET)) { const v = this[f]; if (v !== undefined) o[f] = v; }
+    for (const [f, v] of Object.entries(this)) if (f !== "r" && f !== "k" && f !== "ki") o[f] = v;
+    return o;
+  }
+}
+const vcol = (s, name) => s.r[VDB.col[name]];
+const vours = s => s.r[VDB.col.ours] || NONE_OBJ;
+const vsingers = s => String(vcol(s, "singer") || "").split(",").map(x => x.trim()).filter(Boolean);
+const VSONG_GET = {
+  site() { return "stream"; },
+  vocadb() { return String(vcol(this, "vocadb_id")); },
+  name() { return "vocadb_" + this.vocadb; },
+  // 원제 = VocaDB 기본 이름 (title_default, e.g. English 'Cutie Mew Mew Magic'), else the Japanese name (user request 2026-11-16)
+  def() { return vcol(this, "title_default") || vcol(this, "title_ja") || ""; },
+  title() { return vcol(this, "title_ko") || this.def; },
+  orig() { const d = this.def; return d !== this.title ? d : ""; },
+  defJa() { const d = vcol(this, "title_default"); return !d || d === vcol(this, "title_ja"); },  // VocaDB 기본 이름이 일본어인지 (titleNames)
+  ja() { const j = vcol(this, "title_ja"); return j && j !== this.def ? j : ""; },  // 일본어 이름이 원제가 아닐 때 — 검색 · '*일본어 제목'
+  reading() { return vcol(this, "title_reading") || ""; },
+  en() { return vcol(this, "title_en") || ""; },
+  alt() { return vcol(this, "alt_names") || ""; },
+  singer() { return vcol(this, "singer") || ""; },
+  composer() { return vcol(this, "composer") || ""; },
+  vocals() { return vsingers(this).map(vocalPair); },
+  date() { const d = String(vcol(this, "upload_date") || ""); return d.length === 8 ? istr(`${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`) : ""; },
+  thumb() { return unUrl(vcol(this, "thumb"), vcol(this, "video_url")); },
+  type() { return vcol(this, "song_type") || ""; },
+  vkind() { return vcol(this, "vocal_kind") || ""; },
+  origId() { return vcol(this, "original_id") || ""; },  // 같은 곡 묶기 (원곡 번호)
+  rating() { return +vcol(this, "rating_score") || 0; },
+  sources() { return vdbSources([unUrl(vcol(this, "video_url")), ...String(vcol(this, "alt_urls") || "").split(" ").map(u => unUrl(u))]); },
+  tags() { const t = String(vcol(this, "tags") || "").split("|").filter(Boolean), x = this.ki.extraTags; return x.length ? [...t, ...x] : t.length ? t : NONE_ARR; },
+  nums() { return this.ki.nums; }, gone() { return this.ki.gone; }, only() { return this.ki.only; }, ord() { return this.ki.ord; },
+  karaoke() { return this.ki.karaoke; }, namu() { return this.ki.namu; },
+  lyrics() { return vours(this).lyrics || ""; },
+  sync() { return vours(this).sync === "ok" ? "ok" : undefined; },
+  method() { return vours(this).sync === "ok" ? vours(this).method || "" : undefined; },
+  score() { const o = vours(this); return o.sync === "ok" ? o.score ?? null : null; },
+  stale() { return vours(this).sync === "stale" ? 1 : undefined; },  // lyrics changed after the sync — list badge (2026-11-18)
+  vsync() { return vours(this).vsync ? 1 : undefined; },  // sync made on VocaDB's lyrics (export/db/vsync/<id>.json, 2026-11-17)
+  files() { const f = vcol(this, "files"); return Array.isArray(f) && f.length ? f : undefined; },  // 파일 포맷 태그 [[종류, 주소, 설명], …]
+  flags() {  // 곡 상태 (song_filter.js FLAGS)
+    const ko = vcol(this, "title_ko");
+    return flagSet(songFlags(this, vcol(this, "lyrics") === "Y", !!(ko && ko !== vcol(this, "title_ja") && ko !== this.def)));
+  },
+  api() { return !vcol(this, "ours") && !this.k ? true : undefined; },  // not one of our songs (badges: no 가사·싱크·노래방)
+  video() { return this.sources[0] || ""; },  // Niconico first — sources are in that order
+  videos() { const yt = this.sources.find(u => /youtu/.test(u)); return yt ? [yt] : NONE_ARR; },
+  // 보컬이 VOCAL_SHOW 명 넘으면 앞 VOCAL_SHOW 명 + ' [+N]' (user request 2026-11-16) — 화면의 제목 옆은 artistBase + '+N' 칩
+  vocalMore() { const n = vsingers(this).length; return n > VOCAL_SHOW ? n - VOCAL_SHOW : 0; },
+  artistBase() { const m = this.vocalMore; return [this.composer, m ? vsingers(this).slice(0, VOCAL_SHOW).join(", ") : this.singer].filter(Boolean).join(" feat. "); },
+  artist() { const m = this.vocalMore; return this.artistBase + (m ? ` [+${m}]` : ""); },
+  // song_filter.js prepItem's fields
+  _ini() { return initialOf(this.title); },
+  _singers() { return people(this.singer); },
+  _composers() { return people(this.composer); },
+  _year() { const d = this.date; return /^\d{4}/.test(d) ? d.slice(0, 4) : ""; },
+  // 같은 곡 묶음 · 공식 여부 from the server (fam · own · ver columns) — none (older data): song_filter.js works them out
+  _fam() { return VDB.col.fam === undefined ? undefined : vcol(this, "fam") || this.vocadb; },
+  _own() { return VDB.col.own === undefined ? undefined : !!vcol(this, "own"); },
+  _ver() { return VDB.col.ver === undefined ? undefined : vcol(this, "ver") || ""; },
+  _fam1() { return VDB.col.fam1 !== undefined && !!vcol(this, "fam1"); },  // alone in its family — song_filter.js sameCut skips grouping it
+};
+for (const [f, get] of Object.entries(VSONG_GET))
+  Object.defineProperty(VSong.prototype, f, {get, set(v) { Object.defineProperty(this, f, {value: v, writable: true, enumerable: true, configurable: true}); }, configurable: true});
+/* a song as a plain object (what gets saved or sent) — plain items as they are */
+const plainSong = it => it instanceof VSong ? it.plain() : it;
 
 /* {cols, rows} table file → row objects */
 const tableRows = t => t.rows.map(r => Object.fromEntries(t.cols.map((c, i) => [c, r[i]])));
@@ -84,28 +169,44 @@ const VDB = {
     this.col = Object.fromEntries(idx.cols.map((c, i) => [c, i]));
     this.kara = new Map(tableRows(kara).map(k => [String(k.vocadb_id), k]));
     this.rowById = new Map(); this.items = new Map(); this.blockP = new Map(); this.textP = new Map();
-    this.curated = []; this._all = null;
+    this.curated = []; this._all = null; this.extra = new Map(); this.prog = null;
+    // 바뀐 곡 (songs/patch.json.gz, user request 2026-11-19 — table_export._songs): a block stays as it was and the day's changed /
+    // new / deleted songs come in this one small file, laid over each block as it is read (block file → {rows, del})
+    this.patch = new Map();
+    if (idx.patch) {
+      const p = JSON.parse(await this.blockText(idx.patch)), id = this.col.vocadb_id, at = f => this.patch.get(f) || (this.patch.set(f, {rows: [], del: []}), this.patch.get(f));
+      this.textP.delete(idx.patch.f);
+      for (const r of p.rows || []) { const b = this.blockOf(r[id]); if (b) at(b.f).rows.push(r); }
+      for (const x of p.del || []) { const b = this.blockOf(x); if (b) at(b.f).del.push(String(x)); }
+    }
     if (this.done) this.newFull();  // opened again (another token): wait for the new list — anyone waiting on the old one too
     this.done = false;
   },
   newFull() { this.full = new Promise(r => { this._fullOk = r; }); },
   /* songs/<block>.json.gz — kept in this browser (IndexedDB) under its content hash, so after the first open only blocks
-     the server changed are downloaded (GitHub sends files uncompressed — the blocks are gzip themselves) */
+     the server changed are downloaded (GitHub sends files uncompressed — the blocks are gzip themselves). Kept as the gzip
+     bytes (2026-11-19, sized for 1M songs: the unpacked text took ~5× the room), unpacked when read */
   blockText(b) {
+    const unzip = gz => new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
     if (!this.textP.has(b.f)) this.textP.set(b.f, (async () => {
       const cache = idbKV("music-songs"), key = `${LOCAL.name}|${b.f}`, hit = await cache("get", key).catch(() => null);
-      if (hit && hit.h === b.h) return hit.text;
+      if (hit && hit.h === b.h) return hit.gz ? unzip(hit.gz) : hit.text;  // text: kept by an older version
       const gz = await LOCAL.readBytes(`${LOCAL.out}/db/songs/${b.f}`);
-      const text = await new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
-      cache("put", key, {h: b.h, text}).catch(() => {});
-      return text;
+      cache("put", key, {h: b.h, gz}).catch(() => {});
+      return unzip(gz);
     })());
     return this.textP.get(b.f);
   },
-  block(b) {  // read (blockText) + parse into rowById, once
+  block(b) {  // read (blockText) + parse into rowById, once — then the patch's rows of this block on top
     if (!this.blockP.has(b.f)) this.blockP.set(b.f, this.blockText(b).then(text => {
-      const id = this.col.vocadb_id;
-      for (const r of JSON.parse(text)) this.rowById.set(String(r[id]), r);
+      const id = this.col.vocadb_id, p = this.patch && this.patch.get(b.f);
+      const put = r => {
+        const k = String(r[id]);
+        this.rowById.set(k, r);
+        if (this.extra.size) { const o = this.items.get(k); if (o && o._x) this.items.delete(k); this.extra.delete(k); }  // made from a saved row: made again from this one
+      };
+      for (const r of JSON.parse(text)) put(r);
+      if (p) { p.rows.forEach(put); for (const k of p.del) this.rowById.delete(k); }
       this.textP.delete(b.f);
     }));
     return this.blockP.get(b.f);
@@ -120,11 +221,13 @@ const VDB = {
   /* the rest, in the background: 4 blocks downloading ahead, parsed one at a time with the screen's turn in between (yieldUI) */
   async loadRest() {
     const mst = LOCAL.readJson(`${LOCAL.out}/db/master.json`, null);
-    const todo = this.idx.files.filter(b => !this.blockP.has(b.f));
-    todo.slice(0, 4).forEach(b => this.blockText(b));
+    const todo = this.idx.files.filter(b => !this.blockP.has(b.f)), all = this.idx.files.length;
+    this.setProg(all - todo.length, all);
+    todo.slice(0, 6).forEach(b => this.blockText(b));
     for (let i = 0; i < todo.length; i++) {
-      if (todo[i + 4]) this.blockText(todo[i + 4]);
+      if (todo[i + 6]) this.blockText(todo[i + 6]);
       await this.block(todo[i]);
+      this.setProg(all - todo.length + i + 1, all);
       await yieldUI();
     }
     await Promise.all(this.blockP.values());  // blocks ensure() started
@@ -137,17 +240,47 @@ const VDB = {
     this.done = true;  // from here a karaoke song without a row is made from its karaoke row
     for (const id of this.kara.keys()) if (!this.rowById.has(id)) cur.push(this.itemById(id));
     this.curated = cur;
+    this.extra = new Map();
     this._fullOk();
+    this.setProg(all, all);
   },
+  /* 불러오기 진행 (user request 2026-11-19: shown in the playlist area, and in the wait notice when a play has to wait):
+     prog {n, total} blocks read — 'vdbprog' on window whenever it moves */
+  prog: null,
+  setProg(n, total) { this.prog = {n, total}; dispatchEvent(new Event("vdbprog")); },
+  /* rows from elsewhere before the blocks are read (OPEN CHANNEL list file — listen_together.js): items made from them are
+     marked _x and made again from the real row once its block is read */
+  extra: new Map(),
+  addRows(cols, rows) {
+    const at = this.idx.cols.map(c => cols.indexOf(c)), id = cols.indexOf("vocadb_id");
+    for (const r of rows || []) if (!this.rowById.has(String(r[id]))) this.extra.set(String(r[id]), at.map(i => i < 0 ? null : r[i]));
+  },
+  /* the data rows of these songs, read again from the kept block texts (rows are dropped once every item is made) */
+  async rowsOf(ids, tick) {
+    const want = new Set(ids.map(String)), out = [], byBlock = new Map();
+    for (const id of want) { const b = this.blockOf(id); if (b) byBlock.set(b, (byBlock.get(b) || 0) + 1); }
+    const id = this.col.vocadb_id;
+    for (const b of byBlock.keys()) {
+      const text = await this.blockText(b), p = this.patch && this.patch.get(b.f), got = new Map();
+      this.textP.delete(b.f);
+      for (const r of JSON.parse(text)) if (want.has(String(r[id]))) got.set(String(r[id]), r);
+      if (p) { for (const r of p.rows) if (want.has(String(r[id]))) got.set(String(r[id]), r); p.del.forEach(k => got.delete(k)); }
+      out.push(...got.values());
+      if (tick) await tick();
+    }
+    return out;
+  },
+  /* what the song list is now (block hashes + patch + karaoke size) — a saved OPEN CHANNEL list made from other data is made again */
+  get dataSig() { return this.idx ? this.idx.files.map(b => b.h).join("") + (this.idx.patch ? "+" + this.idx.patch.h : "") + ":" + (this.kara ? this.kara.size : 0) : ""; },
   /* VocaDB id → player item (made once) — null when not in our DB, or its block isn't read yet */
   itemById(id) {
     id = String(id);
     let it = this.items.get(id);
     if (it) return it;
-    const r = this.rowById.get(id), k = this.kara.get(id);
+    const x = !this.rowById.has(id) && this.extra.get(id), r = x || this.rowById.get(id), k = this.kara.get(id);
     if (r) {
-      it = this.fromRow(Object.fromEntries(this.idx.cols.map((c, i) => [c, r[i]])), k);
-      if (!r[this.col.ours] && !k) it.api = true;  // not one of our songs (badges: no 가사·싱크·노래방)
+      it = new VSong(r, k);
+      if (x) it._x = 1;
     } else if (k && this.done) it = this.fromKara(k);
     else return null;
     this.items.set(id, it);
@@ -160,10 +293,12 @@ const VDB = {
     if (!this._all) { for (const id of this.rowById.keys()) this.itemById(id); this._allDone(); }
     return this._all;
   },
-  async makeAll(tick) {
+  async makeAll(tick, step) {
     if (this._all || !this.done) return;
     let n = 0;
-    for (const id of this.rowById.keys()) { this.itemById(id); if (!(++n & 2047)) await tick(); }
+    const total = this.rowById.size;
+    // each row is dropped once its item is made (2026-11-19, sized for 1M songs: rows and items no longer both held at the top)
+    for (const id of this.rowById.keys()) { this.itemById(id); this.rowById.delete(id); if (!(++n & 2047)) { if (step) step(n, total); await tick(); } }
     if (!this._all) this._allDone();
   },
   _allDone() {
@@ -172,7 +307,7 @@ const VDB = {
   },
   /* karaoke table row → numbers · lists (the old item shape: nums {TJ…}, list tags 한국 / 일본 + brands, ord namu / japan) */
   karaInfo(k) {
-    if (!k) return {nums: {}, gone: {}, only: {}, ord: {}, karaoke: false, extraTags: [], namu: ""};
+    if (!k) return KI_NONE;
     // gone = machines the song was taken off (karaoke.gone, user request 2026-11-15): their numbers stay out of nums —
     // so 랜덤 추천 · 노래방 필터 · 노래방 모드 skip them — and are kept in gone only to show struck through in the tags
     const nums = {}, gone = {}, col = {tj: "TJ", kumyoung: "금영", dam: "DAM", uga: "UGA", joys: "JOYSOUND"}, off = String(k.gone || "").split(",");
@@ -186,30 +321,13 @@ const VDB = {
     if (k.jp_order != null) ord.japan = k.jp_order;
     return {nums, gone, only, ord, karaoke: lists.length > 0, extraTags: [...lists, ...Object.keys(nums)], namu: k.namu_url || ""};
   },
-  /* data table row (+ karaoke row) → player item */
-  fromRow(r, k) {
-    // 원제 = VocaDB 기본 이름 (title_default, e.g. English 'Cutie Mew Mew Magic'), else the Japanese name (user request 2026-11-16)
-    const id = String(r.vocadb_id), orig = r.title_default || r.title_ja || "", title = r.title_ko || orig, ki = this.karaInfo(k), ours = r.ours || {};
-    const people = s => String(s || "").split(",").map(x => x.trim()).filter(Boolean);
-    const d = String(r.upload_date || "");
-    const it = {site: "stream", name: `vocadb_${id}`, vocadb: id, title, orig: orig !== title ? orig : "", reading: r.title_reading || "",
-      def: orig, defJa: !r.title_default || r.title_default === r.title_ja,  // VocaDB 기본 이름 · 그게 일본어인지 (titleNames, 2026-11-17)
-      ja: r.title_ja && r.title_ja !== orig ? r.title_ja : "",  // 일본어 이름이 원제가 아닐 때 — 검색 · '*일본어 제목' 표시용
-      en: r.title_en || "", alt: r.alt_names || "",  // 검색용 영어 이름 · 다른 이름 (user request 2026-11-16)
-      singer: r.singer || "", composer: r.composer || "", vocals: people(r.singer).map(n => [n, vocalColor(n)]),
-      date: d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : "", thumb: r.thumb || "", type: r.song_type || "", vkind: r.vocal_kind || "", origId: r.original_id || "",  // 같은 곡 묶기 (원곡 번호)
-      rating: +r.rating_score || 0, sources: vdbSources([r.video_url, ...String(r.alt_urls || "").split(" ")]),
-      tags: [...String(r.tags || "").split("|").filter(Boolean), ...ki.extraTags], nums: ki.nums, gone: ki.gone, only: ki.only, ord: ki.ord, karaoke: ki.karaoke, namu: ki.namu,
-      lyrics: ours.lyrics || "", ...(ours.sync === "ok" ? {sync: "ok", method: ours.method || "", score: ours.score ?? null} : {}),
-      ...(ours.sync === "stale" ? {stale: 1} : {}),  // lyrics changed after the sync — list badge (2026-11-18)
-      ...(ours.vsync ? {vsync: 1} : {})};  // sync made on VocaDB's lyrics (export/db/vsync/<id>.json, 2026-11-17)
-    if (Array.isArray(r.files) && r.files.length) it.files = r.files;  // 파일 포맷 태그 [[종류, 주소, 설명], …] (user request 2026-11-18)
-    it.flags = songFlags(it, r.lyrics === "Y", !!(r.title_ko && r.title_ko !== r.title_ja && r.title_ko !== orig));  // 곡 상태 (song_filter.js FLAGS)
-    vdbDerive(it); prepItem(it);
-    return it;
-  },
+  /* a karaoke song with no data row yet → the same song object over a row made from its karaoke row */
   fromKara(k) {
-    return this.fromRow({vocadb_id: k.vocadb_id, title_ko: k.title_ko, title_ja: k.title_ja, singer: k.singer, composer: k.composer}, k);
+    const r = new Array(this.idx.cols.length).fill(""), c = this.col;
+    for (const f of ["vocadb_id", "title_ko", "title_ja", "singer", "composer"]) if (c[f] !== undefined) r[c[f]] = k[f] == null ? "" : String(k[f]);
+    if (c.ours !== undefined) r[c.ours] = 0;
+    if (c.fam !== undefined) { r[c.fam] = ""; r[c.own] = 1; r[c.ver] = ""; }  // fam1 stays "": data songs may point at it
+    return new VSong(r, k);
   },
   async get(path, params) {
     const u = new URL(`${VDB_API}/${path}`);

@@ -55,10 +55,56 @@ const ltChTag = () => '<span class="ltchtag" title="OPEN CHANNEL 재생목록 �
 const ltChHost = () => LT.chOn && LT.role === "host";
 // cooldown per browser (uid), not per name — the channel needs no nickname (user request 2026-11-17)
 const ltCoolLeft = uid => LT.cool[uid] || 0;
-/* the channel's songs: our whole DB through its filter, playable only */
+/* the channel's songs: our whole DB through its filter, playable only.
+   미리 만든 목록 (user request 2026-11-19: entering the channel right after opening waited for the whole song list and the
+   filter): Server/data/channel_list.json.gz {sig (the filter), data (VDB.dataSig), at, ids, cols, rows (data rows of those
+   songs)} — read at start by everyone; made by a player with a write token (the filter is the player's JS, not the server's)
+   whenever the filter or the song list changed, so the channel opens without the whole list */
+const ltChFilePath = () => `${LOCAL.data}channel_list.json.gz`;
+let ltChFileP = null, ltChUp = null;
+function ltChPrefetch() {
+  ltChFileP = ltChConf() ? LOCAL.readBytes(ltChFilePath())
+    .then(gz => new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).json()).catch(() => null) : null;
+}
+const ltChFileOk = (d, groups) => d && Array.isArray(d.ids) && d.sig === JSON.stringify(groups);
 async function ltChSongs(groups) {
-  await searchBase();  // the whole song list (read in the background after the screen opened)
-  return (await filterGroupsAsync(VDB.all(), groups, bgTick())).filter(canPlay);  // background: the player's timers keep running
+  const d = ltChFileP && await ltChFileP;
+  if (ltChFileOk(d, groups)) {  // the list made before — a day old song list is fine for a shuffle
+    if (!VDB.done) VDB.addRows(d.cols, d.rows);
+    const list = d.ids.map(id => VDB.itemById(id)).filter(it => it && canPlay(it));
+    if (list.length) return list;
+  }
+  const make = async () => {
+    await searchBase();  // the whole song list (read in the background after the screen opened)
+    return (await filterGroupsAsync(VDB.all(), groups, bgTick())).filter(canPlay);  // background: the player's timers keep running
+  };
+  const list = VDB.done ? await make() : await loadWait(make());  // still loading: the notice with the progress bar
+  ltChUpload(groups, list);
+  return list;
+}
+/* write token: save the channel's list for everyone (only when the filter or the song list changed since the saved one) */
+async function ltChUpload(groups, list) {
+  if (!LOCAL.canWrite || ltChUp) return;
+  const sig = JSON.stringify(groups), data = VDB.dataSig;
+  ltChUp = (async () => {
+    const d = ltChFileP && await ltChFileP;
+    if (d && d.sig === sig && d.data === data) return;
+    const ids = list.map(it => +it.vocadb).filter(Boolean), tick = bgTick();
+    const doc = {sig, data, at: new Date().toISOString(), ids, cols: VDB.idx.cols, rows: await VDB.rowsOf(ids, tick)};
+    const gz = await new Response(new Blob([JSON.stringify(doc)]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
+    await LOCAL.writeBytes(ltChFilePath(), gz, ltName() || "OPEN CHANNEL");
+    ltChFileP = Promise.resolve(doc);
+  })().catch(e => console.warn("OPEN CHANNEL 곡 목록을 못 올림:", e.message || e)).finally(() => { ltChUp = null; });
+}
+/* after loading (playlist_panel.js loadRest, write token only): make the saved list again when it's off */
+async function ltChRefresh() {
+  const conf = ltChConf();
+  if (!conf || !LOCAL.canWrite) return;
+  if (!ltChFileP) ltChPrefetch();
+  const d = await ltChFileP;
+  if (d && d.sig === JSON.stringify(conf.groups) && d.data === VDB.dataSig) return;
+  await searchBase();
+  ltChUpload(conf.groups, (await filterGroupsAsync(VDB.all(), conf.groups, bgTick())).filter(canPlay));
 }
 async function ltChJoin() {
   const conf = ltChConf();
@@ -226,7 +272,7 @@ function ltTurn() {
 const ltNewCode = () => String(crypto.getRandomValues(new Uint32Array(1))[0] % 900000 + 100000);
 /* 재생하려는 중인가 (온라인 곡은 뜨는 동안 paused 라 재생 의도로 봄) */
 const ltIntent = () => audio.bridged ? !!audio.autoplay : !audio.paused;
-const ltStrip = it => Object.fromEntries(Object.entries(it).filter(([k]) => !k.startsWith("_")));
+const ltStrip = it => Object.fromEntries(Object.entries(plainSong(it)).filter(([k]) => !k.startsWith("_")));  // plainSong: vocadb_api.js
 /* 받은 곡 → 이 화면의 곡 (같은 키 → 같은 이름 → 온라인 곡이면 받은 곡 그대로 → 제목이 같은 온라인 곡) */
 function ltFindItem(key, item) {
   if (LOCAL.items.has(key)) return LOCAL.items.get(key);  // our songs · songs met in search / playlist

@@ -6,7 +6,7 @@
    Offline (mp3 folder): the panel lists the folder's songs as before. */
 const keyOf = it => it.site + "/" + it.name;
 const PL_KEY = "playlist2", PL_DB = idbKV("music-playlist");  // 재생목록은 IndexedDB 에 (수십만 곡이면 localStorage 5MB 를 넘음)
-const plStrip = it => Object.fromEntries(Object.entries(it).filter(([k]) => !k.startsWith("_")));
+const plStrip = it => Object.fromEntries(Object.entries(plainSong(it)).filter(([k]) => !k.startsWith("_")));  // plainSong: vocadb_api.js
 /* a saved / received song → the live item: our curated copy when we have that song (fresher lyrics · sync · numbers) */
 function liveItem(x) {
   if (!x) return null;
@@ -16,14 +16,35 @@ function liveItem(x) {
   prepItem(it);
   return LOCAL.remember(it);
 }
+/* 요약본 (user request 2026-11-19: the playlist had to wait for every song block — 30만 곡 — before it showed or played):
+   the first PL_SNAP_MAX songs kept whole as well, so the list is up and playable at once; the whole list follows from the
+   blocks (restoreQueue) */
+const PL_SNAP = "playlist2.snap", PL_SNAP_MAX = 2000;
 const PL = {
   restored: false,  // the saved list is read only once every song block is (loadRest) — no save before, it would cut it short
+  early: null,  // keys of the 요약본 songs while it stands in for the list (before restoreQueue) · savedN: the saved list's size
+  savedN: 0,
+  _rp: null, _rOk: null,
+  whenRestored() { return this.restored ? Promise.resolve() : this._rp || (this._rp = new Promise(r => { this._rOk = r; })); },
+  restoredOk() { if (this._rOk) this._rOk(); this._rp = this._rOk = null; },
   get items() { return SHELL.queue; },
   /* 우리 DB 곡은 VocaDB id 만 (숫자), 그 밖(mp3 · 예전 곡)은 곡 그대로. IndexedDB 를 못 쓰면 localStorage 에 */
   save() {
     if (!this.restored) return;  // restoreQueue saves what was added meanwhile
     const q = SHELL.queue.map(qPack);
     PL_DB("put", PL_KEY, q).then(() => store.set(PL_KEY, null), () => store.set(PL_KEY, q));
+    clearTimeout(this._snapT);
+    this._snapT = setTimeout(() => PL_DB("put", PL_SNAP, {n: SHELL.queue.length, items: SHELL.queue.slice(0, PL_SNAP_MAX).map(plStrip)}).catch(() => {}), 1500);
+  },
+  /* the 요약본 as the list until the blocks are read (only when nothing else is in the list yet) */
+  async early_() {
+    if (this.restored || !ONLINE || SHELL.queue.length) return;
+    const s = await PL_DB("get", PL_SNAP).catch(() => null);
+    if (!s || !Array.isArray(s.items) || !s.items.length || this.restored || SHELL.queue.length) return;
+    const list = s.items.map(liveItem).filter(Boolean);
+    this.early = new Set(list.map(keyOf)); this.savedN = s.n || list.length;
+    SHELL.setQueue(list); SHELL.plan(SHELL.now);
+    renderList();
   },
   set(list) { SHELL.setQueue(list); SHELL.plan(SHELL.now); this.save(); renderList(); },
   add(list, next = false) {
@@ -68,16 +89,46 @@ async function loadLibrary(ids) {
   PL.restored = false;
   try { LIB = await LOCAL.library(ids); } catch (e) { $("libInfo").textContent = e.message; return false; }
   renderOnOff(); renderList();
+  await PL.early_();
+  if (typeof ltChPrefetch === "function") ltChPrefetch();  // OPEN CHANNEL's saved list — read now, the channel may be opened at once
   return true;
 }
 async function loadRest() {
-  baseP = null;
+  baseP = null; warmP = null;
   await VDB.loadRest();
   LIB = {items: VDB.curated, sync_ready: true};
   await restoreQueue();
   renderList();  // the song count · filter names (master) are known now
   if (typeof ltChReady === "function") ltChReady();  // 같이듣기: OPEN CHANNEL (filter.json channel)
-  idle(warmSearch);
+  idle(async () => { await warmSearch(); if (typeof ltChRefresh === "function") ltChRefresh(); });
+}
+/* 불러오는 중 (user request 2026-11-19): only inside the playlist area — a line under the list (the screen works meanwhile) */
+const loadPct = () => { const p = VDB.prog; return p && p.total ? Math.round(p.n / p.total * 100) : 0; };
+const plLoadHtml = () => `<div class="plload"><span class="spin"></span><span class="t">곡 목록 불러오는 중… <b>${loadPct()}%</b></span><span class="bar"><i style="width:${loadPct()}%"></i></span></div>`;
+addEventListener("vdbprog", () => {
+  const l = document.querySelector("#list .plload");
+  if (l) { l.querySelector("b").textContent = loadPct() + "%"; l.querySelector("i").style.width = loadPct() + "%"; }
+  const d = document.querySelector("dialog.loadnote");
+  if (d) { d.querySelector("b.pct").textContent = loadPct() + "%"; d.querySelector(".bar i").style.width = loadPct() + "%"; d.querySelector(".st").textContent = VDB.prog.n < VDB.prog.total ? "곡 목록 받는 중" : "곡 정리 중"; }
+});
+/* a play that has to wait for the loading (user request 2026-11-19: entering OPEN CHANNEL or playing right after opening) →
+   '아직 첫 화면 로딩이 진행중입니다.' with the progress bar, closed when `p` is done (닫기 = just the notice; the play still goes on) */
+async function loadWait(p) {
+  let d = null;
+  const t = setTimeout(() => {
+    d = document.createElement("dialog");
+    d.className = "uidlg loadnote";
+    d.innerHTML = `<div class="dlg-body"><b>아직 첫 화면 로딩이 진행중입니다.</b>
+      <div class="lnrow"><span class="st">${VDB.prog && VDB.prog.n >= VDB.prog.total ? "곡 정리 중" : "곡 목록 받는 중"}</span><b class="pct">${loadPct()}%</b></div>
+      <span class="bar"><i style="width:${loadPct()}%"></i></span>
+      <div class="note">끝나면 바로 재생합니다.</div></div>
+      <div class="dlg-foot"><button type="button" class="primary">닫기</button></div>`;
+    d.querySelector("button").onclick = () => d.remove();
+    d.addEventListener("cancel", () => d.remove());  // Esc
+    document.body.appendChild(d);
+    d.showModal();
+  }, 150);  // done at once (already loaded) → no notice
+  try { return await p; } finally { clearTimeout(t); if (d) d.remove(); }
 }
 /* run when the browser has nothing else to do (no idle callback — Safari: soon after) */
 const idle = fn => window.requestIdleCallback ? requestIdleCallback(() => fn(), {timeout: 3000}) : setTimeout(fn, 300);  // timeout: a busy or hidden page never gets an idle turn
@@ -188,7 +239,8 @@ function renderList() {
   const lbl = guestPl ? (typeof LT !== "undefined" && LT.chOn ? "OPEN CHANNEL" : "방장 재생목록") : ONLINE ? "재생목록" : OFFSRC === "yt" ? "영상" : "mp3", unit = !guestPl && !ONLINE && OFFSRC === "yt" ? "개" : "곡";
   // my online playlist: '<all our songs> / <in the playlist>곡' — the total and the slash plain, the playlist count stands out (user request 2026-11-15)
   const total = ONLINE && !guestPl ? vdbTotal() : 0;
-  $("libInfo").innerHTML = `<span class="lbl">${lbl}</span><span class="cnt">${total ? `<span class="tot">${total.toLocaleString()} / </span>` : ""}<b>${view.length.toLocaleString()}</b>${unit}</span>`;
+  const n = PL.early && !guestPl && !pq ? Math.max(view.length, PL.savedN) : view.length;  // 요약본 up: the whole saved list's count
+  $("libInfo").innerHTML = `<span class="lbl">${lbl}</span><span class="cnt">${total ? `<span class="tot">${total.toLocaleString()} / </span>` : ""}<b>${n.toLocaleString()}</b>${unit}</span>`;
   renderPlFilter();
   $("btnPlClear").hidden = !ONLINE || !!guestPl;
   renderRows(true);
@@ -205,6 +257,8 @@ function renderRows(force) {
     if ($("offConnect")) $("offConnect").onclick = () => connectOffDir(false);
     vlFrom = vlTo = -1; return;
   }
+  const loading = ONLINE && !guestPl && !PL.restored;  // the saved list isn't all here yet
+  if (!view.length && loading) { L.innerHTML = plLoadHtml(); vlFrom = vlTo = -1; return; }
   if (!view.length) {
     L.innerHTML = ONLINE ? `<div class="empty">재생목록이 비어 있습니다.<br><button class="primary" id="plSearch">곡 검색</button></div>` : `<div class="empty">곡이 없습니다.</div>`;
     if ($("plSearch")) $("plSearch").onclick = openSearch;
@@ -215,7 +269,7 @@ function renderRows(force) {
   if (!force && from === vlFrom && to === vlTo) return;
   vlFrom = from; vlTo = to;
   L.innerHTML = `<div class="vpad" style="height:${from * h}px"></div>` + view.slice(from, to).map((it, k) => itemHtml(it, from + k)).join("")
-    + `<div class="vpad" style="height:${(view.length - to) * h}px"></div>`;
+    + `<div class="vpad" style="height:${(view.length - to) * h}px"></div>` + (loading ? plLoadHtml() : "");
   L.scrollTop = top;
   const real = (L.querySelector(".item") || {}).offsetHeight;
   if (real && real !== ROW_H) { ROW_H = real; renderRows(true); }

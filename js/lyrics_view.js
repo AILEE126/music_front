@@ -12,6 +12,8 @@ async function play(it, autoplay = true, how = "pick") {  // how '': 재생 목�
 }
 /* ▶ 처음부터: 재생목록(오프라인은 mp3 폴더의 곡)을 처음 곡부터 (무작위면 섞은 첫 곡) */
 async function playView() {
+  // right after opening, the saved list not read yet (no 요약본): wait for it with the loading notice (user request 2026-11-19)
+  if (ONLINE && !guestPl && !PL.restored && !view.length) await loadWait(PL.whenRestored());
   const list = view.filter(canPlay);
   if (!list.length) return ONLINE ? openSearch() : uiAlert("재생할 곡이 없습니다.");
   if (editing && !await uiConfirm("직접 맞추던 싱크를 저장하지 않고 다른 곡으로 넘어갈까요?")) return;
@@ -22,12 +24,16 @@ async function playView() {
 $("btnPlayView").onclick = playView;
 /* 기억해 둔 재생목록을 되살림 (화면을 새로 열었을 때) — songs put in before it was read stay, after the saved ones */
 async function restoreQueue() {
-  if (!ONLINE && SHELL.queue.length) { PL.restored = true; return; }  // the mp3 folder's list is up — the playlist comes back online
-  const q = await PL.restore(), have = new Set(q.map(keyOf)), added = SHELL.queue.filter(it => !have.has(keyOf(it)));
+  if (!ONLINE && SHELL.queue.length) { PL.restored = true; PL.restoredOk(); return; }  // the mp3 folder's list is up — the playlist comes back online
+  let q = await PL.restore();
+  // 요약본 stood in (PL.early): songs taken out of it meanwhile stay out; the rest of the list joins as live items
+  if (PL.early) { const now = new Set(SHELL.queue.map(keyOf)); q = q.filter(it => !PL.early.has(keyOf(it)) || now.has(keyOf(it))); }
+  const have = new Set(q.map(keyOf)), added = SHELL.queue.filter(it => !have.has(keyOf(it)));
   SHELL.setQueue([...q, ...added]);
   SHELL.plan(SHELL.now);
-  PL.restored = true;
-  if (added.length) PL.save();
+  PL.restored = true; PL.early = null; PL.restoredOk();
+  for (const it of q) if (it.vocadb) LOCAL.items.set(keyOf(it), it);  // the 요약본 copies remembered by name → the live song
+  PL.save();  // also writes the 요약본 (first open after the update has none yet)
 }
 /* 재생기에서 곡이 바뀜 (직접 고르거나, 곡이 끝나 다음 곡으로 넘어감) → 화면 갱신 */
 async function showSong(it) {

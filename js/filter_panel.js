@@ -152,7 +152,11 @@ function renderFilterOptions() {
     $(id).innerHTML = opt("", head) + rows.map(([k, n]) => opt(k, n === "" ? label(k) : `${label(k)} (${n})`)).join("");
     $(id).hidden = !show;
   };
-  const cats = sfCatsMemo(its), ec = editCond();
+  // categories not counted yet (user request 2026-11-19: counting 1M songs held the window ~6 s — results come first): the
+  // chips and groups draw now, the category list says so and fills in when counted (catsLater)
+  const ready = catsReady(its);
+  if (!ready) catsLater();
+  const cats = ready ? sfCatsMemo(its) : [], ec = editCond();
   if (ec && ec.k === "song") cats.unshift({id: "song", label: "곡", k: "song", rows: [].concat(ec.v).map(v => [v, ""]), lab: songTitleOf});  // 넣은 곡만 (빼기용)
   FCATS = cats;
   const want = store.get("f.kind", "singer"), c = cats.find(x => x.id === want) || cats[0];
@@ -160,9 +164,10 @@ function renderFilterOptions() {
     const have = new Set(c.rows.map(r => r[0]));
     c.rows = [...c.rows, ...[].concat(ec.v).filter(v => !have.has(v)).map(v => [v, 0])];
   }
-  $("fKind").innerHTML = cats.map(x => opt(x.id, `${catIconOf(x)} ${x.rows.length ? `${x.label} (${x.rows.length})` : x.label}`)).join("");
+  $("fKind").innerHTML = ready ? cats.map(x => opt(x.id, `${catIconOf(x)} ${x.rows.length ? `${x.label} (${x.rows.length})` : x.label}`)).join("")
+    : opt("", "카테고리 세는 중…");
   $("fKind").value = c ? c.id : "";
-  $("fKind").hidden = !cats.length;
+  $("fKind").hidden = ready && !cats.length;
   fill("fVal", c ? c.label : "값", c ? c.rows : [], c ? c.lab : undefined, !!c);
   $("fSolo").disabled = !c || c.k !== "singer";
   $("fSolo").parentNode.classList.toggle("off", $("fSolo").disabled);
@@ -478,6 +483,12 @@ function sfCatsMemo(its) {
   return m.cats.map(c => ({...c}));
 }
 /* the scope's categories counted in steps (sfCatsMemo would count them in one go) */
+const catsReady = its => { const m = catMemo.get(its); return !!m && m.f === VDB.filter && m.m === VDB.master; };
+let catsP = null;
+function catsLater() {  // the scope's categories in the background, then the filter options drawn again
+  if (catsP || !VDB.done) return;
+  catsP = warmCats(bgTick()).finally(() => { catsP = null; if ($("searchDlg").open && catsReady(sfItems())) renderFilterOptions(); });
+}
 async function warmCats(tick) {
   const its = scopeItems(), m = catMemo.get(its);
   if (!m || m.f !== VDB.filter || m.m !== VDB.master) catMemo.set(its, {f: VDB.filter, m: VDB.master, cats: sfCats(its, await filterCatsAsync(its, true, tick))});
@@ -491,17 +502,36 @@ let baseP = null;
 const searchBase = () => baseP || (baseP = (async () => {
   const tick = bgTick();
   await VDB.full;
-  await VDB.makeAll(tick);
+  await VDB.makeAll(tick, (n, total) => warmStep("items", n, total));
+  warmStep("long");
   await longVersionTypes(VDB.all(), tick);  // 숏버전 원곡의 긴 버전은 원곡의 곡 종류로
 })());
-async function warmSearch() {
+/* the search window's preparation, once (the background run after loading and an early open share it — user request
+   2026-11-19: the first open did it again alongside, 17–23 s): families · categories · the sorted scope · the window's opening
+   result (기본 필터, 인기순, 전체 곡 — searchReset's state) · then every song's search text, so the first keystroke is quick */
+let warmP = null;
+const warmSearch = () => warmP || (warmP = (async () => {
   const tick = bgTick();
   await searchBase();
   const all = VDB.all();
-  for (let i = 0; i < all.length; i++) { sameKeyOf(all[i], all); if (!(i & 1023)) await tick(); }  // 같은 곡 묶음 (song_filter.js) — once per song
-  await warmCats(tick);
-  try { await sortedScope(searchTick(searchGen)); } catch (e) { if (e !== STALE) throw e; }
-}
+  if (!$("searchDlg").open) searchReset();  // the state the window opens in
+  for (let i = 0; i < all.length; i++) { sameKeyOf(all[i], all); if (!(i & 1023)) { warmStep("family", i, all.length); await tick(); } }  // 같은 곡 묶음 (song_filter.js) — once per song
+  warmStep("rank");
+  // title places: kept from today's list, else made in the worker (the screen free meanwhile) — every sort below needs them
+  if (!await titleRanksKept(all, tick)) await titleRanks(all, tick);
+  warmStep("sort");
+  await sortedScope();
+  warmStep("filter");
+  // the window's filter (opened meanwhile: it waits for this, so it's the same) + its 재생 가능 count (~8 s at 1M the first time)
+  await playableCount(await filteredScope(FG.filter(fReal), tick), tick);
+  warmStep("done");
+  // every song's search text, after the window is ready (user request 2026-11-19: ~7 s at 1M) — a search typed before it's done
+  // waits for it (the list's spinner) — one maker, not two at once (that doubled it: 13 s). Not waited for here
+  hayP = (async () => { for (let i = 0; i < all.length; i++) { searchHay(all[i]); if (!(i & 2047)) await tick(); } })();
+  hayP.then(catsLater);  // then the filter's categories (both at once slowed a search typed meanwhile to ~18 s at 1M)
+})());
+let hayP = null;  // every song's search text being made (warmSearch) — a text search waits for it (searchText)
+const searchText = () => hayP || Promise.resolve();
 /* 음원 관리 › 필터 (user request 2026-11-14 — export/db/filter.json): a category's row {id, label, icon, p} · its symbol */
 const fltCat = id => VDB.filter && (VDB.filter.cats || []).find(c => c.id === id);
 const catIconOf = x => { const f = fltCat(x.id); return f && f.icon ? f.icon + "︎" : catIcon(x.label); };
@@ -533,11 +563,92 @@ function renderSortOptions() {
 }
 const titleGroup = t => { const c = (t || "").trim()[0] || ""; return /[가-힣ㄱ-ㅣ]/.test(c) ? 0 : /\d/.test(c) ? 1 : /[a-z]/i.test(c) ? 2 : 3; };
 const KO_CMP = new Intl.Collator("ko").compare;  // same order as localeCompare(…, "ko"), much faster over 수십만 곡
+/* 제목 순서 (user request 2026-11-19, sized for 1M songs): every sort ends on the title, and most songs tie before it (57% have
+   no rating) — comparing titles there made the 인기순 sort ~8 s. Every song's place in title order is worked out once
+   (_tr, a stable sort of the whole list) and the sorts compare that number.
+   That sort itself is slow (~15 s at 1M), so its result is kept in this browser (VocaDB ids in title order) and the next
+   open takes the places from it before sorting; songs new since then fall back to comparing titles */
+const titleCmp = (a, b) => titleGroup(a.title) - titleGroup(b.title) || KO_CMP(a.title, b.title);
+const TR_KEY = () => `${LOCAL.name}|title_rank`;
+/* 정렬 일꾼 (user request 2026-11-19, sized for 1M songs): a worker thread that sorts with the browser's own sort, so the
+   screen does none of it — the title order (titles + their group, Korean collator like KO_CMP, ~3 s at 1M instead of ~11 s
+   here) and number keys (numSorted). Made from this text (a page opened as a file can't load a worker file); no worker → the
+   sorts run here as before */
+const SORT_WORKER = `const col = new Intl.Collator("ko").compare;
+onmessage = e => {
+  const d = e.data;
+  if (d.titles) {
+    const t = d.titles, g = d.groups, a = Array.from({length: t.length}, (_, i) => i);
+    a.sort((x, y) => g[x] - g[y] || col(t[x], t[y]) || x - y);
+    const order = Uint32Array.from(a);
+    postMessage({id: d.id, order}, [order.buffer]);
+  } else { d.keys.sort(); postMessage({id: d.id, keys: d.keys}, [d.keys.buffer]); }
+};`;
+let sortW = null, sortSeq = 0;
+function sortWork(msg, transfer) {
+  return new Promise((res, rej) => {
+    try { sortW = sortW || new Worker(URL.createObjectURL(new Blob([SORT_WORKER], {type: "text/javascript"}))); } catch (e) { return rej(e); }
+    const id = ++sortSeq, w = sortW;
+    const on = e => { if (e.data && e.data.id === id) { w.removeEventListener("message", on); w.removeEventListener("error", bad); res(e.data); } };
+    const bad = e => { w.removeEventListener("message", on); w.removeEventListener("error", bad); sortW = null; rej(e); };
+    w.addEventListener("message", on); w.addEventListener("error", bad);
+    w.postMessage({...msg, id}, transfer);
+  });
+}
+let TR_BY = [];  // title place → song (numSorted turns a sorted key back into its song)
+function setRanks(by) { for (let i = 0; i < by.length; i++) if (by[i]) by[i]._tr = i; TR_BY = by; }
+async function titleRanks(all, tick) {
+  let by;
+  try {
+    const titles = new Array(all.length), groups = new Int8Array(all.length);
+    for (let i = 0; i < all.length; i++) { titles[i] = all[i].title; groups[i] = titleGroup(titles[i]); if (!(i & 16383)) await tick(); }
+    const {order} = await sortWork({titles, groups}, [groups.buffer]);
+    by = Array.from(order, i => all[i]);
+  } catch (e) { by = await sortAsync(all, titleCmp, tick); }  // no worker: here, in steps
+  setRanks(by);
+  idbKV("music-songs")("put", TR_KEY(), {sig: VDB.dataSig, ids: Uint32Array.from(by, it => +it.vocadb || 0)}).catch(() => {});
+}
+/* the kept title order → _tr, only when it was made from today's song list (→ true) */
+async function titleRanksKept(all, tick) {
+  const kept = await idbKV("music-songs")("get", TR_KEY()).catch(() => null);
+  if (!kept || !kept.ids || kept.sig !== VDB.dataSig) return false;
+  const at = new Map(), by = new Array(kept.ids.length);
+  for (let i = 0; i < kept.ids.length; i++) at.set(String(kept.ids[i]), i);
+  for (let i = 0; i < all.length; i++) { const r = at.get(all[i].vocadb); if (r === undefined) return false; by[r] = all[i]; if (!(i & 8191)) await tick(); }
+  setRanks(by);
+  return true;
+}
+/* number-then-title sorts (user request 2026-11-19, sized for 1M songs: 인기순 ~4 s → ~0.4 s): the number and the title place
+   packed into one value and sorted by the worker; the same order as ourCmp (checked on 108만 곡). null when it can't be used
+   (a sort by text, a song without its title place, a number that isn't whole) — the caller sorts as before */
+const NUM_SORT = {
+  RatingScore: it => 2 ** 30 - (it.rating || 0),
+  PublishDate: it => it.date ? 99999999 - +it.date.replace(/-/g, "") : 1e8,  // newest first, no date last
+  old: it => it.date ? +it.date.replace(/-/g, "") : 1e8,  // oldest first, no date last
+  list: it => { const o = it.ord || {}; return o.namu != null ? o.namu : o.japan != null ? 1e6 + o.japan : 1e9; },
+  Name: () => 0,
+};
+async function numSorted(its, sort, tick) {
+  const f = NUM_SORT[sort], by = TR_BY, R = 4194304;  // title places up to 4M songs
+  if (!f || by.length > R) return null;
+  const keys = new Float64Array(its.length);
+  for (let i = 0; i < its.length; i++) {
+    const it = its[i], p = f(it), r = it._tr;
+    if (r === undefined || by[r] !== it || !Number.isInteger(p) || p < 0 || p >= 2 ** 31) return null;
+    keys[i] = p * R + r;
+    if (!(i & 16383)) await tick();
+  }
+  let out;
+  try { out = (await sortWork({keys}, [keys.buffer])).keys; } catch (e) { return null; }
+  const res = new Array(out.length);
+  for (let i = 0; i < out.length; i++) res[i] = by[out[i] % R];
+  return res;
+}
 function ourCmp() {
   const big = 1e9, txt = (a, b) => (a ? 0 : 1) - (b ? 0 : 1) || KO_CMP(a || "", b || "");
   const ord = it => { const o = it.ord || {}; return o.namu != null ? o.namu : o.japan != null ? 1e6 + o.japan : big; };
   const num = it => { const n = it.nums || {}, b = ["TJ", "금영", "DAM", "JOYSOUND", "UGA"].findIndex(x => n[x]); return b < 0 ? [big, big] : [b, parseInt(String(n[["TJ", "금영", "DAM", "JOYSOUND", "UGA"][b]]).replace(/\D/g, ""), 10) || big]; };
-  const byTitle = (a, b) => titleGroup(a.title) - titleGroup(b.title) || KO_CMP(a.title, b.title);
+  const byTitle = (a, b) => a._tr !== undefined && b._tr !== undefined ? a._tr - b._tr : titleCmp(a, b);  // _tr: titleRanks
   const cmp = {RatingScore: (a, b) => (b.rating || 0) - (a.rating || 0), list: (a, b) => ord(a) - ord(b), Name: () => 0,
     no: (a, b) => { const x = num(a), y = num(b); return x[0] - y[0] || x[1] - y[1]; },
     PublishDate: (a, b) => (a.date ? 0 : 1) - (b.date ? 0 : 1) || (b.date || "").localeCompare(a.date || ""), old: (a, b) => txt(a.date, b.date),

@@ -9,10 +9,26 @@ if (!S_SCOPES.includes(store.get("sScope", "all"))) store.set("sScope", "all"); 
 for (const id of ["sScope", "sSort"]) { $(id).value = store.get(id, $(id).value); $(id).onchange = () => { store.set(id, $(id).value); if (id === "sScope") { renderSortOptions(); renderFilterOptions(); } runSearch(); }; }
 /* the window first, the slow part after (user request 2026-11-15: building the song list took a while with nothing on
    screen) — a spinner over the window meanwhile, also while the song list is still being read (VDB.full) */
-function withBusy(dlg, work) {
+/* 준비 진행 (user request 2026-11-19: the spinner said '초기 한번만 불러와요' but it ran at every page load, with no sign of how
+   far): one percent over the steps — song blocks (VDB.prog) half, then the search steps (warmStep) — shown under the spinner */
+const WARM_STEPS = {items: [0, 10], long: [10, 15], family: [15, 20], rank: [20, 55], sort: [55, 65], filter: [65, 100]};
+let warmAt = 0;
+function warmStep(step, n = 0, total = 1) {
+  const [a, b] = WARM_STEPS[step] || [100, 100];
+  warmAt = a + (b - a) * Math.min(1, n / (total || 1));
+  busyLabel();
+}
+const busyPct = () => VDB.done ? 50 + Math.round(warmAt / 2) : Math.round(loadPct() / 2);
+function busyLabel() {
+  const t = `${VDB.done ? "검색 준비 중" : "곡 목록 받는 중"}… ${busyPct()}%\n처음 열 때만 기다려요 (화면을 새로 열면 다시)`;
+  document.querySelectorAll("dialog.busy").forEach(d => { d.dataset.busy = t; });
+}
+addEventListener("vdbprog", busyLabel);
+function withBusy(dlg, work, ready = searchBase) {
   dlg.classList.add("busy");
+  busyLabel();
   setTimeout(async () => {  // a moment to draw the window first
-    try { await searchBase(); await work(); } finally { dlg.classList.remove("busy"); }
+    try { await ready(); await work(); } finally { dlg.classList.remove("busy"); }
   }, 40);
 }
 /* the window opens fresh every time (user request 2026-11-18): no search text · 전체 곡 · 인기순 · 기본 필터 from the server
@@ -30,7 +46,8 @@ function openSearch() {
   searchReset();
   $("searchDlg").showModal();
   $("sQ").focus();
-  withBusy($("searchDlg"), async () => { await warmCats(yieldUI); renderSortOptions(); renderFilterOptions(); runSearch(); });
+  // the same preparation as the background one (warmSearch, shared — the first open used to do it a second time alongside)
+  withBusy($("searchDlg"), async () => { renderSortOptions(); renderFilterOptions(); runSearch(); }, warmSearch);  // categories: counted after (catsLater)
 }
 $("btnSearch").onclick = openSearch;
 $("sClose").onclick = () => $("searchDlg").close();
@@ -43,10 +60,26 @@ $("sQ").addEventListener("input", () => { clearTimeout(sTimer); sTimer = setTime
 async function findSongs(q, known = [], max = 40) {
   const v = fold(q), seen = new Set(), out = [];
   // in steps — the whole DB in one go stalled the screen while typing
-  if (v) await searchBase();
-  const db = v ? (await chunkFilter(VDB.all(), it => FKIND.text[1](it, v), yieldUI)).sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, max) : [];
+  if (v) { await searchBase(); await searchText(); }
+  const db = v ? await topMatches(VDB.all(), it => FKIND.text[1](it, v), max) : [];
   for (const it of [...known, ...db]) if (!seen.has(keyOf(it))) { seen.add(keyOf(it)); out.push(it); }
   return out.slice(0, max);
+}
+/* the `max` most popular songs passing `f`, in one pass (user request 2026-11-19, sized for 1M songs: 'a' matched most songs and
+   sorting them all took 5 s): a song that can't beat the last kept one isn't even tested; same order as a stable sort by rating */
+async function topMatches(its, f, max) {
+  const top = [];
+  for (let i = 0; i < its.length; i++) {
+    if (!(i & 16383)) await yieldUI();
+    const it = its[i], r = it.rating || 0;
+    if (top.length === max && r <= (top[max - 1].rating || 0)) continue;
+    if (!f(it)) continue;
+    let j = top.length;
+    while (j > 0 && (top[j - 1].rating || 0) < r) j--;
+    top.splice(j, 0, it);
+    if (top.length > max) top.pop();
+  }
+  return top;
 }
 /* the scope's songs: 전체 곡 = our whole DB · 노래방 곡만 · 가사·싱크 있는 곡 = our songs —
    kept until the scope or the song data changes (same array → the categories · sorted order below are reused) */
@@ -75,12 +108,14 @@ function searchTick(gen) {
 }
 /* stable merge sort that yields (Array.sort of 14만 곡 by title takes about a second in one go) */
 async function sortAsync(a, cmp, tick) {
-  const n = a.length, R = 32;
+  // runs of R sorted by the browser's own (stable) sort — ~4× quicker than ours, and a run takes only a few ms (2026-11-19,
+  // sized for 1M songs); then merged in passes that give the screen its turn
+  const n = a.length, R = 4096;
   let src = a.slice(), dst = new Array(n), ops = 0;  // ops: comparisons since the last tick
   for (let s = 0; s < n; s += R) {
-    const e = Math.min(s + R, n);
-    for (let i = s + 1; i < e; i++) { const x = src[i]; let j = i - 1; while (j >= s && cmp(src[j], x) > 0) { src[j + 1] = src[j]; j--; ops++; } src[j + 1] = x; ops++; }
-    if (ops > 2048) { ops = 0; await tick(); }
+    const run = src.slice(s, s + R).sort(cmp);
+    for (let i = 0; i < run.length; i++) src[s + i] = run[i];
+    await tick();
   }
   for (let w = R; w < n; w *= 2) {
     for (let s = 0; s < n; s += 2 * w) {
@@ -94,16 +129,41 @@ async function sortAsync(a, cmp, tick) {
   }
   return src;
 }
+/* the sorted scope — shared work (the background warm-up and a search wanting the same order wait for one sort, never two;
+   a newer search doesn't throw it away). The caller's tick only checks for staleness afterwards */
 async function sortedScope(tick) {
   const its = scopeItems(), key = $("sSort").value, m = sortMemo.get(its);
-  if (m && m.key === key) return m.out;
-  const out = await sortAsync(its, ourCmp(), tick);
-  sortMemo.set(its, {key, out});
+  if (!m || m.key !== key) {
+    const p = (async () => await numSorted(its, key, bgTick()) || sortAsync(its, ourCmp(), bgTick()))();  // numSorted: filter_panel.js
+    sortMemo.set(its, {key, p});
+    p.catch(() => sortMemo.delete(its));
+  }
+  const out = await sortMemo.get(its).p;
+  if (tick) await tick();
   return out;
 }
+/* 필터 결과 재사용 (user request 2026-11-19, sized for 1M songs: every keystroke ran the whole filter again — ~2 s over 44만 곡,
+   ~5 s at 1M — and every open ran the 기본 필터 again): per sorted scope, the last few filter results by their groups; typing
+   only filters that result by the text. Made by the warm-up for the 기본 필터, so the window opens on it at once */
+const filtMemo = new WeakMap(), FILT_KEEP = 4;
+async function filteredScope(gs, tick) {
+  const its = await sortedScope(tick), key = JSON.stringify(gs);
+  let m = filtMemo.get(its);
+  if (!m) filtMemo.set(its, m = new Map());
+  if (m.has(key)) { const out = m.get(key); m.delete(key); m.set(key, out); return out; }  // newest last
+  const out = await filterGroupsAsync(its, gs, tick);
+  m.set(key, out);
+  if (m.size > FILT_KEEP) m.delete(m.keys().next().value);
+  return out;
+}
+const playN = new WeakMap();  // result list → how many can be played (counted once per list)
+async function playableCount(its, tick) {
+  if (!playN.has(its)) playN.set(its, (await chunkFilter(its, playableFast, tick)).length);
+  return playN.get(its);
+}
 /* 재생 가능 세기: 곡마다 영상 주소 풀이는 한 번만 (deleted 는 그때그때) */
-const refsN = new WeakMap();
-const playableFast = it => it.site !== "stream" ? canPlay(it) : !it.deleted && (refsN.has(it) ? refsN.get(it) : (refsN.set(it, streamRefs(it).length), refsN.get(it))) > 0;
+// kept on the song (_pn), not in a WeakMap — 1M entries there cost far more room (2026-11-19)
+const playableFast = it => it.site !== "stream" ? canPlay(it) : !it.deleted && (it._pn ?? (it._pn = streamRefs(it).length)) > 0;
 /* 목록 칸의 도는 표시 — 금방 끝나면 안 보이게 조금 뒤에 */
 let busyTimer = 0;
 function listBusy(on) {
@@ -119,9 +179,9 @@ async function runSearch(keep) {
   const q = $("sQ").value.trim(), v = fold(q);
   S.q = q;
   try {
-    let its = await filterGroupsAsync(await sortedScope(tick), FG.filter(fReal), tick);
-    if (v) its = await chunkFilter(its, it => FKIND.text[1](it, v), tick);
-    const nPlay = (await chunkFilter(its, playableFast, tick)).length;
+    let its = await filteredScope(FG.filter(fReal), tick);
+    if (v) { await searchText(); await tick(); its = await chunkFilter(its, it => FKIND.text[1](it, v), tick); }  // searchText: filter_panel.js
+    const nPlay = await playableCount(its, tick);
     S.items = its;
     if (!keep) $("sList").scrollTop = 0;
     // 검색결과 N곡 · 재생 가능 M곡 (user request 2026-11-15: songs without a video are found but can't go in the playlist)

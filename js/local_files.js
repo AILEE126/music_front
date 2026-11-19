@@ -200,17 +200,27 @@ const LOCAL = {
     catch (e) { if (e.name === "NotFoundError" || e instanceof SyntaxError) return dflt; throw e; }
   },
   async writeText(path, text, asWho = "") {  // asWho: name for a write the player makes by itself (no name prompt)
-    if (this.gh) {  // 깃허브: 지금 파일의 sha 를 받아 그 위에 커밋 (새 파일이면 sha 없이)
-      const who = asWho || await this.ghWho();
-      let sha;
-      try { sha = (await (await this.ghFetch(path)).json()).sha; } catch (e) { if (e.name !== "NotFoundError") throw e; }
-      await this.ghFetch(path, {method: "PUT", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({message: `${who}: 서버 없이 저장 — ${path.split("/").pop()}`, content: b64utf8(text), sha, branch: this.gh.ref,
-                              author: {name: who, email: "music-player@users.noreply.github.com"}})});
-      return;
-    }
+    if (this.gh) return this.ghPut(path, b64utf8(text), asWho);
     const w = await (await this.file(path, this.dir, true)).createWritable();
     await w.write(text); await w.close();
+  },
+  async writeBytes(path, bytes, asWho = "") {  // binary files (gzip — the OPEN CHANNEL list)
+    if (this.gh) {
+      const u = new Uint8Array(bytes);
+      let s = "";
+      for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+      return this.ghPut(path, btoa(s), asWho);
+    }
+    const w = await (await this.file(path, this.dir, true)).createWritable();
+    await w.write(bytes); await w.close();
+  },
+  async ghPut(path, b64, asWho) {  // 깃허브: 지금 파일의 sha 를 받아 그 위에 커밋 (새 파일이면 sha 없이)
+    const who = asWho || await this.ghWho();
+    let sha;
+    try { sha = (await (await this.ghFetch(path)).json()).sha; } catch (e) { if (e.name !== "NotFoundError") throw e; }
+    await this.ghFetch(path, {method: "PUT", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({message: `${who}: 서버 없이 저장 — ${path.split("/").pop()}`, content: b64, sha, branch: this.gh.ref,
+                            author: {name: who, email: "music-player@users.noreply.github.com"}})});
   },
   /* 서버(파이썬 json.dumps(…, ensure_ascii=False, indent=1))와 같은 모양 → 깃 차이가 생기지 않게.
      줄 끝도 그 파일 그대로 (윈도의 파이썬은 CRLF 로 씀 — 새 파일도 윈도면 CRLF) */
