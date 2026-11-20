@@ -300,12 +300,14 @@ function badgesHtml(it) {
   else if (it.stale) ss.push('<span class="b warn" title="싱크를 맞춘 뒤 가사가 바뀜 — 싱크를 다시 맞춰야 함">싱크 어긋남</span>');
   else if (it.sync === "ok" && syncPct(it) == null) ss.push('<span class="b ok" title="자동으로 맞춘 싱크">자동 싱크</span>');
   else if (it.sync !== "ok" && !it.api && (it.lyrics || it.vsync || vdbLyr)) ss.push('<span class="b" title="가사는 있지만 싱크가 없음">싱크X</span>');
+  if (typeof admSyncWaits === "function" && admSyncWaits(it)) ss.push('<span class="b warn" title="플레이어에서 고친 싱크가 반영을 기다림 (관리자: 우클릭 › 선택 모드로 반영)">수정 대기</span>');
   ss.push(pctHtml(it));
   return `<div class="bl">${bs.join("")}</div><div class="bl">${ss.join("")}</div>`;
 }
 function itemHtml(it, i) {
   const pl = ONLINE && !guestPl;
-  return `<div class="item${cur && keyOf(cur) === keyOf(it) ? " cur" : ""}${it.deleted ? " gone" : ""}" data-i="${i}"${pl ? ' draggable="true"' : ""}${it.deleted ? ' aria-disabled="true"' : ""}>
+  const hl = SHELL.qView && SHELL.qView() ? SHELL.qView().now : cur;  // OPEN CHANNEL: the mark stays on my song from before
+  return `<div class="item${hl && keyOf(hl) === keyOf(it) ? " cur" : ""}${typeof admRowCls === "function" ? admRowCls(it) : ""}" data-i="${i}"${pl ? ' draggable="true"' : ""}>
     ${coverHtml(it, "thumb")}<div class="meta"><div class="t">${titleHtml(it)}</div><div class="a">${esc(shortName(it.artist || it.name))}</div></div>
     <div class="badges">${badgesHtml(it)}</div></div>`;  // no ✕ — removing is in the right-click menu (user request 2026-11-18)
 }
@@ -357,8 +359,10 @@ $("list").addEventListener("contextmenu", e => {
   const el = e.target.closest(".item"); if (!el) return;
   const i = +el.dataset.i, it = view[i];
   // in a 같이듣기 room / OPEN CHANNEL: request the song (user request 2026-11-18 — playlist and offline rows alike)
-  const req = typeof LT !== "undefined" && LT.role && !el.classList.contains("gone") ? [{label: "신청곡으로 신청", fn: () => ltRequestFromMenu(it)}] : [];
-  songContext(e, it, [...req, ...(ONLINE && !guestPl ? [{label: "다음에 재생", fn: () => SHELL.enqueue(it)}, {label: "이 곡 재생목록에서 빼기", fn: () => PL.remove(plIdx(i))}] : [])]);
+  const req = typeof LT !== "undefined" && LT.role ? [{label: "신청곡으로 신청", fn: () => ltRequestFromMenu(it)}] : [];
+  const adm = ONLINE && !guestPl && typeof admMenu === "function" ? admMenu(it) : [];  // 관리자: 선택 모드 (admin_tools.js)
+  const inCh = typeof LT !== "undefined" && LT.chOn;  // OPEN CHANNEL: my queue is frozen meanwhile
+  songContext(e, it, [...req, ...(ONLINE && !guestPl ? [...(inCh ? [] : [{label: "다음에 재생", fn: () => SHELL.enqueue(it)}]), {label: "이 곡 재생목록에서 빼기", fn: () => PL.remove(plIdx(i))}] : []), ...adm]);
 });
 { let t = 0; $("plQ").addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { $("list").scrollTop = 0; renderList(); }, 150); }); }
 $("btnPlClear").onclick = async () => { if (SHELL.queue.length && await uiConfirm("재생목록을 비울까요?")) { setPlFilter(null); PL.set([]); } };

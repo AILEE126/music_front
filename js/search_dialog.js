@@ -160,6 +160,7 @@ async function filteredScope(gs, tick) {
   if (!m) filtMemo.set(its, m = new Map());
   if (m.has(key)) { const out = m.get(key); m.delete(key); m.set(key, out); return out; }  // newest last
   const out = await filterGroupsAsync(its, gs, tick);
+  if (key.includes('"k":"report"')) return out;  // 오류 신고 changes while the scope stays (admin_tools.js) — not kept
   m.set(key, out);
   if (m.size > FILT_KEEP) m.delete(m.keys().next().value);
   return out;

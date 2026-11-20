@@ -222,6 +222,7 @@ const FKIND = {
   flag: ["곡 상태", (it, v) => (it.flags || []).includes(v)],
   ver: ["공식 여부", (it, v) => verOf(it) === v],
   file: ["파일 포맷", (it, v) => fileKindsOf(it).includes(v)],
+  report: ["오류 신고", (it, v) => reportKindsOf(it).includes(v)],  // 관리자 플레이어만 (user request 2026-11-20) — 처리 안 된 신고의 종류
   song: ["곡", (it, v) => String(it.vocadb || it.name) === v],  // 그 곡 자체 (user request 2026-11-14: 검색 결과의 '필터에 추가') — v: VocaDB 번호
   composer: ["프로듀서", (it, v) => it._composers.includes(v)],
   kara: ["노래방", (it, v) => (it.tags || []).includes(v)],
@@ -232,6 +233,8 @@ const FKIND = {
     : v === "lyrics" ? !!it.lyrics : v === "nolyrics" ? !it.lyrics : v === "ok" ? it.sync === "ok"
     : v === "need" ? (it.site === "stream" ? !!(it.karaoke && it.sync !== "ok") : !!(it.lyrics && it.sync !== "ok")) : v === "stale" || v === "resync" ? it.sync === v : v === "fail" ? !!it.sync_fail : false],
 };
+/* 곡의 처리 안 된 오류 신고 종류 — 관리자 플레이어가 정함 (music_front admin_tools.js). 그 밖에서는 없음 → 카테고리도 안 보임 */
+var reportKindsOf = it => [];
 /* 태그 → 그 분류 이름 (장르·테마 …) — 플레이어가 우리 DB 의 master 로 정함 (player_screen.js). 태그 이름에 ':' 가 있어도 그대로 이름
    (VocaDB 태그 'Persona 5: …' 등 — 예전 스트리밍 '분류:이름' 형식은 이제 없음) */
 var tagGroupOf = v => "";
@@ -240,7 +243,7 @@ const firstV = c => Array.isArray(c.v) ? c.v[0] || "" : c.v;
 const chipKind = c => c.k === "tag" && tagGroupOf(firstV(c)) || FKIND[c.k][0];
 /* 곡 조건의 값(VocaDB 번호) → 제목 — 플레이어가 우리 DB 로 정함 (player_screen.js) */
 var songTitleOf = v => v;
-const oneLabel = (k, v) => k === "same_cut" ? `상위 ${v}곡` : k === "vcount" ? vcountLabel(v) : k === "song" ? songTitleOf(v) : k === "flag" || k === "ver" || k === "file" || k === "vkind" || k === "same_sort" ? v : k === "tag" ? v : k === "year" ? v + "년" : k === "state" ? STATES[v] || v
+const oneLabel = (k, v) => k === "same_cut" ? `상위 ${v}곡` : k === "vcount" ? vcountLabel(v) : k === "song" ? songTitleOf(v) : k === "flag" || k === "ver" || k === "file" || k === "report" || k === "vkind" || k === "same_sort" ? v : k === "tag" ? v : k === "year" ? v + "년" : k === "state" ? STATES[v] || v
   : k === "kara" && (v === "한국" || v === "일본") ? v + " 전체" : shortName(v);
 const vcountLabel = v => v.endsWith("+") ? `${parseInt(v)}인 이상` : v + "인";
 const chipLabel = c => c.k === "song" && Array.isArray(c.v) && c.v.length > 2 ? `${c.v.slice(0, 2).map(v => oneLabel(c.k, v)).join(", ")} 외 ${c.v.length - 2}곡`
@@ -273,7 +276,7 @@ const sortCounts = m => [...m.entries()].sort((a, b) => b[1] - a[1] || KO_COLLAT
    turns in between (user request 2026-11-18: counting 25만 곡 at once stalled the player 1.5 s) */
 function filterCatsCounter(online) {
   const m = {ini: new Map(), singer: new Map(), vcount: new Map(), vkind: new Map(), composer: new Map(), kara: new Map(), tags: new Map(),
-             cat: new Map(), year: new Map(), state: new Map(), flag: new Map(), ver: new Map(), file: new Map()};
+             cat: new Map(), year: new Map(), state: new Map(), flag: new Map(), ver: new Map(), file: new Map(), report: new Map()};
   const inc = (map, x) => map.set(x, (map.get(x) || 0) + 1);
   const states = Object.keys(STATES).filter(k => !online || !/^(lyrics|nolyrics|src:)/.test(k));  // 온라인: 싱크 상태만 (가사는 그때 읽음)
   return {
@@ -291,6 +294,7 @@ function filterCatsCounter(online) {
       for (const f of it.flags || []) inc(m.flag, f);
       const vr = verOf(it); if (vr) inc(m.ver, vr);
       for (const f of fileKindsOf(it)) inc(m.file, f);
+      for (const r of reportKindsOf(it)) inc(m.report, r);
     },
     done() {
       const cats = [], add = (id, label, k, rows, lab = x => x) => { if (rows.length) cats.push({id, label, k, rows, lab}); };
@@ -310,6 +314,7 @@ function filterCatsCounter(online) {
       add("flag", "곡 상태", "flag", FLAGS.filter(f => m.flag.has(f)).map(f => [f, m.flag.get(f)]));
       add("ver", "공식 여부", "ver", VERS.filter(v => m.ver.has(v)).map(v => [v, m.ver.get(v)]));
       add("file", "파일 포맷", "file", FILE_KINDS.filter(f => m.file.has(f)).map(f => [f, m.file.get(f)]));
+      add("report", "오류 신고", "report", sortCounts(m.report));
       return cats.sort((a, b) => a.label.localeCompare(b.label, "ko"));  // 대분류는 가나다순
     },
   };
@@ -328,7 +333,7 @@ async function filterCatsAsync(its, online, tick) {
    컬러 이모지는 눈에 안 들어와서 (user request) 글자색 한 가지로 그려지는 단순한 기호 — U+FE0E: 이모지 그림으로 바꾸지 말고 글자로.
    태그 분류(장르·테마 …)는 VocaDB 분류의 한글 이름 (filter_panel.js TAG_CAT_KO) — 새 분류가 생기면 여기 한 줄 더, 없으면 # */
 const CAT_ICON = {
-  "가나다": "ㄱ", "보컬": "♪", "보컬 인원수": "Ⅲ", "프로듀서": "✎", "노래방": "♫", "나무위키 분류": "▤", "투고년도": "◷", "가사·싱크 상태": "✓", "곡 상태": "◇", "공식 여부": "✪", "파일 포맷": "⤓", "곡 종류": "◉", "보컬 종류": "◐", "같은 곡 정렬": "⇅", "같은 곡 자르기": "✂",
+  "가나다": "ㄱ", "보컬": "♪", "보컬 인원수": "Ⅲ", "프로듀서": "✎", "노래방": "♫", "나무위키 분류": "▤", "투고년도": "◷", "가사·싱크 상태": "✓", "곡 상태": "◇", "공식 여부": "✪", "파일 포맷": "⤓", "오류 신고": "⚠", "곡 종류": "◉", "보컬 종류": "◐", "같은 곡 정렬": "⇅", "같은 곡 자르기": "✂",
   "장르": "◆", "테마": "◈", "분위기": "☁", "악기": "♩", "곡 구성": "▦", "보컬 관련": "✧", "원작": "❖", "시리즈": "⟳", "애니메이션": "▶",
   "게임": "✦", "MMD 모델": "☺", "출처": "↗", "배포": "⇩", "편집 메모": "✐", "음성 합성 엔진": "⚙", "가사": "❝", "2차 창작": "⧉",
   "디자인": "✿", "이벤트": "⚑", "매체": "▣", "역할": "☰", "언어": "◎",

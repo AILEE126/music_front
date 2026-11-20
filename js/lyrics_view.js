@@ -184,7 +184,8 @@ function renderSyncChip() {
     txt = `자동 싱크 · 인식 일치 ${p}%`; cls += p >= 70 ? " ok" : " warn";
   }
   c.title = times && sj.method !== "manual" ? "인식으로 맞춘 묶음의 비율입니다. '추정' 표시 묶음은 앞뒤 묶음 시간으로 채운 것이라 어긋날 수 있습니다." : "";
-  if (times && song.sync_pending) {  // edited here, waiting for the manage screen to confirm (반영) — played meanwhile
+  // edited here, waiting for the manage screen to confirm (반영) — played meanwhile; an admin's edit is applied without one
+  if (times && song.sync_pending && !song.sync_pending.admin) {
     txt += " · 확인 대기";
     c.title = "고친 싱크가 음원 관리의 확인을 기다리는 중입니다. 반영되면 본 싱크가 되고, 버려지면 전 싱크로 돌아갑니다.\n" + c.title;
   }

@@ -8,7 +8,7 @@
      읽기: Server\data\export (서버가 써 둔 우리 곡·한글 이름·가사). 썸네일은 원곡 영상의 썸네일 주소(thumb)를 바로
    (오프라인 mp3 는 플레이어에서 고른 mp3 폴더 — offline_folder.js)
      쓰기: 싱크 밀기(±초)·직접 맞추기 → Server\data\sync_pending\<싱크 파일> + '싱크 수정' 오류 신고 (본 싱크 파일은 그대로 —
-     음원 관리에서 반영해야 바뀜. 그때까지 이 플레이어는 고친 싱크로 틂)
+     음원 관리에서 반영해야 바뀜. 그때까지 이 플레이어는 고친 싱크로 틂; 관리자 토큰은 반영 요청도 같이 남김 — savePending)
    화면의 api()·post() 는 모두 LOCAL.request() 로 옴 (shared_screen_helpers.js — 플레이어는 서버에 묻지 않음) */
 const CRLF = "\r\n", LF = "\n";
 const GH_API = "https://api.github.com";
@@ -194,6 +194,16 @@ const LOCAL = {
   async readBytes(path) {  // binary files (gzip blocks)
     if (this.gh) return (await this.ghFetch(path, {raw: true})).arrayBuffer();
     return (await (await this.file(path)).getFile()).arrayBuffer();
+  },
+  async listDir(path) {  // file names in a folder ([] when it doesn't exist) — 관리자 기능 (admin_tools.js)
+    try {
+      if (this.gh) { const a = await (await this.ghFetch(path)).json(); return Array.isArray(a) ? a.filter(f => f.type === "file").map(f => f.name) : []; }
+      let d = this.dir;
+      for (const p of path.split("/").filter(Boolean)) d = await d.getDirectoryHandle(p);
+      const out = [];
+      for await (const [n, h] of d.entries()) if (h.kind === "file") out.push(n);
+      return out;
+    } catch (e) { if (e.name === "NotFoundError") return []; throw e; }
   },
   async readJson(path, dflt) {
     try { return JSON.parse((await this.readText(path)).replace(/^\uFEFF/, "")); }
@@ -412,18 +422,39 @@ const LOCAL = {
     const d = await this.readJson(`${this.out}/db/lyrics/${it.vocadb}.json`, null);
     return {sj: d && d.sync ? {...d.sync} : null, pend: null};
   },
+  /* 관리자 토큰 (user request 2026-11-20): no 확인 대기, no server needed. A song with lyrics of ours and no waiting edit
+     gets the sync written straight into its player file (export/db/lyrics/<id>.json on the data branch) — no report.
+     Either way a request sync_apply/admin_<VocaDB id>.json (one per song, overwritten by the next nudge) lets the server
+     put it into its table when it runs (error_reports.apply_player_requests; also at server start, before the export
+     that would otherwise write the table's old sync back). Other songs (VocaDB lyrics / an edit already waiting) keep
+     the pending file — every player reads that one — with the request naming its report. */
   async savePending(it, sj, what) {
     const path = this.pendingPath(it);
+    const admin = typeof isAdmin === "function" && isAdmin();
     await this.locked(path, async () => {
       const old = await this.readJson(path, null);
+      const who = admin ? (this.gh ? await this.ghWho() : String(store.get("reportWho", "") || "").trim()) : "";
+      const req = x => this.writeText(`${this.data}sync_apply/admin_${it.vocadb}.json`, JSON.stringify({at: nowText(), who, ...x,
+        songs: [{vocadb: String(it.vocadb), title: it.title || it.name || ""}]}, null, 1) + "\n", who);
+      const lpath = `${this.out}/db/lyrics/${it.vocadb}.json`;
+      const doc = admin && it.lyrics && !(old && Array.isArray(old.times)) ? await this.readJson(lpath, null) : null;
+      if (doc) {
+        const s = {...sj}; delete s.pending; delete s.lyrics;
+        doc.sync = s; doc.sync_state = "ok";
+        await this.writeText(lpath, JSON.stringify(doc), who);  // the server rewrites it in its own form once it applies the request
+        await req({syncs: [{vocadb: String(it.vocadb), sync: s}]});
+        return;
+      }
       let rid = old && old.pending && old.pending.report;
       if (!rid) {  // first edit since the last confirm → one report for it
-        rid = (await this.saveReport({kind: "싱크 수정", text: `플레이어에서 싱크를 고쳤습니다 (${what}). 음원 관리에서 반영하거나 버리세요.`,
+        rid = (await this.saveReport({kind: "싱크 수정", text: admin ? `관리자가 플레이어에서 싱크를 고쳤습니다 (${what}). 바로 반영됩니다.`
+            : `플레이어에서 싱크를 고쳤습니다 (${what}). 음원 관리에서 반영하거나 버리세요.`,
           song: {site: it.site, name: it.name, title: it.title, artist: it.artist || "", vocadb: String(it.vocadb)},
           sync: {vocadb: it.vocadb, pending: `sync_pending/vocadb/${it.vocadb}.json`}})).id;
       }
-      sj.pending = {report: rid, at: nowText(), what};
+      sj.pending = {report: rid, at: nowText(), what, ...(admin ? {admin: true} : {})};
       await this.writeText(path, pyJson(sj));
+      if (admin) await req({ids: [String(rid)]});
     });
   },
   /* 싱크 밀기(±초)만: 지금 싱크(기다리는 수정이 있으면 그것)의 offset 만 바꿔 기다리는 파일로 */
