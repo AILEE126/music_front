@@ -193,7 +193,7 @@ const EXT_ORIGINS = ["https://embed.nicovideo.jp/*", "https://www.youtube-nocook
   "https://w.soundcloud.com/*", "https://player.vimeo.com/*", "https://ailee126.github.io/music-bridge/*", "http://127.0.0.1/tools/stream_bridge/*"];  // 127.0.0.1: the bridge under test
 const EXT_MANIFEST = JSON.stringify({
   manifest_version: 3, name: "음원 플레이어 확장", version: EXT_VER + ".0",
-  description: "음원 플레이어의 배속 · 키 변경 · 소리 크기 맞추기 · 볼륨이 니코니코 · 유튜브 · 비리비리 · SoundCloud · Vimeo 영상에도 적용되게 합니다 (유튜브 광고 건너뛰기 포함)",
+  description: "음원 플레이어의 배속 · 키 변경 · 소리 크기 맞추기 · 볼륨이 니코니코 · 유튜브 · 비리비리 · SoundCloud · Vimeo 영상에도 적용되게 합니다 (유튜브 · 니코니코 · 비리비리 광고 없애기 포함)",
   content_scripts: [{matches: EXT_ORIGINS, js: ["media.js"], all_frames: true, run_at: "document_start", world: "MAIN"}],
 }, null, 2);
 /* 추가기능 파일 (user request 2026-11-19): ONE zip for both PC add-ons — folder 오버레이/ (tools/lyrics_overlay.bat + .ps1)

@@ -9,10 +9,10 @@
    · the players' frames (Niconico · YouTube · SoundCloud · Vimeo · Bilibili) → from the bridge {mpx: 1, rate, semis, level,
      vol, key, prior} / {biliVol}:
      배속 (playbackRate) · 키 변경 (semis: pitch without changing speed) · 소리 크기 맞추기 (level: measured loudness →
-     every song at the same level) · Bilibili volume · YouTube ads cut out / skipped.
+     every song at the same level) · Bilibili volume · YouTube ads cut out / skipped · Niconico / Bilibili ad boxes hidden.
      Reports {mpxAck: version} and {mpxLoud: {lufs, secs}} (what it measured, kept by the player for the next play). */
 function mpxMedia() {
-  const VER = 3;
+  const VER = 4;  // 4: Niconico · Bilibili ads hidden
   const host = location.hostname;
   if (host === "ailee126.github.io" || (/^(127\.0\.0\.1|localhost)$/.test(host) && /stream_bridge/.test(location.pathname))) {
     window.MPX_EXT = VER;  // the bridge page (deployed · under test)
@@ -258,6 +258,19 @@ function mpxMedia() {
       const b = document.querySelector(".ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button");
       if (b) b.click();
     }, 300);
+  }
+
+  /* Niconico · Bilibili ads (user request 2026-11-20, PC extension + app): Niconico's embed puts a 468×60 banner over the
+     bottom of the video with a ✕ above it (an empty black box when the ad doesn't load) — container class is hashed, so it
+     is found by its banner (#overlayBanner, loads res.ads.nicovideo.jp ads2.js) and the stable `ads-in-back`. Bilibili's
+     embed ends on a "download the Bilibili app" panel. Checked 2026-11-20: SoundCloud · Vimeo embeds show no ads. */
+  const HIDE = {"embed.nicovideo.jp": "#overlayBanner, .ads-in-back, div:has(> #overlayBanner) { display: none !important; }",
+    "player.bilibili.com": ".bpx-player-embeded-ending-wrap { display: none !important; }"}[host];
+  if (HIDE) {
+    const st = document.createElement("style");
+    st.textContent = HIDE;
+    const put = () => { if (!st.isConnected) (document.head || document.documentElement).appendChild(st); };
+    put(); document.addEventListener("DOMContentLoaded", put);  // the page may rewrite <head> while loading
   }
 }
 mpxMedia();
