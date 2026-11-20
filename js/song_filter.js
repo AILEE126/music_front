@@ -18,10 +18,20 @@ function initialOf(title) {
 const people = s => (s || "").split(/\s*(?:,|，|、|&|＆|\/)\s*/).map(x => x.trim()).filter(Boolean);
 /* 보컬 인원수 (user request 2026-11-14): 보컬 칸의 사람 수 그대로 — 태그가 아님. 5명부터는 '5+' 하나 (보컬이 없는 곡은 값 없음) */
 const VCOUNT_MAX = 5;
-const vcountOf = it => { const n = (it._singers || []).length; return !n ? "" : n >= VCOUNT_MAX ? VCOUNT_MAX + "+" : String(n); };
+/* 인원수 · 솔로에서 빼는 보컬 (user request 2026-11-20): VocaDB 보조 보컬 (songs col vocal_support '<보컬 수>:<위치>|…', 보컬 수가
+   보컬 칸과 다르면 안 씀) · 코러스로만 참여하는 프로듀서 (피노키오피) — 같은 규칙: 서버 library/vocal_colors.py main_singers */
+const CHORUS_ONLY = new Set(["피노키오피", "ピノキオピー", "pinocchiop"]);
+function mainSingers(it) {
+  const names = String(it.singer || "").split(", "), [n, pos] = String(it.vsup || "").split(":");
+  const drop = pos && +n === names.length ? new Set(pos.split("|").map(Number)) : null;
+  const keep = names.filter((x, k) => !(drop && drop.has(k)) && !CHORUS_ONLY.has(x.replace(/[\s\-_·]/g, "").toLowerCase()));
+  return keep.some(Boolean) ? people(keep.join(", ")) : people(it.singer);
+}
+const vcountOf = it => { const n = (it._vsingers || it._singers || []).length; return !n ? "" : n >= VCOUNT_MAX ? VCOUNT_MAX + "+" : String(n); };
 function prepItem(it) {
   it._ini = initialOf(it.title);
   it._singers = people(it.singer);
+  it._vsingers = mainSingers(it);
   it._composers = people(it.composer);
   it._year = /^\d{4}/.test(it.date || "") ? it.date.slice(0, 4) : "";
 }
@@ -204,7 +214,7 @@ const FKIND = {
   text: ["검색", (it, v) => searchHay(it).includes(v === foldQ.v ? foldQ.f : (foldQ.v = v, foldQ.f = fold(v)))],
   ini: ["가나다", (it, v) => it._ini === v],
   singer: ["보컬", (it, v) => it._singers.includes(v)],
-  solo: ["솔로", (it, v) => it._singers.length === 1 && it._singers[0] === v],
+  solo: ["솔로", (it, v) => { const s = it._vsingers || it._singers; return s.length === 1 && s[0] === v; }],
   vcount: ["인원수", (it, v) => vcountOf(it) === v],
   vkind: ["보컬 종류", (it, v) => vkindOf(it) === v],
   same_sort: ["같은 곡 정렬", () => true],  // 곡 하나로는 안 정함 — filterGroups 가 그룹 단위로

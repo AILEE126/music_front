@@ -112,8 +112,16 @@ function colorField(value = "") {
 
 /* 가사 글자색 (바탕화면 오버레이와 같음): 서버가 묶음마다 준 보컬 색 vc 1~3개. 여럿이면(듀엣·합창) 한 줄의 글자를
    위(첫 색)→아래(끝 색) 그라데이션으로 칠함 — 줄 높이(1lh)마다 반복돼 여러 줄로 넘어가도 줄마다 같음 */
+/* near-black part / vocal colors (Namu's black = 합창) → charcoal: black letters vanished on the dark screen and the
+   overlay (user request 2026-11-20, 'a dark gray, about charcoal') — web and overlay alike */
+const INK_DARK = "#4a4a4a";
+const inkOf = c => {
+  if (!/^#[0-9a-f]{6}$/i.test(c || "")) return c;
+  const n = parseInt(c.slice(1), 16);
+  return Math.max(n >> 16, n >> 8 & 255, n & 255) < 48 ? INK_DARK : c;  // black only — a dark navy etc. stays
+};
 function lyrLine(cls, text, cs) {
-  cs = (cs || []).filter(c => /^#[0-9a-f]{6}$/i.test(c));
+  cs = (cs || []).filter(c => /^#[0-9a-f]{6}$/i.test(c)).map(inkOf);
   if (!cs.length) return `<div class="${cls}">${esc(text)}</div>`;
   if (cs.length === 1) return `<div class="${cls} vc" style="--vc:${cs[0]}">${esc(text)}</div>`;
   const g0 = 22, g1 = 82, n = cs.length;  // 글자가 실제로 차지하는 높이(줄의 22~82%)에 색을 고르게 놓음
