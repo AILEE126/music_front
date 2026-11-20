@@ -110,6 +110,9 @@ class BridgePlayer {
       else if (m.ev === "ready") {
         if (m.vid && m.vid !== this.ref.id) return;  // late message of the song before a "load"
         this.ready = true; clearTimeout(this.timer); if (+m.d) this.d = +m.d; if (this.ref.kind === "nico") gotNicoViews(this.ref.id, m.views);
+        // 배속 again: a rate sent while the page was still loading is lost (user report 2026-11-20: entering OPEN CHANNEL 2x!!
+        // the first song played at 1×) — the bridge page skips it when it already has it
+        this.cmd("rate", this.r);
       }
       this.on(m);
     };
@@ -194,11 +197,11 @@ const EXT_VER = window.MPX_VER || 0;
 const EXT_ORIGINS = ["https://embed.nicovideo.jp/*", "https://www.youtube-nocookie.com/*", "https://www.youtube.com/*", "https://player.bilibili.com/*",
   "https://w.soundcloud.com/*", "https://player.vimeo.com/*", "https://ailee126.github.io/music-bridge/*", "http://127.0.0.1/tools/stream_bridge/*"];  // 127.0.0.1: the bridge under test
 // loader version: bump only when bg.js or the manifest changes (new sites → a reinstall); the media script itself updates alone
-const EXT_LOADER = 1;
+const EXT_LOADER = 2;  // 2: works without 사용자 스크립트 허용 (the folder's copy as a content script — bg.js fallback)
 const EXT_MANIFEST = JSON.stringify({
   manifest_version: 3, name: "음원 플레이어 확장", version: "5." + EXT_LOADER,
   description: "음원 플레이어의 배속 · 키 변경 · 소리 크기 맞추기 · 광고 없애기를 니코니코 · 유튜브 · 비리비리 · SoundCloud · Vimeo 영상에 씁니다. 기능은 스스로 업데이트돼요.",
-  permissions: ["userScripts", "alarms", "storage"],
+  permissions: ["userScripts", "scripting", "alarms", "storage"],
   host_permissions: [...EXT_ORIGINS, "https://raw.githubusercontent.com/*"],
   background: {service_worker: "bg.js"},
   action: {default_title: "음원 플레이어 확장 (자동 업데이트, 누르면 지금 확인)"},
@@ -304,7 +307,8 @@ function extProbe() {
     const f = document.createElement("iframe");
     f.style.cssText = "position:fixed;left:-9999px;top:0;width:10px;height:10px;border:0";
     f.src = `${BRIDGE_URL}?probe=1&id=probe`;
-    const done = v => { removeEventListener("message", on); clearTimeout(t); f.remove(); if (v != null) extSeen(v); res(EXT.ver); };
+    // no answer → null, not the version kept from before (it showed '예전 것' for a page that never answered)
+    const done = v => { removeEventListener("message", on); clearTimeout(t); f.remove(); if (v != null) extSeen(v); res(v == null ? null : EXT.ver); };
     const on = e => { if (e.source === f.contentWindow && e.data && e.data.bridge && e.data.ev === "ext") done(e.data.v); };
     const t = setTimeout(() => done(null), 10000);
     addEventListener("message", on);
@@ -699,9 +703,10 @@ function extGuide(box, {intro, touch, later, touchOk, done, ok}) {
         l: ["{A}", "새 탭 주소창에 붙여 넣고 <b>Enter</b>", "<b>개발자 모드</b> 켜기"]},
       {t: "확장 프로그램 넣기",
         l: [`<b>${loadBtn}</b> 누르기`, `압축 푼 <b>${EXT_DIR}</b> 폴더 → <b>폴더 선택</b>`,
-          "저절로 열리는 화면에서 <b>사용자 스크립트 허용</b> 켜기", "여기로 돌아와 <b>다 했어요</b>"],
-        n: (ext === "old" ? `먼저 예전 <b>${EXT_DIR}</b>을 <b>${delBtn}</b>해 주세요. ` : `예전에 넣은 <b>비리비리 볼륨</b>이 있으면 <b>${delBtn}</b>해 주세요. `)
-          + "압축 푼 폴더는 지우지 마세요. 그 뒤 업데이트는 저절로 돼요."});
+          "여기로 돌아와 <b>다 했어요</b>"],
+        n: (ext === "old" ? `먼저 예전 <b>${EXT_DIR}</b>(버전 <b>4.0</b> 이하)을 <b>${delBtn}</b>해 주세요. ` : `예전에 넣은 <b>${EXT_DIR}</b> · <b>비리비리 볼륨</b>이 있으면 먼저 <b>${delBtn}</b>해 주세요. `)
+          // the switch is optional since loader 2 (user report 2026-11-20: nobody got past it) — one line, not a step
+          + "압축 푼 폴더는 지우지 마세요. 저절로 열리는 화면의 <b>사용자 스크립트 허용</b>을 켜 두면 새 버전도 저절로 받아요 (안 켜도 돼요)."});
     // two lines (user 2026-11-20: the overlay looked like more steps than before) — once installed, the [오버레이] button
     // starts it again by itself (musicoverlay: link), so nothing about restarting here
     if (ov === "off") S.push({t: "가사 오버레이 켜기", ov: true, a: getBtn("ov"),
@@ -809,18 +814,21 @@ function openSetupGuide(what, after) {
         : "배속 · 키 · 소리 크기 맞추기 · 광고 없애기를 모든 영상에 써요. <b>비리비리</b> 곡은 꼭 필요해요.",
       touch: "폰에서는 넣을 필요 없어요. 앱에 다 들어 있어요.",
       later: close, touchOk: close, ok: fin,
-      // the loader registers its script up to 30 s after 사용자 스크립트 허용 is turned on (bg.js) → keep asking ~45 s
+      // the loader registers its script a moment after the folder is loaded → keep asking ~15 s
       done: () => {
-        const until = Date.now() + 45000;
+        const until = Date.now() + 15000;
         (async () => {
-          let v = 0;
-          do { v = await extProbe(); } while (setupDlg.open && v < EXT_VER && Date.now() < until);
+          let v = null;
+          do { v = await extProbe(); if (!(v >= EXT_VER)) await new Promise(r => setTimeout(r, 1500)); } while (setupDlg.open && !(v >= EXT_VER) && Date.now() < until);
           if (!setupDlg.open) return;
           if (v >= EXT_VER) return fin();
-          setupG.note(v ? "아직 예전 확장 프로그램이 보여요. 예전 것을 지웠는지 봐 주세요."
-            : "아직 확장 프로그램이 안 보여요. <b>개발자 모드</b> · 고른 폴더 · <b>사용자 스크립트 허용</b>을 확인해 주세요.");
+          // an old static one (비리비리 볼륨 · 음원 플레이어 확장 4.0 or older) still in answers instead of the new one — it is
+          // named with the version it reports (user report 2026-11-20: 5.1 in, still '예전 것')
+          setupG.note(v == null ? "확인 페이지가 답하지 않아요. 인터넷 연결을 확인하고 다시 눌러 주세요."
+            : v ? `아직 예전 확장 프로그램(${v}판)이 보여요. 확장 목록에서 <b>비리비리 볼륨</b>, 버전이 <b>5</b>로 시작하지 않는 <b>${EXT_DIR}</b>을 모두 지우고 다시 눌러 주세요.`
+            : `아직 확장 프로그램이 안 보여요. 확장 목록에 <b>${EXT_DIR}</b>이 켜져 있는지, 고른 폴더가 맞는지 봐 주세요.`);
         })();
-        return "확인하는 중… (30초쯤 걸릴 수 있어요)";
+        return "확인하는 중…";
       }});
   }
   setupWhat = what;

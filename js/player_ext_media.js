@@ -20,6 +20,8 @@ function mpxMedia() {
     window.MPX_EXT = VER;  // the bridge page (deployed · under test)
     return;
   }
+  if (window.__mpxOn) return;  // two copies of the extension in one browser: one audio chain only
+  window.__mpxOn = VER;
 
   /* ---- audio chain: input → (key change) → level gain → limiter → speakers, + loudness meter on the input ----
      Key change uses plain Web Audio nodes only (two delay lines swept by a saw, crossfaded): YouTube and Vimeo block

@@ -100,6 +100,9 @@ if (q.get("yt")) {
       try {
         if (!y.getCurrentTime) return;
         if (want && (y.getVideoData() || {}).video_id === want && y.getDuration() > 0) { want = ""; up({ev: "ready", d: y.getDuration()}); }
+        // 배속: a video loaded by "load" starts at 1 again and the state event that set it back doesn't come while folded
+        // (user report 2026-11-20: OPEN CHANNEL 2x!! played at 1×) → checked here while it plays
+        if (rate !== 1 && y.getPlayerState() === 1 && y.getPlaybackRate() !== rate) y.setPlaybackRate(rate);
         up({ev: "time", t: y.getCurrentTime(), d: y.getDuration()});
       } catch (e) {}
     }, 250);
