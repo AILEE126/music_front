@@ -246,7 +246,7 @@ function renderVolume(btn, range, audio) {
    new rows are marked '새로' while that window is open. A new setting = add its key here (ov · font = the ⚙ window's parts,
    m = the phone 설정 page, data-nk in player_screen.html). The first time, everything there counts as seen. */
 const SET_KEYS = {
-  ov: ["ov.lead", "ov.target", "ov.clickthrough", "ov.info", "ov.size", "ov.info_size", "ov.outline", "ov.opacity", "ov.width", "ov.reset"],
+  ov: ["ov.lead", "ov.target", "ov.clickthrough", "ov.info", "ov.size", "ov.info_size", "ov.outline", "ov.opacity", "ov.width_pct", "ov.align", "ov.reset"],  // ov.width_pct: 가로 폭 became % (2026-11-20)
   font: ["font.ja", "font.etc", "font.bold_ja", "font.bold_etc"],
   m: ["m.report", "m.overlay", "m.zoom", "m.ear.connectPlay", "m.ear.unplugPause", "m.ear.ask"],
   play: ["play.fadein", "play.fadeout"],  // ⚙ › 재생 (2026-11-19; 소리 크기 맞추기 dropped — always on with the extension)
@@ -305,9 +305,10 @@ function ovPreview(d) {
   h += `<div class="ovcols" style="column-gap:${Math.round(s * 1.5)}px">` + parts.map(p => `<div class="ovcol">`
     + (chk("showP") ? line(p.name, Math.max(9, Math.round(s * .5)), 700, .9, p.color) : "")
     + line(p.o, s, 700, 1, p.color) + (chk("showR") ? line(p.r, s, 600, .85, p.color) : "") + (chk("showT") ? line(p.t, s, 600, 1, p.color) : "") + "</div>").join("") + "</div>";
-  box.innerHTML = `<div class="ovprevhd">미리보기</div><div class="ovbox" style="max-width:${Math.max(200, num("width", 1100))}px">${h}</div>`;
+  const av = (d.querySelector('[data-k="align"]:checked') || {}).value || "center", al = {left: "flex-start", right: "flex-end"}[av] || "center";  // 정렬 (2026-11-20)
+  box.innerHTML = `<div class="ovprevhd">미리보기</div><div class="ovbox" style="width:${Math.min(100, num("width_pct", 60))}%;--al:${al};--ta:${av}">${h}</div>`;  // 가로 폭 = % of the screen (2026-11-20) → % of the preview
 }
-const OVSET_DEFAULTS ={x: -1, y: -1, width: 1100, size: 22, info_size: 12, outline: 2, opacity: 100, clickthrough: false, target: "ffxiv_dx11", info: true, editing_at: 0, quit_at: 0, enabled: true, font_ja: "", font_etc: "", font_bold_ja: false, font_bold_etc: false};  // font_*: font_setting.js
+const OVSET_DEFAULTS ={x: -1, y: -1, width: 1100, width_pct: 60, align: "center", size: 22, info_size: 12, outline: 2, opacity: 100, clickthrough: false, target: "ffxiv_dx11", info: true, editing_at: 0, quit_at: 0, enabled: true, font_ja: "", font_etc: "", font_bold_ja: false, font_bold_etc: false};  // font_*: font_setting.js
 async function openPlayerSettings(want = "") {  // want: the part to show (e.g. "addon" from the Bilibili warning)
   let c, progs = [];
   LOCAL.ovEnable();  // from now on this browser talks to the overlay (no folder picking — user request)
@@ -347,7 +348,9 @@ async function openPlayerSettings(want = "") {  // want: the part to show (e.g. 
     <label class="rng">곡 정보 줄 글자 크기 <b data-v="info_size"></b><input type="range" min="6" max="30" step="1" data-k="info_size"></label>
     <label class="rng">테두리 두께 <b data-v="outline"></b><input type="range" min="0" max="6" step="0.5" data-k="outline"></label>
     <label class="rng">불투명도 <b data-v="opacity"></b><input type="range" min="10" max="100" step="5" data-k="opacity"></label>
-    <label class="rng">가로 폭 <b data-v="width"></b><input type="range" min="300" max="3000" step="50" data-k="width"></label>
+    <label class="rng" title="오버레이가 있는 모니터 가로의 몇 %인지 (4K · 와이드 · 듀얼 모니터 어디서나 같은 비율)"${phoneUi ? " hidden" : ""}>가로 폭 <b data-v="width_pct"></b><input type="range" min="20" max="100" step="5" data-k="width_pct"></label>
+    <div class="ovalign" title="가사 줄을 오버레이 구역의 어디에 맞출지">정렬 <div class="seg"><!-- joined buttons like 발음 · 번역 · 파트, one at a time (user request 2026-11-20) -->
+      ${[["left", "왼쪽"], ["center", "가운데"], ["right", "오른쪽"]].map(([v, t]) => `<label><input type="radio" name="ovAlign" data-k="align" value="${v}" hidden>${t}</label>`).join("")}</div></div>
     <p class="muted">발음·번역 줄은 플레이어의 '발음'·'번역' 체크를 따릅니다.</p>
     <div class="row"><button data-act="reset">위치 처음으로 (화면 아래 가운데)</button></div>
     <div class="ovprev" data-ovprev aria-hidden="true"></div>`)}${addon ? sec("addon", `
@@ -358,7 +361,7 @@ async function openPlayerSettings(want = "") {  // want: the part to show (e.g. 
     <div class="setsubhd">확장 프로그램 기능</div>${fadeHtml}
     <p class="muted">소리 크기 맞추기는 확장 프로그램을 넣으면 늘 켜져요 · 배속 · 키 변경은 재생 막대의 버튼에서.</p>`) : ""}</div></div>`;
   // new rows: marked '새로' while this window is open (a new font: its pick and the option)
-  const rowOf = {"play.fadein": "[data-fade=fadeIn]", "play.fadeout": "[data-fade=fadeOut]", "ov.lead": "[data-lead-r]", "ov.reset": "[data-act=reset]", "font.ja": "select[data-font=ja]", "font.etc": "select[data-font=etc]", "font.bold_ja": "[data-fbold=ja]", "font.bold_etc": "[data-fbold=etc]", "addon.get": "[data-act=addon]"};
+  const rowOf = {"play.fadein": "[data-fade=fadeIn]", "play.fadeout": "[data-fade=fadeOut]", "ov.lead": "[data-lead-r]", "ov.reset": "[data-act=reset]", "ov.align": ".ovalign", "font.ja": "select[data-font=ja]", "font.etc": "select[data-font=etc]", "font.bold_ja": "[data-fbold=ja]", "font.bold_etc": "[data-fbold=etc]", "addon.get": "[data-act=addon]"};
   for (const k of Object.values(fresh).flat()) {
     if (k.startsWith("font:")) {
       const o = d.querySelector(`select[data-font] option[value="${CSS.escape(k.slice(5))}"]`);
@@ -402,8 +405,8 @@ async function openPlayerSettings(want = "") {  // want: the part to show (e.g. 
   });
   if (fonts) fontSettingsBind(d);
   const ins = [...d.querySelectorAll("[data-k]")];
-  for (const i of ins) { if (i.type === "checkbox") i.checked = !!c[i.dataset.k]; else i.value = String(c[i.dataset.k]).replace(/\.exe$/i, ""); }
-  const showVals = () => d.querySelectorAll("[data-v]").forEach(b => b.textContent = d.querySelector(`[data-k=${b.dataset.v}]`).value + (b.dataset.v === "opacity" ? "%" : ""));
+  for (const i of ins) { if (i.type === "checkbox") i.checked = !!c[i.dataset.k]; else if (i.type === "radio") i.checked = i.value === (c[i.dataset.k] || "center"); else i.value = String(c[i.dataset.k]).replace(/\.exe$/i, ""); }
+  const showVals = () => d.querySelectorAll("[data-v]").forEach(b => b.textContent = d.querySelector(`[data-k=${b.dataset.v}]`).value + (b.dataset.v === "opacity" || b.dataset.v === "width_pct" ? "%" : ""));
   showVals(); ovPreview(d);
   d.querySelectorAll("[data-fade]").forEach(r => {  // 페이드 (browser keys fadeIn · fadeOut — play_engine.js fadeSecs)
     const k = r.dataset.fade, v = d.querySelector(`[data-fade-v=${k}]`), show = () => v.textContent = +r.value ? (+r.value).toFixed(1) + "초" : "끔";
@@ -416,7 +419,7 @@ async function openPlayerSettings(want = "") {  // want: the part to show (e.g. 
     r.addEventListener("input", () => { SHELL.setLead(r.value); showLead(); });
   }
   let t = 0;
-  const values = () => Object.fromEntries(ins.map(i => [i.dataset.k, i.type === "checkbox" ? i.checked : i.type === "range" ? +i.value : i.value]));
+  const values = () => Object.fromEntries(ins.filter(i => i.type !== "radio" || i.checked).map(i => [i.dataset.k, i.type === "checkbox" ? i.checked : i.type === "range" ? +i.value : i.value]));
   const save = (extra = {}, now = false) => {  // 바꿀 때마다 (끌어 움직이는 동안은 0.25초에 한 번)
     clearTimeout(t);
     const go = () => post("/api/ovset", {...values(), ...extra}).catch(e => uiAlert(e.message));
@@ -432,7 +435,12 @@ async function openPlayerSettings(want = "") {  // want: the part to show (e.g. 
     }
     if (b.dataset.act === "reset") save({x: -1, y: -1}); else d.close();
   });
-  d.addEventListener("close", () => { clearTimeout(t); save({editing_at: 0}, true); d.remove(); });  // editing_at 0: clears what older players left
+  // 구역 표시 (user request 2026-11-20): while this window is open the PC overlay draws a blue dashed line round its window
+  // (size check) — it only draws it, nothing is forced on. Phones: the overlay is full width, nothing to show
+  const frame = on => phoneUi ? null : post("/api/frame", {on}).catch(() => {});
+  const frameBeat = phoneUi ? 0 : setInterval(() => frame(true), 3000);
+  frame(true);
+  d.addEventListener("close", () => { clearTimeout(t); clearInterval(frameBeat); frame(false); save({editing_at: 0}, true); d.remove(); });  // editing_at 0: clears what older players left
   // sliders: the part left of the knob filled (--p, user request 2026-11-19 — the plain browser slider looked bad)
   d.querySelectorAll("input[type=range]").forEach(r => { fillRange(r); r.addEventListener("input", () => fillRange(r)); });
   document.body.appendChild(d);

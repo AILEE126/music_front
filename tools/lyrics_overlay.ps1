@@ -41,7 +41,7 @@ $WS_EX_TRANSPARENT = 0x20; $WS_EX_TOOLWINDOW = 0x80; $WS_EX_LAYERED = 0x80000; $
 
 # 오버레이 버전 (user request 2026-11-19): the player compares it (/ovprograms ver) with this file in its own tools/ folder
 # and asks for the new zip when the running one is older — bump it with every change of this file
-$OV_VER = 4   # 3: a newer bat replaces a running older overlay by itself · 4: parts (names, side by side)
+$OV_VER = 7   # 3: a newer bat replaces a running older overlay by itself · 4: parts (names, side by side) · 5: no terminal window (conhost --headless) · 6: negative x kept (no jump back to the middle) · width grows both sides · 7: place = centre, fitted to its monitor (4K · wide · dual) · 가로 폭 in % of the monitor · 정렬 · /frame (구역 표시)
 # data folder overlay\: next to tools\ in the player repo; in the 추가기능 zip (folder 오버레이\, play_engine.js setupZip)
 # inside that folder, so unzipping a new version over it keeps the settings
 $script:Root = if ((Split-Path -Leaf $PSScriptRoot) -eq 'tools') { Split-Path -Parent $PSScriptRoot } else { $PSScriptRoot }
@@ -54,7 +54,7 @@ $EDIT_MS = 8000     # 설정 창이 3초마다 '열려 있음'을 알려 줌 →
 $UTF8 = New-Object Text.UTF8Encoding $false
 
 # ---- 설정 (⚙ 설정 창에서 바꿈 · 위치는 끌어 옮길 때 이 창이 씀) — 서버 web_api\lyrics_overlay_files.py 와 같은 기본값 ----
-$DEFAULTS = @{ x = -1; y = -1; width = 1100; size = 22; info_size = 12; outline = 2; opacity = 100; clickthrough = $false; target = 'ffxiv_dx11'; info = $true; editing_at = 0; quit_at = 0; enabled = $true; font_bold_ja = $false; font_bold_etc = $false; font_ja = ''; font_etc = '' }
+$DEFAULTS = @{ x = -1; y = -1; cx = $null; width = 1100; width_pct = $null; align = 'center'; size = 22; info_size = 12; outline = 2; opacity = 100; clickthrough = $false; target = 'ffxiv_dx11'; info = $true; editing_at = 0; quit_at = 0; enabled = $true; font_bold_ja = $false; font_bold_etc = $false; font_ja = ''; font_etc = '' }
 $script:cfg = $DEFAULTS.Clone()
 $script:cfgWrite = [datetime]::MinValue
 function Read-Json($path) { [IO.File]::ReadAllText($path, [Text.Encoding]::UTF8).TrimStart([char]0xFEFF) | ConvertFrom-Json }
@@ -112,7 +112,9 @@ function Register-Link {
     New-Item -Path "$key\shell\open\command" -Force | Out-Null
     Set-Item -Path $key -Value 'URL:가사 오버레이'
     New-ItemProperty -Path $key -Name 'URL Protocol' -Value '' -PropertyType String -Force | Out-Null
-    Set-Item -Path "$key\shell\open\command" -Value ('"{0}" -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File "{1}" "%1"' -f $ps, $PSCommandPath)
+    # conhost --headless: no terminal window left in the taskbar (same as the bat)
+    $ch = Join-Path $env:SystemRoot 'System32\conhost.exe'
+    Set-Item -Path "$key\shell\open\command" -Value ('"{0}" --headless "{1}" -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File "{2}" "%1"' -f $ch, $ps, $PSCommandPath)
 }
 if (-not $Test) { try { Register-Link } catch {} }
 
@@ -126,15 +128,70 @@ $w.ShowActivated = $false   # 다시 보일 때 게임에서 초점을 뺏지 �
 $w.WindowStartupLocation = 'Manual'
 $script:panel = New-Object System.Windows.Controls.StackPanel
 $script:panel.Margin = '10,6,10,6'
-$w.Content = $script:panel
-$script:wa = [System.Windows.SystemParameters]::WorkArea
-function Set-Place {  # 위치·폭 (x 가 -1 이면 화면 아래 가운데 — 설정 창의 '위치 처음으로') · 불투명도는 줄마다 (Add-Line)
-    $w.Width = [Math]::Max(200.0, [double]$script:cfg.width)
-    if ($Test) { $w.Left = -30000; $w.Top = -30000; return }
-    if ([double]$script:cfg.x -lt 0) { $w.Left = $script:wa.Left + ($script:wa.Width - $w.Width) / 2; $w.Top = $script:wa.Bottom - 260 }
-    else { $w.Left = [double]$script:cfg.x; $w.Top = [double]$script:cfg.y }
+# 구역 표시 (user request 2026-11-20): a blue dashed line round the window while the player's ⚙ 설정 is open (POST /frame
+# every 3 s) — only drawn, the overlay is not forced on and click-through is unchanged (forcing it on looked like a bug, 2026-11-19)
+$script:frame = New-Object System.Windows.Shapes.Rectangle
+$script:frame.Stroke = (New-Object System.Windows.Media.BrushConverter).ConvertFromString('#3d8bff')
+$script:frame.StrokeThickness = 2; $script:frame.StrokeDashArray = (New-Object System.Windows.Media.DoubleCollection (,[double[]](4, 3)))
+$script:frame.Visibility = 'Collapsed'
+$script:root = New-Object System.Windows.Controls.Grid
+[void]$script:root.Children.Add($script:panel); [void]$script:root.Children.Add($script:frame)
+$w.Content = $script:root
+$script:frameAt = 0
+$FRAME_MS = 8000
+function Set-Frame {
+    $on = ((Get-Epoch) - $script:frameAt) -lt $FRAME_MS
+    $vis = $(if ($on) { 'Visible' } else { 'Collapsed' })
+    if ($script:frame.Visibility -ne $vis) { $script:frame.Visibility = $vis }
+}
+# 높이 고정 (user request 2026-11-20): the window is always as tall as the info line + a part name + three lyric lines
+# (원문 · 발음 · 번역) at the set sizes, lyrics or not — so the area doesn't jump between songs; more lines (wrapping) still grow it
+function Set-MinHeight {
+    $o = 2.0 * [Math]::Max(0.0, [double]$script:cfg.outline)
+    $s = [Math]::Max(6.0, [double]$script:cfg.size)
+    $h = 12.0 + ([Math]::Max(9.0, [Math]::Round($s * 0.5)) * 1.15 + $o) + 3 * ($s * 1.15 + $o)   # 12 = the panel's margin
+    if ($script:cfg.info) { $h += [Math]::Max(6.0, [double]$script:cfg.info_size) * 1.15 + $o }
+    $script:root.MinHeight = [Math]::Ceiling($h)
+}
+# 정렬 (user request 2026-11-20): 왼쪽 · 가운데 · 오른쪽 — lines inside the window (and side-by-side parts as a row)
+function Get-Align { switch ([string]$script:cfg.align) { 'left' { 'Left' } 'right' { 'Right' } default { 'Center' } } }
+# 위치 (user report 2026-11-20, 4K at 175%: the lyrics jumped to odd places on song changes): the place is kept as the lyrics'
+# centre (cx) + top (y) in WPF units, and the window is fitted into the monitor holding that centre — never wider than its
+# work area (a 3000 wide window on a 2341 wide screen was cut by Windows while the text was laid out for 3000), never off it.
+# Works the same on wide screens and on any monitor of several; a monitor change (unplugged, resolution) re-fits it.
+$script:dpiK = 1.0   # WPF unit → screen pixel (this process is system-DPI aware: Forms.Screen gives pixels)
+try { $g = [System.Drawing.Graphics]::FromHwnd([IntPtr]::Zero); $script:dpiK = $g.DpiX / 96.0; $g.Dispose() } catch {}
+function Get-WorkArea($cx, $cy) {  # the work area (WPF units) of the monitor nearest to that point · $null = the main one
+    $s = $(if ($null -eq $cx) { [System.Windows.Forms.Screen]::PrimaryScreen }
+           else { [System.Windows.Forms.Screen]::FromPoint((New-Object System.Drawing.Point ([int]($cx * $script:dpiK)), ([int]($cy * $script:dpiK)))) })
+    $r = $s.WorkingArea; $k = $script:dpiK
+    New-Object System.Windows.Rect ($r.Left / $k), ($r.Top / $k), ($r.Width / $k), ($r.Height / $k)
+}
+function Get-ScreensKey { ([System.Windows.Forms.Screen]::AllScreens | ForEach-Object { "$($_.Bounds)" }) -join ';' }
+$script:screensKey = Get-ScreensKey
+function Set-Place {  # 위치·폭 (x·y 가 둘 다 -1 이면 화면 아래 가운데 — 설정 창의 '위치 처음으로') · 불투명도는 줄마다 (Add-Line)
+    if ($Test) { $w.Width = [Math]::Max(200.0, [double]$script:cfg.width); $w.Left = -30000; $w.Top = -30000; return }
+    # only the exact -1,-1 marker resets: a negative x is a real place (monitor left of the main one)
+    $reset = [double]$script:cfg.x -eq -1 -and [double]$script:cfg.y -eq -1
+    if (-not $reset -and $null -eq $script:cfg.cx) {  # older file: x = the window's left edge, the text was centred on its width
+        $script:cfg.cx = [int]([double]$script:cfg.x + [Math]::Max(200.0, [double]$script:cfg.width) / 2); Update-CfgFile @{ cx = $script:cfg.cx }
+    }
+    $wa = $(if ($reset) { Get-WorkArea $null $null } else { Get-WorkArea ([double]$script:cfg.cx) ([double]$script:cfg.y) })
+    # 가로 폭 = % of the monitor it is on (user request 2026-11-20: a number didn't fit 4K · wide · dual screens alike);
+    # an older file's number becomes its share of this monitor once
+    if ($null -eq $script:cfg.width_pct) {
+        $script:cfg.width_pct = [int][Math]::Min(100, [Math]::Max(20, [Math]::Round([double]$script:cfg.width / $wa.Width * 20) * 5))
+        Update-CfgFile @{ width_pct = $script:cfg.width_pct }
+    }
+    $ww = [Math]::Max(200.0, $wa.Width * [Math]::Min(100.0, [Math]::Max(10.0, [double]$script:cfg.width_pct)) / 100.0)
+    $w.Width = $ww
+    if ($reset) { $w.Left = $wa.Left + ($wa.Width - $ww) / 2; $w.Top = $wa.Bottom - 260; return }
+    # 가로 폭 grows both sides (user request 2026-11-20) — the centre stays; kept inside the monitor
+    $w.Left = [Math]::Min([Math]::Max([double]$script:cfg.cx - $ww / 2, $wa.Left), $wa.Right - $ww)
+    $w.Top = [Math]::Min([Math]::Max([double]$script:cfg.y, $wa.Top), $wa.Bottom - 40)
 }
 Set-Place
+Set-MinHeight
 
 function Get-Hwnd { (New-Object System.Windows.Interop.WindowInteropHelper $w).Handle }
 function Set-ExStyle {  # 작업 전환(Alt+Tab)에 안 보이고, 눌러도 게임에서 초점을 뺏지 않음 · 클릭 통과 (설정 창이 열려 있으면 끔 — 옮길 수 있게)
@@ -231,7 +288,7 @@ function Get-TextWidth($text, [double]$size, $weight) { (New-Ft $text $size (Get
 function Add-Line($text, [double]$size, $brush, [double]$opacity, $weight, $parent = $null, [double]$maxW = 0) {
     $o = [Math]::Max(0.0, [double]$script:cfg.outline)
     $ft = New-Ft $text $size $brush $weight
-    $ft.MaxTextWidth = $(if ($maxW -gt 0) { [Math]::Max(30.0, $maxW) } else { [Math]::Max(50.0, $w.Width - 20.0 - 2.0 * $o) }); $ft.TextAlignment = 'Center'
+    $ft.MaxTextWidth = $(if ($maxW -gt 0) { [Math]::Max(30.0, $maxW) } else { [Math]::Max(50.0, $w.Width - 20.0 - 2.0 * $o) }); $ft.TextAlignment = (Get-Align)
     $geo = $ft.BuildGeometry((New-Object System.Windows.Point($o, $o)))
     $box = New-Object System.Windows.Controls.Grid
     $box.Width = $ft.MaxTextWidth + 2 * $o; $box.Height = $ft.Height + 2 * $o; $box.Tag = $text
@@ -274,7 +331,7 @@ function Show-Now {
         $gap = $s * 1.5
         $cw = [Math]::Max(50.0, ($w.Width - 20.0 - $gap * ($cols.Count - 1)) / $cols.Count - 2.0 * $o)
         $row = New-Object System.Windows.Controls.StackPanel
-        $row.Orientation = 'Horizontal'; $row.HorizontalAlignment = 'Center'
+        $row.Orientation = 'Horizontal'; $row.HorizontalAlignment = (Get-Align)
         for ($k = 0; $k -lt $cols.Count; $k++) {
             $c = $cols[$k]; $ls = @(Get-Shown $c.lines $d)
             $nat = ($ls | ForEach-Object { Get-TextWidth $_.text $s ([System.Windows.FontWeights]::Bold) } | Measure-Object -Maximum).Maximum
@@ -361,6 +418,10 @@ function Invoke-Http($r) {
             }
             return ($d | ConvertTo-Json -Compress)
         }
+        '/frame' {   # ⚙ 설정 open: {on: true} every 3 s · {on: false} when it closes (구역 표시, 2026-11-20)
+            if ($post) { $script:frameAt = $(if (($r.body | ConvertFrom-Json).on) { Get-Epoch } else { 0 }); Set-Frame }
+            return '{"ok":true}'
+        }
         '/fonts' {   # font files the player already sent (font_setting.js fontToOverlay)
             $files = @(); try { $files = @(Get-ChildItem $script:fontDir -File -ErrorAction Stop | ForEach-Object { $_.Name }) } catch {}
             return (ConvertTo-Json -InputObject @{ files = $files } -Compress)
@@ -407,8 +468,9 @@ $timer.Add_Tick({
     $redraw = $false
     if (Read-Cfg) {
         if ([double]$script:cfg.quit_at -gt $script:startedAt) { $script:app.Shutdown(); return }  # 설정 창의 '끄기'
-        Set-Place; $redraw = $true; $script:ctItem.Checked = [bool]$script:cfg.clickthrough
+        Set-Place; Set-MinHeight; $redraw = $true; $script:ctItem.Checked = [bool]$script:cfg.clickthrough
     }
+    Set-Frame   # the 설정 window stopped saying it's open (closed tab …): the line goes after 8 s
     $ed = Test-Editing
     if ($ed -ne $script:editing) { $script:editing = $ed; $redraw = $true }
     if ($redraw) { Set-ExStyle }
@@ -422,6 +484,8 @@ $timer.Add_Tick({
     if ($script:tick % 20 -eq 1) {  # 3초마다: 붙일 프로그램이 켜져 있는지 · 프로그램 목록
         $tn = ([string]$script:cfg.target) -replace '\.exe$', ''
         $script:targetRunning = [bool]($tn -and (Get-Process -Name $tn -ErrorAction SilentlyContinue))
+        $sk = Get-ScreensKey   # monitors changed (unplugged · resolution): fit the window again
+        if ($sk -ne $script:screensKey) { $script:screensKey = $sk; Set-Place }
         if ($script:tick % 40 -eq 1) { Write-Programs }
     }
     $show = $Test -or $script:editing -or ($script:cfg.enabled -and (Test-ShowNow))   # enabled: 화면의 '오버레이 켜기/끄기' 
@@ -434,8 +498,10 @@ $timer.Add_Tick({
 # ---- 끌어 옮기기 (클릭 통과를 끈 동안 · 설정 창이 열려 있는 동안) ----
 $w.Add_MouseLeftButtonDown({
     try { $w.DragMove() } catch {}
-    $script:cfg.x = [int]$w.Left; $script:cfg.y = [int]$w.Top
-    Update-CfgFile @{ x = $script:cfg.x; y = $script:cfg.y }
+    $script:cfg.x = [int]$w.Left; $script:cfg.y = [int]$w.Top; $script:cfg.cx = [int]($w.Left + $w.ActualWidth / 2)
+    if ($script:cfg.x -eq -1 -and $script:cfg.y -eq -1) { $script:cfg.x = 0 }   # -1,-1 = the reset marker (Set-Place)
+    Update-CfgFile @{ x = $script:cfg.x; y = $script:cfg.y; cx = $script:cfg.cx }
+    Set-Place   # dropped on another monitor: fit its width there
 })
 $w.Add_SourceInitialized({ Set-ExStyle })
 
@@ -461,7 +527,7 @@ if ($Test) {  # 시험: 몇 초 뒤 그린 글자를 출력하고 끝냄
     $stop.Interval = [TimeSpan]::FromSeconds($Test)
     $stop.Add_Tick({
         "창: 투명={0} 항상위={1} 불투명도={2} 크기={3}x{4} · 설정: 글자 {5} · 테두리 {6} · 폭 {7} · 클릭 통과 {8} · 설정 중 {9} · 프로그램 '{10}'" -f $w.AllowsTransparency, $w.Topmost,
-            $w.Opacity, [int]$w.ActualWidth, [int]$w.ActualHeight, $script:cfg.size, $script:cfg.outline, $script:cfg.width, $script:cfg.clickthrough, $script:editing, $script:cfg.target | Write-Host
+            $w.Opacity, [int]$w.ActualWidth, [int]$w.ActualHeight, $script:cfg.size, $script:cfg.outline, $script:cfg.width_pct, $script:cfg.clickthrough, $script:editing, $script:cfg.target | Write-Host
         $script:panel.Children | ForEach-Object { "[{0}칸 테두리 {1}] {2}" -f $_.Children.Count, $(($_.Children | ForEach-Object { $_.Children } | Select-Object -First 1).StrokeThickness), $_.Tag } | Write-Host
         $script:app.Shutdown()
     })

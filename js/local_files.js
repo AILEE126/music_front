@@ -270,12 +270,13 @@ const LOCAL = {
     if (!post && u.pathname === "/api/stream/views") return this.streamViews(q.name);
     if (post && u.pathname === "/api/report") return this.saveReport(body);
     if (post && u.pathname === "/api/sync/save") return body.times == null ? this.saveOffset(body) : this.saveTimes(body);
-    if (["/api/now", "/api/ovset", "/api/ovprograms"].includes(u.pathname)) return this.overlay(u.pathname, post, body);
+    if (["/api/now", "/api/ovset", "/api/ovprograms", "/api/frame"].includes(u.pathname)) return this.overlay(u.pathname, post, body);
     throw new Error("플레이어에서 할 수 없는 일입니다 (싱크 만들기·가사 받기 등은 서버 PC 의 음원 관리에서).");
   },
   /* ---- 가사 오버레이(tools\lyrics_overlay.bat)와 주고받기: 오버레이가 이 PC 에 여는 창구 http://127.0.0.1:47613 ----
      User request: the overlay must work by just running the bat — no folder picking in the player.
-     /now (지금 곡·가사 묶음) · /ovset (설정) · /ovprograms (창이 떠 있는 프로그램 목록 — 답이 오면 켜져 있음).
+     /now (지금 곡·가사 묶음) · /ovset (설정) · /ovprograms (창이 떠 있는 프로그램 목록 — 답이 오면 켜져 있음) ·
+     /frame (⚙ 설정이 열린 동안 파란 점선 구역 표시, 2026-11-20).
      Only after the overlay button/⚙ was used once in this browser (ovOn): Chrome asks "local network access" on the first
      request, so players who never use the overlay never see that prompt. */
   ovOn: false, ovFailAt: 0,
@@ -284,12 +285,12 @@ const LOCAL = {
   async overlay(path, post, body) {
     if (APP.on) return APP.overlay(path, post, body);  // 폰 앱: the app's floating lyrics window (app_bridge.js)
     const local = () => {  // overlay not running (or never used): drop the song notice, keep settings in this browser
-      if (path === "/api/now") return {ok: true};
+      if (path === "/api/now" || path === "/api/frame") return {ok: true};
       if (path === "/api/ovset") { if (post) store.set("ovset", {...store.get("ovset", {}), ...body}); return {...OVSET_DEFAULTS, ...store.get("ovset", {})}; }
       return {items: [], running: false};
     };
     // a failed song notice waits 10 s (no request every lyric line while the overlay is off)
-    if (!this.ovOn || (path === "/api/now" && Date.now() - this.ovFailAt < 10000)) return local();
+    if (!this.ovOn || (path !== "/api/ovset" && path !== "/api/ovprograms" && Date.now() - this.ovFailAt < 10000)) return local();
     try {
       const r = await fetch("http://127.0.0.1:47613/" + path.slice(5),
         post ? {method: "POST", body: JSON.stringify(path === "/api/now" ? {...body, at: Date.now()} : body)} : {});

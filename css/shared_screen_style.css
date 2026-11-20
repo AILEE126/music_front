@@ -108,11 +108,14 @@ a.ctxi:hover,button.ctxi:hover,.ctxsub:hover>.ctxi{background:var(--accent-soft)
    outline under the letters, both see-through together; real pixel sizes (undoes the page zoom); fonts = the 글꼴 part's picks */
 .ovset .ovprev{margin:14px 0 4px;border:1px solid var(--line);border-radius:10px;overflow:hidden}  /* no backdrop color (user request 2026-11-19) */
 .ovset .ovprevhd{padding:5px 10px;font-size:11px;font-weight:600;color:var(--muted);background:var(--card);border-bottom:1px solid var(--line)}
-.ovset .ovbox{zoom:calc(1 / var(--ui-zoom,1));margin:0 auto;padding:8px 10px 10px;display:flex;flex-direction:column;align-items:center;
-  font-family:var(--font-user,) -apple-system,"Segoe UI",CscJa,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;line-height:1.15;text-align:center}  /* the 글꼴 part's stack */
+/* --al · --ta: 정렬 왼쪽 · 가운데 · 오른쪽 (2026-11-20); the dashed line = the overlay's area, like the PC overlay shows it */
+.ovset .ovbox{zoom:calc(1 / var(--ui-zoom,1));margin:0 auto;padding:8px 10px 10px;display:flex;flex-direction:column;align-items:var(--al,center);
+  font-family:var(--font-user,) -apple-system,"Segoe UI",CscJa,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;line-height:1.15;text-align:var(--ta,center);
+  outline:2px dashed #3d8bff;outline-offset:-2px}  /* the 글꼴 part's stack */
+.ovset .ovalign{display:flex;align-items:center;gap:10px;margin:6px 0}  /* 정렬: the player's .seg joined buttons */
 .ovset .ovl{position:relative;max-width:100%;overflow-wrap:anywhere}
-.ovset .ovcols{display:flex;justify-content:center;align-items:flex-start;max-width:100%}
-.ovset .ovcol{display:flex;flex-direction:column;align-items:center;min-width:0}
+.ovset .ovcols{display:flex;justify-content:var(--al,center);align-items:flex-start;max-width:100%}
+.ovset .ovcol{display:flex;flex-direction:column;align-items:var(--al,center);min-width:0}
 .ovset .ovl span{display:block}
 .ovset .ovl .grp{position:relative}
 .ovset .ovl .edge{position:absolute;inset:0;color:transparent;-webkit-text-stroke:var(--o) #000}

@@ -17,14 +17,14 @@
   @font-face { font-family: CscJa; font-weight: 600 900; unicode-range: U+3000-30FF,U+31F0-31FF,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+FF00-FFEF,U+20000-3FFFF;
     src: local("Noto Sans CJK JP Bold"), local("NotoSansCJKjp-Bold"), local("Noto Sans JP Bold"), local("Hiragino Sans W6"), local("HiraginoSans-W6"), local("Yu Gothic Bold"), local("YuGothic-Bold"); }
   #box { padding: 6px 10px; display: flex; flex-direction: column; align-items: center; gap: 0; font-family: system-ui, CscJa, "Malgun Gothic", sans-serif; }
-  .ln { position: relative; text-align: center; line-height: 1.15;  /* tighter, same as the PC overlay (user request 2026-11-19) */ max-width: 100%; overflow-wrap: anywhere; }
+  .ln { position: relative; text-align: inherit; line-height: 1.15;  /* tighter, same as the PC overlay (user request 2026-11-19) */ max-width: 100%; overflow-wrap: anywhere; }
   .ln span { display: block; }
   /* 불투명도: outline + letters turn see-through as one layer (.grp). The opaque white copy under the letters (2026-11-18)
      was dropped — it stayed white at any opacity (user report 2026-11-19) */
   .ln .edge { position: absolute; inset: 0; }
   .ln .grp { position: relative; }
-  .cols { display: flex; justify-content: center; align-items: flex-start; gap: 0 1.6em; max-width: 100%; }
-  .col { display: flex; flex-direction: column; align-items: center; min-width: 0; flex: 0 1 auto; }
+  .cols { display: flex; justify-content: var(--al, center); align-items: flex-start; gap: 0 1.6em; max-width: 100%; }
+  .col { display: flex; flex-direction: column; align-items: var(--al, center); min-width: 0; flex: 0 1 auto; }
   .ln .edge { color: transparent; -webkit-text-stroke: var(--o) #000; }
   .ln .fill { position: relative; color: var(--c, #fff); }
   .ln.grad .fill { color: transparent; background: var(--g); -webkit-background-clip: text; background-clip: text; }
@@ -66,6 +66,10 @@ function render() {
   const s = Math.max(6, +set.size || 22), d = now;
   box.style.maxWidth = `${Math.max(200, +set.width || 1100)}px`;
   box.style.margin = "0 auto";
+  // 정렬 왼쪽 · 가운데 · 오른쪽 (user request 2026-11-20, same setting as the PC overlay)
+  const al = {left: "flex-start", right: "flex-end"}[set.align] || "center";
+  box.style.alignItems = al; box.style.textAlign = set.align === "left" || set.align === "right" ? set.align : "center";
+  box.style.setProperty("--al", al);
   document.body.classList.toggle("light", !!(d && d.light));
   let h = "";
   if (d && d.title) {
