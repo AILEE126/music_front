@@ -36,7 +36,7 @@ const LT_WATCH = 16;  // open players that get told at once when a room appears 
 const ltWatchId = i => LT_PREFIX + "watch-" + i;
 const LT = {uid: Math.random().toString(36).slice(2), role: "", code: "", me: "", open: true, pw: "", title: "", lock: false, linkCode: "", lobby: null, lobbyAt: 0, peer: null, conns: new Map(), host: null,
   members: [], status: "", lastHeard: 0, lostAt: 0, retryAt: 0, ask: "", rtt: 0, align: 0, qsig: "", lead: 0, seekAt: 0, reqs: [],
-  prep: null, gprep: null, chOn: false, chSave: null, chList: null, chTry: 0, cool: {}, coolKey: ""};  // ch*: OPEN CHANNEL (in it / joining)  // ask: code of a secret room waiting for its password · prep (host) / gprep (guest): start together
+  prep: null, gprep: null, chOn: false, chFast: false, chSave: null, chList: null, chTry: 0, cool: {}, coolKey: ""};  // ch*: OPEN CHANNEL (in it / joining)  // ask: code of a secret room waiting for its password · prep (host) / gprep (guest): start together
 const LT_SILENT = 70000;   // 방장 소식이 이만큼 없으면 끊긴 것으로 봄 (뒤에 깔린 탭은 브라우저가 타이머를 1분에 한 번까지 늦춤)
 const LT_GIVE_UP = 180000; // 손님: 이만큼 다시 잇지 못하면 나감
 let ltApplying = 0;  // 방장 상태를 따라 하는 중 (이때 바뀐 건 다시 보내지 않음)
@@ -49,9 +49,17 @@ const ltKey = n => String(n || "").normalize("NFKC").trim().toLowerCase();  // n
 const ltNick = n => (typeof n === "string" ? n : (n && n.name) || "");
 /* ---------- OPEN CHANNEL (user request 2026-11-17) ---------- */
 const LT_CH = "open-channel";  // the channel's LT.code (PeerJS id = LT_PREFIX + this, fixed — whoever holds it plays)
+/* OPEN CHANNEL 2x!! (user request 2026-11-20): a second channel — the same songs (same filter), everyone at 2× speed, red
+   instead of green. Its own fixed id, so it runs apart from the 1× one. Entering checks the extension first (speed on
+   Niconico · SoundCloud … needs it) and opens the add-on guide when it's missing (ltChFastEnter) */
+const LT_CH2 = "open-channel-2x", LT_CH2_RATE = 2;
+const ltChId = () => LT.chFast ? LT_CH2 : LT_CH;
+const ltChName = fast => fast ? "OPEN CHANNEL 2x!!" : "OPEN CHANNEL";
+const ltChRate = () => LT.chOn && LT.chFast && LT.role ? LT_CH2_RATE : 0;  // play_engine.js rateFor: the channel's speed
+const ltSpeed = () => ltChRate() || 1;  // song seconds per real second (positions sent between players)
 const LT_CH_COOL = 2;  // songs that must start before the same person can request again
 const ltChConf = () => typeof ONLINE !== "undefined" && ONLINE && VDB.filter && VDB.filter.channel && (VDB.filter.channel.groups || []).length ? VDB.filter.channel : null;
-const ltChTag = () => '<span class="ltchtag" title="OPEN CHANNEL 재생목록 — 필터는 공개하지 않음">OPEN CHANNEL</span>';  // stands for the channel's filter
+const ltChTag = () => `<span class="ltchtag" title="${ltChName(LT.chFast)} 재생목록 — 필터는 공개하지 않음">${ltChName(LT.chFast)}</span>`;  // stands for the channel's filter
 const ltChHost = () => LT.chOn && LT.role === "host";
 // cooldown per browser (uid), not per name — the channel needs no nickname (user request 2026-11-17)
 const ltCoolLeft = uid => LT.cool[uid] || 0;
@@ -67,12 +75,16 @@ function ltChPrefetch() {
     .then(gz => new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).json()).catch(() => null) : null;
 }
 const ltChFileOk = (d, groups) => d && Array.isArray(d.ids) && d.sig === JSON.stringify(groups);
-async function ltChSongs(groups) {
-  const d = ltChFileP && await ltChFileP;
+/* 인기순 상위 N곡만 (user request 2026-11-20, Manage › 필터 › OPEN CHANNEL conf.top; 0 = all): cut after the filter, so the
+   saved list keeps every passing song and the manage screen can show any N from it */
+const ltChTop = (conf, list) => conf.top > 0
+  ? [...list].sort((a, b) => (b.rating || 0) - (a.rating || 0) || (+a.vocadb || 0) - (+b.vocadb || 0)).slice(0, conf.top) : list;
+async function ltChSongs(conf) {
+  const groups = conf.groups, d = ltChFileP && await ltChFileP;
   if (ltChFileOk(d, groups)) {  // the list made before — a day old song list is fine for a shuffle
     if (!VDB.done) VDB.addRows(d.cols, d.rows);
     const list = d.ids.map(id => VDB.itemById(id)).filter(it => it && canPlay(it));
-    if (list.length) return list;
+    if (list.length) return ltChTop(conf, list);
   }
   const make = async () => {
     await searchBase();  // the whole song list (read in the background after the screen opened)
@@ -80,7 +92,7 @@ async function ltChSongs(groups) {
   };
   const list = VDB.done ? await make() : await loadWait(make());  // still loading: the notice with the progress bar
   ltChUpload(groups, list);
-  return list;
+  return ltChTop(conf, list);
 }
 /* write token: save the channel's list for everyone (only when the filter or the song list changed since the saved one) */
 async function ltChUpload(groups, list) {
@@ -106,23 +118,36 @@ async function ltChRefresh() {
   await searchBase();
   ltChUpload(conf.groups, (await filterGroupsAsync(VDB.all(), conf.groups, bgTick())).filter(canPlay));
 }
-async function ltChJoin() {
+async function ltChJoin(fast = false) {
   const conf = ltChConf();
   if (!conf) return;
-  if (LT.chOn && LT.role) { LT.status = "지금 있는 채널입니다"; return ltRender(); }
+  if (LT.chOn && LT.role && LT.chFast === fast) { LT.status = "지금 있는 채널입니다"; return ltRender(); }
   ltLeave(true);  // no nickname needed, no name check — the channel only counts listeners (user request 2026-11-17)
   $("ltNameErr").hidden = true; $("ltName").closest(".ltfield").classList.remove("need");
-  LT.me = ltName(); LT.pw = ""; LT.ask = ""; LT.linkCode = ""; LT.open = true; LT.title = conf.title || "";
-  LT.status = "OPEN CHANNEL 에 들어가는 중…"; ltRender();
+  LT.me = ltName(); LT.pw = ""; LT.ask = ""; LT.linkCode = ""; LT.open = true; LT.title = conf.title || ""; LT.chFast = fast;
+  LT.status = `${ltChName(fast)} 에 들어가는 중…`; ltRender();
   try { await ltLoadPeerJs(); } catch (e) { LT.status = e.message; return ltRender(); }
-  // my own queue is kept aside while in the channel (back on leaving) — the playlist itself (SHELL.queue) is never touched
-  LT.chSave = {pinned: SHELL.pinned, upcoming: SHELL.upcoming, history: SHELL.history, repeat: SHELL.repeat};
+  // the channel only plays songs here (user request 2026-11-20: no trace of the room shell) — my playlist and queue stay on
+  // screen as they were (queue read-only, SHELL.qView), the channel's own queue runs unseen; leaving brings back my song,
+  // its position and my queue as before entering
+  LT.chSave = {now: SHELL.now, pos: audio.currentTime || 0, queue: SHELL.queue, pinned: SHELL.pinned, upcoming: SHELL.upcoming, history: SHELL.history, repeat: SHELL.repeat};
   SHELL.pinned = []; SHELL.upcoming = []; SHELL.history = [];
   LT.chOn = true; LT.chTry = 0; LT.cool = {};
   ltChClaim();
 }
+/* OPEN CHANNEL 2x!!: ask the extension once (a hidden bridge page) — there → in; missing / old → the add-on guide, in after it */
+let ltFastChecking = false;
+async function ltChFastEnter() {
+  if (ltFastChecking) return;
+  if (LT.chOn && LT.chFast && LT.role) return ltChJoin(true);  // already there: says so
+  ltFastChecking = true; LT.status = "확장 프로그램을 확인하는 중…"; ltRender();
+  try { await extProbe(); } finally { ltFastChecking = false; }
+  LT.status = ""; ltRender();
+  if (EXT.ver >= 2) return ltChJoin(true);  // 2: the first version that sets the speed (play_engine.js rateBlock)
+  openSetupGuide(ltChName(true), () => { if (EXT.ver >= 2) ltChJoin(true); });
+}
 /* take the channel id (→ host) · taken → join whoever holds it (ltHostPeer error) */
-function ltChClaim() { if (LT.chOn) ltHostPeer(LT_CH, 0); }
+function ltChClaim() { if (LT.chOn) ltHostPeer(ltChId(), 0); }
 /* in the channel but cut off from its host: try again (claim first — the host may be gone) */
 function ltChRetry() {
   if (!LT.chOn || LT.role !== "guest" || LT.host || Date.now() < LT.retryAt - 50) return;
@@ -139,12 +164,11 @@ async function ltChStart(took) {
   LT.title = conf ? conf.title || "" : LT.title;
   if (!LT.chList) {  // a guest taking over already has it (ltChGuestPl)
     LT.status = "채널 재생목록을 만드는 중…"; ltRender();
-    const list = await ltChSongs(conf.groups);
+    const list = await ltChSongs(conf);
     if (!ltChHost()) return;
     LT.chList = list; LT.status = "";
   }
   if (!LT.chList.length) { ltLeave(true); LT.status = "OPEN CHANNEL 재생목록에 틀 수 있는 곡이 없습니다 (필터 확인)"; return ltRender(); }
-  guestPl = LT.chList; renderList(); renderPlFilter();  // the channel's list shows read-only, as for guests
   SHELL.repeat = "all";
   LT.coolKey = SHELL.now ? keyOf(SHELL.now) : "";
   ltMembers(); ltSendReqs();
@@ -158,21 +182,22 @@ async function ltChStart(took) {
    (song over meanwhile → the next one from its start — other songs' lengths aren't known), same queue · requests · cooldowns.
    Older than 1 min = the channel was gone: a fresh shuffle. */
 const LT_CH_SNAP = "lt.chSnap", LT_CH_KEEP = 60 * 1000;  // 1 min (user request 2026-11-17, was 5)
-const ltChSig = conf => JSON.stringify(conf.groups || []);
+const ltChSnapKey = () => LT_CH_SNAP + (LT.chFast ? ".2x" : "");  // one per channel
+const ltChSig = conf => JSON.stringify(conf.groups || []) + (conf.top > 0 ? "#" + conf.top : "");
 function ltChSnapSave() {
   const conf = ltChConf();
   if (!ltChHost() || !conf || !SHELL.now) return;
   const pack = it => it.vocadb ? +it.vocadb : null;
   const s = {at: Date.now(), sig: ltChSig(conf), now: pack(SHELL.now), pos: audio.currentTime || 0, dur: audio.duration || 0, run: !audio.paused,
     pinned: SHELL.pinned.map(pack).filter(Boolean), upcoming: SHELL.upcoming.slice(0, 300).map(pack).filter(Boolean), reqs: LT.reqs, cool: LT.cool};
-  try { localStorage.setItem(LT_CH_SNAP, JSON.stringify(s)); } catch (e) {}
+  try { localStorage.setItem(ltChSnapKey(), JSON.stringify(s)); } catch (e) {}
 }
 function ltChRestore(conf) {
   let s = null;
-  try { s = JSON.parse(localStorage.getItem(LT_CH_SNAP) || "null"); localStorage.removeItem(LT_CH_SNAP); } catch (e) {}
+  try { s = JSON.parse(localStorage.getItem(ltChSnapKey()) || "null"); localStorage.removeItem(ltChSnapKey()); } catch (e) {}
   if (!s || Date.now() - s.at > LT_CH_KEEP || s.sig !== ltChSig(conf)) return false;
   const get = l => (l || []).map(id => VDB.itemById(id)).filter(it => it && canPlay(it));
-  const now = s.now && VDB.itemById(s.now), pos = s.pos + (s.run ? (Date.now() - s.at) / 1000 : 0);
+  const now = s.now && VDB.itemById(s.now), pos = s.pos + (s.run ? (Date.now() - s.at) / 1000 * ltSpeed() : 0);
   LT.reqs = s.reqs || []; LT.cool = s.cool || {}; ltSendReqs();
   SHELL.pinned = get(s.pinned); SHELL.upcoming = get(s.upcoming);
   if (!SHELL.upcoming.length) SHELL.plan(now);
@@ -180,12 +205,11 @@ function ltChRestore(conf) {
   else SHELL.next(true);
   return true;
 }
-/* guest: the channel's list, made here from the same filter (shown read-only; kept for taking over) */
+/* guest: the channel's list, made here from the same filter (never shown — kept for taking over) */
 async function ltChGuestPl() {
   const conf = ltChConf();
   if (!conf || !LT.chOn) return;
-  if (!LT.chList) { const list = await ltChSongs(conf.groups); if (!LT.chOn) return; LT.chList = LT.chList || list; }
-  guestPl = LT.chList; renderList(); renderPlFilter();
+  if (!LT.chList) { const list = await ltChSongs(conf); if (!LT.chOn) return; LT.chList = LT.chList || list; }
 }
 /* host lost the channel id while cut off and someone else holds it now → my guests and I join that one */
 function ltChDemote() {
@@ -208,7 +232,7 @@ function ltCoolTick() {
 /* the nickname is taken by someone in a room right now (my own current room doesn't count — I am leaving it) */
 function ltTaken(name) {
   const k = ltKey(name);
-  return [...(LTS.rooms || []), ...(LTS.ch ? [LTS.ch] : [])].some(r => (!LT.role || r.code !== LT.code)
+  return [...(LTS.rooms || []), ...(LTS.ch ? [LTS.ch] : []), ...(LTS.ch2 ? [LTS.ch2] : [])].some(r => (!LT.role || r.code !== LT.code)
     && [r.name, ...(r.members || [])].some(m => ltKey(m) === k));
 }
 function ltNameTaken() {
@@ -427,7 +451,7 @@ function ltHostPeer(code, left) {
   peer.on("error", e => {
     if (LT.peer !== peer) return;
     if (LT.role !== "host") {  // 방을 열기 전
-      if (LT.chOn && e.type === "unavailable-id") { peer.destroy(); return ltGuestPeer(LT_CH); }  // someone holds the channel → join them
+      if (LT.chOn && e.type === "unavailable-id") { peer.destroy(); return ltGuestPeer(ltChId()); }  // someone holds the channel → join them
       if (LT.chOn && LT.role === "guest") { peer.destroy(); return ltGuestLost(); }  // taking over failed: try again
       // back from an update reload: the old page may still hold the code for a moment → try the same code again
       if (e.type === "unavailable-id" && LT.resumeTry > 0) { LT.resumeTry--; peer.destroy(); return setTimeout(() => { if (LT.resumeTry >= 0 && !LT.role) ltHostPeer(code, -1); }, 2000); }
@@ -692,7 +716,7 @@ function ltApply(s, got) {
   // position: only when both sides are really playing (or both stopped) — not while one of them is still loading
   if (!s.ready || audio.readyState <= 0) return;
   // expected host position now: + time since it arrived + half the round trip (it was already that old when sent)
-  const exp = s.pos + (s.run ? (performance.now() - got + LT.rtt / 2) / 1000 : 0), both = s.run && !audio.paused, still = !s.playing && audio.paused;
+  const exp = s.pos + (s.run ? (performance.now() - got + LT.rtt / 2) / 1000 * ltSpeed() : 0), both = s.run && !audio.paused, still = !s.playing && audio.paused;
   if (!both && !still) return;
   const diff = audio.currentTime - exp, off = Math.abs(diff);
   // learn how late this player lands after a seek (embedded players): the residual right after our own seek
@@ -712,8 +736,9 @@ function ltErrText(e) {
   if (e.type === "browser-incompatible" || e.type === "webrtc") return "이 브라우저에서는 같이듣기를 할 수 없습니다";
   return "같이듣기 연결 오류 (" + (e.type || e.message || e) + ")";
 }
-function ltLeave(quiet) {
+function ltLeave(quiet, keepSong) {  // keepSong: the channel's song stays (left to sync it) — no song from before
   LT.titleEdit = false;
+  const was = !!LT.role && !LT.unloading && !LT.reloading;  // really left a room / the channel (not a page unload)
   if (ltChHost() && !LT.conns.size) ltChSnapSave();  // the last one out of the channel: 1 min to come back to it
   if (LT.role === "host" && LT.chOn && LT.conns.size) {  // channel: someone still listening takes it over (first one in)
     const to = [...LT.conns.values()][0].uid;
@@ -726,12 +751,15 @@ function ltLeave(quiet) {
   ltPrepEnd(); LT.gprep = null;
   LT.peer = null; LT.role = ""; LT.code = ""; LT.host = null; LT.members = []; LT.colors = {}; LT.hostPlf = null; LT.reqs = []; LT.reqPage = 0; LT.lead = 0; LT.conns = new Map(); LT.lostAt = 0; LT.retryAt = 0;
   SHELL.follow = false;
-  if (LT.chSave) {  // left the channel: my own queue back
+  if (LT.chSave) {  // left the channel: the screen as before entering — my song (paused at its place) and my queue
     const k = LT.chSave; LT.chSave = null;
+    if (!keepSong && !LT.unloading && !LT.reloading && k.now && canPlay(k.now)) { SHELL.resumeAt(k.now, k.pos); SHELL.load(k.now, false, "pick"); }
     SHELL.pinned = k.pinned; SHELL.upcoming = k.upcoming; SHELL.history = k.history; SHELL.repeat = k.repeat;
-    SHELL.qemit();
+    if (SHELL.queue !== k.queue) SHELL.plan(SHELL.now);  // my playlist changed while in the channel
+    else SHELL.qemit();
   }
-  LT.chOn = false; LT.chList = null; LT.cool = {}; LT.coolKey = "";
+  LT.chOn = false; LT.chFast = false; LT.chList = null; LT.cool = {}; LT.coolKey = "";
+  if (was) ltHoldPaused();
   ltPlSig = "";
   ltPlN++;  // a host list still being read is dropped
   if (guestPl) { guestPl = null; renderList(); }  // back to my own playlist
@@ -748,7 +776,17 @@ function ltLeave(quiet) {
    User report 2026-11-19 (the whole channel thrown out at once): at a song start every guest gets "go" together → play(); the
    embed's late answer to the priming pause (Niconico: paused after playing) looked like an outside pause. So on phones too a
    pause within a few seconds of our own play / load / seek is the player settling → play again, not leave. */
-const ltOuter = {timer: 0, ended: false, cmdAt: 0, again: {}};
+const ltOuter = {timer: 0, ended: false, cmdAt: 0, again: {}, hold: 0, holdCmd: 0};
+/* left a room or OPEN CHANNEL → the screen stays paused (user request 2026-11-20: the song from before the channel started
+   playing by itself on leaving). The player itself may still start the loaded song (a frame settling) — for a few seconds any
+   start that isn't the user's own ▶ (audio.play → cmdAt) is paused again */
+function ltHoldPaused() {
+  audio.pause();
+  ltOuter.hold = performance.now() + 8000; ltOuter.holdCmd = ltOuter.cmdAt;
+}
+audio.addEventListener("playing", () => {
+  if (!LT.role && performance.now() < ltOuter.hold && ltOuter.cmdAt === ltOuter.holdCmd) { diag("lt", "left: started by itself — paused"); audio.pause(); }
+});
 const LT_SETTLE = 4000;
 const ltPhone = () => (typeof APP !== "undefined" && APP.on) || matchMedia("(pointer: coarse)").matches && !matchMedia("(any-pointer: fine)").matches;
 function ltChOuterPause() {
@@ -786,7 +824,7 @@ function ltKeep() {
     LT.conns.forEach((v, c) => { if (now - v.seen > 20000 && (!c.open || now - v.seen > LT_SILENT)) { LT.conns.delete(c); try { c.close(); } catch (e) {} gone = true; } });
     if (gone) ltMembers();
     if (ltChHost() && !LT.conns.size) ltChSnapSave();  // alone in the channel: kept fresh in case the tab dies (crash · killed app)
-    else if (ltChHost()) try { localStorage.removeItem(LT_CH_SNAP); } catch (e) {}  // others here carry it on — an old one would be wrong
+    else if (ltChHost()) try { localStorage.removeItem(ltChSnapKey()); } catch (e) {}  // others here carry it on — an old one would be wrong
     const p = LT.peer;
     if (!LT.chOn && !LT.lobby && p && p.open && now >= LT.lobbyAt) { LT.lobbyAt = now + 30000; ltLobby(0); }  // lost / full slots: try again now and then
     if (p && (p.destroyed || p.disconnected) && now >= LT.retryAt) {
@@ -862,12 +900,13 @@ function ltKeep() {
   audio.addEventListener("loadedmetadata", () => { ltPrepCheck(); ltGuestReady(); });
   SHELL.subscribe(() => { if (LT.role === "host") setTimeout(() => { ltSendQueue(); ltReqFollow(); ltCoolTick(); }, 0); });  // song changed → upcoming changed too
   setInterval(ltKeep, 3000);
-  addEventListener("pagehide", () => ltLeave(true));
+  addEventListener("pagehide", () => { LT.unloading = true; ltLeave(true); });
+  SHELL.qView = () => LT.chSave;  // in the channel the queue panel shows my queue as it was, read-only
 }
 
 /* ---------- 방 목록: 화면을 열 때 한 번 + 새로고침 버튼을 누를 때만 (user request: 저절로 다시 찾지 않음, 마지막 갱신 시각 표시) ---------- */
 /* miss: rooms that exist (their slot id is taken) but sent no card in time — couldn't connect · err: no list at all */
-const LTS = {peer: null, rooms: null, busy: false, at: 0, done: "", again: false, wait: null, miss: 0, err: "", unavail: null, ch: null};  // ch: the OPEN CHANNEL's card while someone is in it
+const LTS = {peer: null, rooms: null, busy: false, at: 0, done: "", again: false, wait: null, miss: 0, err: "", unavail: null, ch: null, ch2: null};  // ch / ch2: OPEN CHANNEL's / 2x!!'s card while someone is in it
 const LT_SCAN_MAX = 12000;  // user report: a room missing from the list — the old fixed 4 s was too short on slow networks
 /* a failed look tries again by itself (user request 2026-11-15): up to 3 times, 4 s apart — the 새로고침 button starts over */
 const LT_SCAN_RETRY = 3;
@@ -887,7 +926,7 @@ function ltScan(again) {
     const finish = (err = "") => {
       if (fin) return; fin = true; LTS.unavail = null;
       if (!LTS.busy) return res();
-      const slotsOpen = [...open].filter(i => i !== "ch").length;  // the channel isn't a room (no answer = keep what we knew)
+      const slotsOpen = [...open].filter(i => typeof i === "number").length;  // the channel isn't a room (no answer = keep what we knew)
       LTS.busy = false; LTS.rooms = [...found.values()]; LTS.miss = slotsOpen; LTS.err = err; LTS.done = nowText();
       // no slot answered at all, not even "empty": the link to the PeerJS server is dead → a fresh peer next time
       if (slotsOpen === LT_SLOTS) { ltScanPeerDrop(); LTS.miss = 0; LTS.err = "같이듣기 연결 서버에서 답이 없습니다 — 잠시 뒤 새로고침해 주세요"; }
@@ -898,19 +937,21 @@ function ltScan(again) {
     };
     const settle = i => { open.delete(i); if (!open.size) finish(); };  // everything answered → done at once
     const ask = p => {
+      const CHS = [["ch", LT_CH], ["ch2", LT_CH2]];  // LTS key · channel code
       LTS.unavail = id => {
-        if (id === LT_PREFIX + LT_CH) { LTS.ch = null; return settle("ch"); }  // nobody in the channel
+        const ch = CHS.find(([, code]) => id === LT_PREFIX + code);
+        if (ch) { LTS[ch[0]] = null; return settle(ch[0]); }  // nobody in that channel
         const i = [...Array(LT_SLOTS).keys()].find(i => ltSlotId(i) === id); if (i != null) settle(i);  // empty slot
       };
-      if (ltChConf()) {  // OPEN CHANNEL: its holder answers a probe with its card
-        open.add("ch");
-        const c = p.connect(LT_PREFIX + LT_CH, {reliable: true, metadata: {probe: true}});
+      if (ltChConf()) for (const [k, code] of CHS) {  // OPEN CHANNEL (both): its holder answers a probe with its card
+        open.add(k);
+        const c = p.connect(LT_PREFIX + code, {reliable: true, metadata: {probe: true}});
         c.on("data", m => {
           try { c.close(); } catch (e) {}
           if (!m || m.t !== "room") return;
-          LTS.ch = m;
+          LTS[k] = m;
           if (fin) return ltRender();
-          settle("ch");
+          settle(k);
         });
       }
       for (let i = 0; i < LT_SLOTS; i++) {
@@ -934,6 +975,7 @@ function ltScan(again) {
 function ltRescan(dropCode, delay) {
   if (dropCode && LTS.rooms) LTS.rooms = LTS.rooms.filter(r => r.code !== dropCode);
   if (dropCode === LT_CH) LTS.ch = null;
+  if (dropCode === LT_CH2) LTS.ch2 = null;
   ltRender();
   setTimeout(() => ltScan(true), delay);
 }
@@ -956,9 +998,10 @@ function ltWatchPeer(i, done) {
 }
 function ltWatchGot(m) {
   if (!m || !m.code) return;
-  if (m.code === LT_CH) {  // OPEN CHANNEL came alive / emptied — a card slower than the 'gone' after it is dropped (test 2026-11-17)
-    if ((m.at || 0) < (LTS.chAt || 0)) return;
-    LTS.chAt = m.at || 0; LTS.ch = m.t === "room" ? m : null; LTS.done = nowText(); return ltRender();
+  if (m.code === LT_CH || m.code === LT_CH2) {  // OPEN CHANNEL came alive / emptied — a card slower than the 'gone' after it is dropped (test 2026-11-17)
+    const k = m.code === LT_CH ? "ch" : "ch2";
+    if ((m.at || 0) < (LTS[k + "At"] || 0)) return;
+    LTS[k + "At"] = m.at || 0; LTS[k] = m.t === "room" ? m : null; LTS.done = nowText(); return ltRender();
   }
   const rooms = (LTS.rooms || []).filter(r => r.code !== m.code);
   if (m.t === "room") rooms.push(m);
@@ -971,18 +1014,20 @@ function ltRenderCh() {
   const conf = ltChConf(), row = $("ltChRow");
   row.hidden = !conf;
   if (!conf) return row.innerHTML = "";
-  const here = LT.chOn && !!LT.role;
-  const info = here ? {n: LT.members.length || 1, song: SHELL.now ? SHELL.now.title || "" : ""} : LTS.ch;
-  const n = info ? info.n || 1 : 0;
   // one line only (user request 2026-11-17: the description / '늘 열려 있음' text pushed 입장 down)
   // always on air (user request 2026-11-19: shown playing whether anyone is in or not) — the count only while someone is
-  row.innerHTML = `<div class="ltroom ltch on${here ? " here" : ""}" title="${esc(conf.title || "OPEN CHANNEL")}${n && info.song ? " · ♪ " + esc(info.song) : ""}">
-    <span class="who"><span class="ltchdot"></span><span class="ltchname">OPEN CHANNEL</span></span>
+  row.innerHTML = [false, true].map(fast => {
+    const here = LT.chOn && !!LT.role && LT.chFast === fast, name = ltChName(fast);
+    const info = here ? {n: LT.members.length || 1, song: SHELL.now ? SHELL.now.title || "" : ""} : LTS[fast ? "ch2" : "ch"];
+    const n = info ? info.n || 1 : 0;
+    return `<div class="ltroom ltch on${fast ? " ltch2" : ""}${here ? " here" : ""}" title="${esc(name)}${fast ? " · 2배속" : ""}${n && info.song ? " · ♪ " + esc(info.song) : ""}">
+    <span class="who"><span class="ltchdot"></span><span class="ltchname">${esc(name)}</span></span>
     <span class="meta">${n ? `${n}명 듣는 중` : "재생 중"}</span>
-    ${here ? `<span class="here">지금 있는 채널</span>` : `<button class="primary" data-ch="1">${LT.role ? "채널로 옮기기" : "입장"}</button>`}
+    ${here ? `<span class="here">지금 있는 채널</span>` : `<button class="primary" data-ch="${fast ? 2 : 1}">${LT.role ? "채널로 옮기기" : "입장"}</button>`}
   </div>`;
+  }).join("");
 }
-$("ltChRow").addEventListener("click", e => { if (e.target.closest("button[data-ch]")) ltChJoin(); });
+$("ltChRow").addEventListener("click", e => { const b = e.target.closest("button[data-ch]"); if (b) b.dataset.ch === "2" ? ltChFastEnter() : ltChJoin(); });
 function ltRenderRooms() {
   ltRenderCh();
   const ul = $("ltRooms"), rooms = LTS.rooms;
@@ -1091,7 +1136,9 @@ $("ltRefresh").onclick = () => { LTS.retry = 0; ltScan(); };
 })();
 
 /* ---------- 화면 ---------- */
+const ltChHint = () => LT.chFast ? "인기곡이 2배속으로 무작위로 계속 재생됩니다." : "인기곡이 무작위로 계속 재생됩니다.";
 function ltRender() {
+  if (audio.applyRate) audio.applyRate();  // OPEN CHANNEL 2x!!: in → 2×, out → my own speed
   const b = $("btnListen"), n = LT.members.length, rooms = LTS.rooms ? LTS.rooms.length : 0, ch = !!ltChConf();
   const chLive = ch;  // OPEN CHANNEL always looks on air, listeners or not (user request 2026-11-19)
   b.classList.toggle("on", !!LT.role);
@@ -1099,8 +1146,8 @@ function ltRender() {
   b.classList.toggle("reqwait", LT.role === "host" && LT.reqs.some(r => r.state === "wait"));  // blinks (also the phone menu's 같이듣기)
   // open rooms = a small count badge on the icon (user request 2026-11-15: icon + name like the phone menu); the tooltip says it in full
   // OPEN CHANNEL counts as an open room always; when it is the only one the badge says ONAIR (user request 2026-11-17 — was OPEN)
-  const all = rooms + (ch ? 1 : 0);
-  const cnt = [ch ? "OPEN CHANNEL" : "", rooms ? `방 ${rooms}개` : "", LT.role ? `${LT.chOn ? "채널" : "내 방"} ${n || 1}명` : ""].filter(Boolean).join(" · ");
+  const all = rooms + (ch ? 2 : 0);  // both channels
+  const cnt = [ch ? "OPEN CHANNEL · 2x!!" : "", rooms ? `방 ${rooms}개` : "", LT.role ? `${LT.chOn ? "채널" : "내 방"} ${n || 1}명` : ""].filter(Boolean).join(" · ");
   $("ltBadge").hidden = !all;
   $("ltBadge").classList.toggle("open", ch && !rooms);
   $("ltBadge").textContent = ch && !rooms ? "ONAIR" : all > 99 ? "99+" : all;
@@ -1122,8 +1169,11 @@ function ltRender() {
   }
   // guest: only volume and leaving — the play controls look disabled
   const guest = LT.role === "guest" || LT.chOn && !!LT.role;  // OPEN CHANNEL: nobody controls playback
-  for (const id of ["btnPlay", "btnPrev", "btnNext", "seek", "btnPlayView", "btnShuffle", "btnRepeat", "btnEdit"]) $(id).disabled = guest;
+  for (const id of ["btnPlay", "btnPrev", "btnNext", "seek", "btnPlayView", "btnShuffle", "btnRepeat"]) $(id).disabled = guest;
+  // 싱크: off for room guests only — in OPEN CHANNEL it asks to leave first (lyrics_view.js, user request 2026-11-20)
+  $("btnEdit").disabled = LT.role === "guest" && !LT.chOn || !(song && song.groups.length);
   document.body.classList.toggle("lt-guest", guest);
+  document.body.classList.toggle("lt-ch", LT.chOn && !!LT.role);  // OPEN CHANNEL: every play button but volume · seek bar gets a slash (player_screen.css)
   ltRenderRooms();
   // web: the room card only while the 같이듣기 panel is folded (user request 2026-11-15 — the panel shows the room itself)
   /* web (user request 2026-11-15): in a room, folding keeps the room card itself in place (only 방 만들기 · 열린 방 and the
@@ -1136,19 +1186,21 @@ function ltRender() {
   $("ltCard").hidden = !LT.role || web;
   b.classList.toggle("open", web && d.open && !d.classList.contains("fold"));  // unfolded: the button looks selected (user request 2026-11-15)
   if (typeof renderPlFilter === "function") renderPlFilter();  // guest: the playlist's filter = the host's
+  $("ltCard").classList.toggle("ltch2", LT.chOn && LT.chFast);  // 2x!!: red (player_screen.css)
+  $("ltRoom").classList.toggle("ltch2", LT.chOn && LT.chFast);
   if (!LT.role) return;
   const hostName = LT.members[0] || (LT.role === "host" ? LT.me : "");
-  const title = LT.chOn ? "OPEN CHANNEL" : LT.title || (hostName ? `${hostName}님의 방` : "");
+  const title = LT.chOn ? ltChName(LT.chFast) : LT.title || (hostName ? `${hostName}님의 방` : "");
   // the room above the playlist (user request 2026-11-15): title · how many (no names) · guest hint — click = this window
   $("ltCard").innerHTML = `<div class="lcr">${LT.chOn ? '<span class="ltchdot"></span>' : ltLockSvg(LT.open)}<b class="tt">${esc(title)}</b><span class="n">${LT.chOn ? "" : "참여자 "}${(LT.members.length || 1)}명${LT.chOn ? " 듣는 중" : ""}</span>`
     + `</div>`
-    + (LT.chOn ? `<div class="lch">인기곡이 무작위로 계속 재생됩니다.</div>`  /* same words in 간단 · 기본 (user request 2026-11-19) */ : LT.role === "guest" ? `<div class="lch">곡 재생 제어는 방장만 가능합니다.</div>` : "");
-  if (LT.chOn) $("ltRoomTitle").innerHTML = `<span class="ltchdot"></span><span class="tt ltchname">OPEN CHANNEL</span>${LT.title ? `<span class="ltchsub">${esc(LT.title)}</span>` : ""}`;
+    + (LT.chOn ? `<div class="lch">${ltChHint()}</div>`  /* same words in 간단 · 기본 (user request 2026-11-19) */ : LT.role === "guest" ? `<div class="lch">곡 재생 제어는 방장만 가능합니다.</div>` : "");
+  if (LT.chOn) $("ltRoomTitle").innerHTML = `<span class="ltchdot"></span><span class="tt ltchname">${ltChName(LT.chFast)}</span>${LT.title ? `<span class="ltchsub">${esc(LT.title)}</span>` : ""}`;
   else if (!LT.titleEdit) $("ltRoomTitle").innerHTML = `${ltLockSvg(LT.open)}<span class="tt">${esc(title)}</span>${
     LT.role === "host" ? `<button type="button" class="ltpen" title="방 제목 바꾸기">${ltPenSvg()}</button>` : ""}`;  // user request: lock always before the title, big and centred · host: ✏ renames
   // user request 2026-11-17: short, two lines
   // one wording for 간단 and 기본 mode (user request 2026-11-19)
-  if (LT.chOn) $("ltRoomHint").textContent = "인기곡이 무작위로 계속 재생됩니다.";
+  if (LT.chOn) $("ltRoomHint").textContent = ltChHint();
   else $("ltRoomHint").textContent = "곡 재생 제어는 방장만 가능합니다.";
   $("ltRoomHint").hidden = LT.role === "host" && !LT.chOn;
   const mem = LT.members.length ? LT.members : [hostName];
@@ -1392,7 +1444,8 @@ $("ltPlf").addEventListener("click", async e => {
   store.set("f.saved", [...store.get("f.saved", []).filter(f => f.name !== name), {name, groups}]);  // 같은 이름이면 덮어씀
   LT.status = `필터 '${name}' 을(를) 저장했습니다.`; ltRender();
 });
-$("ltLeave").onclick = () => { const code = LT.role === "host" && !(LT.chOn && LT.conns.size) ? LT.code : ""; $("ltName").value = store.get("reportWho", ""); ltLeave(false); ltRescan(code, 800); };  // back to the last name used
+function ltLeaveBtn(keepSong) { const code = LT.role === "host" && !(LT.chOn && LT.conns.size) ? LT.code : ""; $("ltName").value = store.get("reportWho", ""); ltLeave(false, keepSong); ltRescan(code, 800); }  // back to the last name used
+$("ltLeave").onclick = () => ltLeaveBtn(false);
 $("ltClose").onclick = () => $("listenDlg").close();
 $("ltCard").addEventListener("click", async e => {
   ltOpenFresh();  // opens, never folds
@@ -1425,7 +1478,7 @@ function ltBeforeReload() {
   if (!LT.role) return;
   LT.reloading = true;
   // the host keeps the requests too (user request 2026-11-17) — the queued ones come back with the queue (qSaveForReload)
-  try { sessionStorage.setItem(LT_RESUME_KEY, JSON.stringify({role: LT.role, code: LT.code, me: LT.me, pw: LT.pw, open: LT.open, title: LT.title, ch: LT.chOn, uid: LT.uid,
+  try { sessionStorage.setItem(LT_RESUME_KEY, JSON.stringify({role: LT.role, code: LT.code, me: LT.me, pw: LT.pw, open: LT.open, title: LT.title, ch: LT.chOn, fast: LT.chFast, uid: LT.uid,
     reqs: LT.role === "host" && !LT.chOn ? LT.reqs : [], cool: LT.chOn ? {} : LT.cool, at: Date.now()})); } catch (e) {}
 }
 function ltResume() {
@@ -1436,7 +1489,7 @@ function ltResume() {
   const go = async () => {
     if (document.querySelector("dialog.offdlg[open]") || !VDB.idx) return setTimeout(go, 500);  // until the song list opened
     if (LT.role) return;  // already in a room some other way
-    if (r.ch) return ltChJoin();
+    if (r.ch) return ltChJoin(!!r.fast);  // checked when first entered
     LT.me = r.me || ltName(); LT.pw = r.pw || ""; LT.open = r.open !== false; LT.title = r.title || ""; LT.resumeTry = 6;
     LT.status = r.role === "host" ? "방을 다시 여는 중…" : "방에 다시 들어가는 중…"; ltRender();
     try { await ltLoadPeerJs(); } catch (e) { LT.resumeTry = 0; LT.status = e.message; return ltRender(); }

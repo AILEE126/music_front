@@ -247,3 +247,5 @@ button.onoff.on .lb.on{color:var(--ok)}
 #streamHost .vwarn .vg-later{color:#e9d3b0}
 #streamHost .vwarn .primary{background:#e0392b;border-color:#e0392b;color:#fff}
 #streamHost iframe.pre{position:absolute;left:0;top:0;opacity:.01;pointer-events:none;z-index:-1}  /* 미리 띄워 둔 다음 곡 (안 보이게 뒤에) */
+.qp.ro .qi{cursor:default}
+.qp.ro .qi:not(.cur):hover{background:none}

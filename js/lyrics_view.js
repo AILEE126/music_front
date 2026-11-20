@@ -452,7 +452,15 @@ function editUp() { cursor = Math.max(0, cursor - 1); renderStamps(); }
 // pointerdown, not click: the stamp lands when the finger touches, and the button never takes focus
 for (const [id, fn] of [["editDown", editDown], ["editUp", editUp]])
   $(id).addEventListener("pointerdown", e => { e.preventDefault(); if (editing) fn(); });
-$("btnEdit").onclick = () => editing ? stopEdit() : startEdit();
+$("btnEdit").onclick = async () => {
+  if (editing) return stopEdit();
+  // OPEN CHANNEL (user request 2026-11-20): syncing leaves the channel — asked first; the channel's song stays here to sync
+  if (typeof LT !== "undefined" && LT.chOn && LT.role) {
+    if (!await uiConfirm("싱크를 수정하면 OPEN CHANNEL 에서 나가집니다. 나가고 싱크를 수정할까요?", "나가고 싱크 수정")) return;
+    ltLeaveBtn(true);
+  }
+  startEdit();
+};
 $("btnEditCancel").onclick = () => { stopEdit(); renderLyrics(); };
 $("btnEditSave").onclick = async () => {
   // 찍지 않은 묶음은 앞뒤 시간 사이를 고르게 채움

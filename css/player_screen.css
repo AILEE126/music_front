@@ -343,6 +343,12 @@ body.lt-guest #list{cursor:not-allowed}
 body.lt-guest .vshield{pointer-events:none}
 body.lt-guest #streamHost{pointer-events:none}
 body.lt-guest #streamHost:has(.vguide:not([hidden])){pointer-events:auto}  /* Bilibili volume guide: its buttons must be reachable */
+/* OPEN CHANNEL (user request 2026-11-20): every button of the play bar but volume · seek, and the phone's
+   mini bar, are off (싱크 stays on — it asks to leave first, lyrics_view.js) — struck through with one straight line, buttons side by side share one unbroken line (::before — .ib.mode.on
+   uses ::after for its dot). Faded by an opaque color, not opacity, so where two lines overlap they don't darken */
+body.lt-ch :is(#btnPrev,#btnPlay,#btnNext,#btnShuffle,#btnRepeat,#btnPlayQueue,#btnRate,#btnKey,#btnAB,#miniPlay,#miniNext){position:relative;opacity:1;color:color-mix(in srgb,var(--muted) 45%,var(--card));pointer-events:none;text-decoration:none}
+body.lt-ch :is(#btnPrev,#btnPlay,#btnNext,#btnShuffle,#btnRepeat,#btnPlayQueue,#btnRate,#btnKey,#btnAB,#miniPlay,#miniNext)::before{content:"";position:absolute;left:-2px;right:-2px;top:50%;height:1.6px;margin-top:-.8px;background:currentColor}
+body.lt-ch :is(#btnPrev,#btnPlay,#btnNext,#btnShuffle,#btnRepeat,#btnPlayQueue,#btnRate,#btnKey,#btnAB,#miniPlay,#miniNext):has(+ :is(#btnPrev,#btnPlay,#btnNext,#btnShuffle,#btnRepeat,#btnPlayQueue,#btnRate,#btnKey,#btnAB,#miniPlay,#miniNext):not([hidden]))::before{right:-12px}  /* runs on over the gap into the next one's line */
 /* 썸네일 크게 보기 */
 #coverDlg{width:auto;max-width:94vw;background:transparent;border:0}
 /* 노래방 번호 랜덤 추천 (user request 2026-11-15): info off → only the number, big in the middle */
@@ -381,6 +387,12 @@ body.simple .nbadge.open{filter:brightness(.7) saturate(.6)}  /* 간단: ONAIR a
    같이듣기 window the window's own filter does it (rule below), so only the playlist's '현재 설정된 필터' gets one here */
 body.simple .plfilter .ltchtag{filter:saturate(.6)}
 @keyframes ltchpulse{50%{opacity:.3}}
+/* OPEN CHANNEL 2x!! (user request 2026-11-20): the same look, red instead of green */
+.ltch2{--ch2:#ef4444}
+html[data-theme=light] .ltch2{--ch2:#dc2626}
+.ltroom.ltch.ltch2{border-color:var(--ch2);background:linear-gradient(90deg,rgb(239 68 68 / .14),transparent 70%)}
+.ltroom.ltch.ltch2.here{border-color:var(--accent)}
+.ltch2 .ltchname{color:var(--ch2)}
 /* 간단: every colored part of the screen at 60% saturation (user request 2026-11-19 — was 50% for OPEN CHANNEL only):
    the switches under the name · count badges · the whole 같이듣기 window + the room card above the playlist · song tag
    chips · the [오버레이] button. One filter per box (nested ones would stack). ONAIR and the playlist badges have their own. */

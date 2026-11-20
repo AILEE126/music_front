@@ -555,7 +555,11 @@ class LocalMedia extends EventTarget {
   }
   /* 배속 (user request 2026-11-19, browser key rate): what plays — 1 in a 같이듣기 room, or on a player that needs the
      extension when it isn't here (the button shows that: rateBlock) */
-  rateFor(kind) { return this.rateBlock(kind) ? 1 : +store.get("rate", 1) || 1; }
+  rateFor(kind) {
+    const ch = typeof ltChRate === "function" && ltChRate();  // OPEN CHANNEL 2x!! (listen_together.js): everyone at its speed
+    if (ch) return ch;
+    return this.rateBlock(kind) ? 1 : +store.get("rate", 1) || 1;
+  }
   rateBlock(kind = this.kind) {
     if (rateLocked()) return "lock";
     if (rateNeedsExt(kind) && EXT.ver < 2) return BILI_TOUCH() ? "touch" : "ext";  // the app injects the same script (EXT.ver from its bridge page)

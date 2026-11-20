@@ -752,11 +752,10 @@ const vdbTotal = () => VDB.total;
 let plfFold = true;
 function renderPlFilter() {
   // 같이듣기 손님: the list shown is the host's, so is the filter (user request 2026-11-15)
-  const box = $("plFilter"), ch = guestPl && typeof LT !== "undefined" && LT.chOn, f = guestPl ? (typeof LT !== "undefined" && LT.hostPlf) || null : PLF;
-  box.hidden = !(f || ch) || !ONLINE;
-  box.classList.toggle("fold", plfFold && !ch);
-  // OPEN CHANNEL (user request 2026-11-17): its filter stays private — just the tag
-  if (ch) { box.innerHTML = `<div class="plfhead">현재 설정된 필터</div>${ltChTag()}`; return; }
+  // (OPEN CHANNEL shows my own playlist and filter — user request 2026-11-20)
+  const box = $("plFilter"), f = guestPl ? (typeof LT !== "undefined" && LT.hostPlf) || null : PLF;
+  box.hidden = !f || !ONLINE;
+  box.classList.toggle("fold", plfFold);
   box.innerHTML = f ? `<div class="plfhead" role="button" tabindex="0" title="${plfFold ? "필터 펼치기" : "필터 접기"}">현재 설정된 필터<span class="chev">▾</span></div>` + plfHtml(f) : "";
 }
 $("plFilter").addEventListener("click", e => { if (e.target.closest(".plfhead")) { plfFold = !plfFold; renderPlFilter(); } });

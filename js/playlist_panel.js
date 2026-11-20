@@ -46,7 +46,8 @@ const PL = {
     SHELL.setQueue(list); SHELL.plan(SHELL.now);
     renderList();
   },
-  set(list) { SHELL.setQueue(list); SHELL.plan(SHELL.now); this.save(); renderList(); },
+  // OPEN CHANNEL: the queue on screen is my frozen one (SHELL.qView) — it is planned again on leaving (ltLeave)
+  set(list) { SHELL.setQueue(list); if (!(SHELL.qView && SHELL.qView())) SHELL.plan(SHELL.now); this.save(); renderList(); },
   add(list, next = false) {
     const have = new Set(SHELL.queue.map(keyOf)), add = list.filter(it => canPlay(it) && !have.has(keyOf(it)));
     if (!add.length) return 0;
@@ -236,7 +237,7 @@ function renderList() {
   const pq = fold($("plQ").value.trim());
   if (pq) view = view.filter(it => FKIND.text[1](it, pq));  // 재생목록에서 찾기 (user request 2026-11-15)
   // label on its own line, the count (with commas) under it next to the buttons — a big count pushed them down (user request 2026-11-15)
-  const lbl = guestPl ? (typeof LT !== "undefined" && LT.chOn ? "OPEN CHANNEL" : "방장 재생목록") : ONLINE ? "재생목록" : OFFSRC === "yt" ? "영상" : "mp3", unit = !guestPl && !ONLINE && OFFSRC === "yt" ? "개" : "곡";
+  const lbl = guestPl ? "방장 재생목록" : ONLINE ? "재생목록" : OFFSRC === "yt" ? "영상" : "mp3", unit = !guestPl && !ONLINE && OFFSRC === "yt" ? "개" : "곡";
   // my online playlist: '<all our songs> / <in the playlist>곡' — the total and the slash plain, the playlist count stands out (user request 2026-11-15)
   const total = ONLINE && !guestPl ? vdbTotal() : 0;
   const n = PL.early && !guestPl && !pq ? Math.max(view.length, PL.savedN) : view.length;  // 요약본 up: the whole saved list's count
@@ -316,7 +317,7 @@ const coverHtml = (it, cls) => hasCover(it) ? `<img class="${cls}" data-ck="${es
 const detailHtml = titleSubHtml;  // 재생 화면 제목줄: 기본 이름 옆 다른 이름들 (titleNames)
 /* ◎ 재생 중인 곡으로 (곡이 넘어가도 목록은 저절로 움직이지 않음) */
 $("btnFindCur").onclick = () => {
-  const now = SHELL.now || cur; if (!now) return;
+  const now = (SHELL.qView && SHELL.qView() ? SHELL.qView().now : SHELL.now) || cur; if (!now) return;  // OPEN CHANNEL: my song from before
   const i = view.findIndex(it => keyOf(it) === keyOf(now));
   if (i < 0) { uiAlert("지금 재생 중인 곡이 재생목록에 없습니다 (검색에서 바로 튼 곡)."); return; }
   const L = $("list");

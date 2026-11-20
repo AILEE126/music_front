@@ -3,7 +3,8 @@
    pinned = 우클릭 '대기열에 추가'로 넣은 곡 (upcoming 보다 먼저) · history = 지난 곡 10곡 (⏮ 는 무작위여도 바로 전에 틀었던 곡으로, 더 앞은 지금 곡 처음으로)
    재생기(S)가 갖춰야 할 것: audio · now · load(it, autoplay, how) — load 는 곡을 바꾸기 전에 this.queueOnLoad(it, how) 를 부름
    고를 수 있는 것: S.canQueue(it) (재생 목록에 넣을 곡만) · S.onModes() (무작위·반복이 바뀌면)
-   · S.playFilter(it) (앞으로 틀 곡만 — 노래방 모드의 기기 거르기, 재생목록은 그대로) */
+   · S.playFilter(it) (앞으로 틀 곡만 — 노래방 모드의 기기 거르기, 재생목록은 그대로)
+   · S.qView() → {now, history, pinned, upcoming, repeat} 를 주면 대기열 창은 그것을 보기만 함 (OPEN CHANNEL — 들어가기 전 내 대기열) */
 const QUEUE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h13M3 12h13M3 18h8"/><path d="m16 15 5 3-5 3z" fill="currentColor"/></svg>`;
 function addPlayQueue(S) {
   const key = it => it.site + "/" + it.name;
@@ -73,22 +74,24 @@ function queuePanel(S) {
   const body = p.querySelector(".qbody");
   const render = () => {
     if (p.hidden) return;
-    p.querySelector(".qmode").textContent = `${S.shuffle ? "무작위" : "순서대로"} · ${{off: "반복 안 함", all: "전체 반복", one: "한 곡 반복"}[S.repeat]}`;
+    const V = (S.qView && S.qView()) || S, ro = V !== S;
+    p.classList.toggle("ro", ro);
+    p.querySelector(".qmode").textContent = `${S.shuffle ? "무작위" : "순서대로"} · ${{off: "반복 안 함", all: "전체 반복", one: "한 곡 반복"}[V.repeat]}`;
     const row = (it, list, i, cls = "") => `<div class="qi ${cls}" data-l="${list}" data-i="${i}" title="${esc(titleNames(it).join(" · "))}${it.artist ? " — " + esc(shortName(it.artist)) : ""}">
       <span class="t">${titleHtml(it)} <span class="a">${esc(shortName(it.artist || ""))}</span></span>
-      ${list === "pinned" || list === "upcoming" ? `<button class="x" title="대기열에서 빼기">✕</button>` : ""}</div>`;
-    const H = S.history.slice(-10), sec = t => `<div class="qsec">${t}</div>`, U = S.upcoming;
+      ${!ro && (list === "pinned" || list === "upcoming") ? `<button class="x" title="대기열에서 빼기">✕</button>` : ""}</div>`;
+    const H = V.history.slice(-10), sec = t => `<div class="qsec">${t}</div>`, U = V.upcoming;
     let h = "";
-    if (H.length) h += sec("지난 곡 (⏮ 로 돌아감)") + H.map((it, j) => row(it, "history", S.history.length - H.length + j, "old")).join("");
-    if (S.now) h += sec("지금") + row(S.now, "now", 0, "cur");
-    if (S.pinned.length) h += sec("직접 넣은 곡") + S.pinned.map((it, i) => row(it, "pinned", i)).join("");
+    if (H.length) h += sec("지난 곡 (⏮ 로 돌아감)") + H.map((it, j) => row(it, "history", V.history.length - H.length + j, "old")).join("");
+    if (V.now) h += sec("지금") + row(V.now, "now", 0, "cur");
+    if (V.pinned.length) h += sec("직접 넣은 곡") + V.pinned.map((it, i) => row(it, "pinned", i)).join("");
     h += sec(`다음 곡 (${U.length}곡)`) + (U.length ? U.slice(0, QSHOW).map((it, i) => row(it, "upcoming", i)).join("")
       + (U.length > QSHOW ? `<div class="more">… 외 ${U.length - QSHOW}곡</div>` : "")
-      : `<div class="more">${S.repeat === "off" ? "이 곡이 끝나면 멈춤" : "이 곡이 끝나면 처음부터 다시"}</div>`);
+      : `<div class="more">${V.repeat === "off" ? "이 곡이 끝나면 멈춤" : "이 곡이 끝나면 처음부터 다시"}</div>`);
     body.innerHTML = h;
   };
   body.addEventListener("click", e => {
-    const r = e.target.closest(".qi"); if (!r) return;
+    const r = e.target.closest(".qi"); if (!r || S.qView && S.qView()) return;  // read-only view: nothing to click
     const l = r.dataset.l, i = +r.dataset.i;
     if (e.target.closest(".x")) return S.unqueue(l, i);
     if (l === "history") { const [it] = S.history.splice(i, 1); if (S.now) S.upcoming.unshift(S.now); S.load(it, true, "prev"); }
