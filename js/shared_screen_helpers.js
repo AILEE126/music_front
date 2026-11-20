@@ -362,10 +362,10 @@ async function openPlayerSettings(want = "") {  // want: the part to show (e.g. 
     <p class="muted">발음·번역 줄은 플레이어의 '발음'·'번역' 체크를 따릅니다.</p>
     <div class="row"><button data-act="reset">위치 처음으로 (화면 아래 가운데)</button></div>
     <div class="ovprev" data-ovprev aria-hidden="true"></div>`)}${addon ? sec("addon", `
-    <p class="muted">가사 오버레이(바탕이 투명한 가사 창)와 확장 프로그램을 한 파일로 받아 한 번에 넣어요. 확장 프로그램이 있어야 니코니코 · 유튜브 · SoundCloud · Vimeo · 비리비리 영상에 배속 · 키 변경 · 소리 크기 맞추기가 되고, 비리비리 볼륨 조절 · 유튜브 광고 건너뛰기도 돼요.</p>
+    <p class="muted">가사 오버레이(바탕이 투명한 가사 창)와 확장 프로그램은 따로 받아요. 아래 단추를 누르면 이 PC에 아직 없는 것만 차례로 알려 줘요. 확장 프로그램이 있어야 니코니코 · 유튜브 · SoundCloud · Vimeo · 비리비리 영상에 배속 · 키 변경 · 소리 크기 맞추기가 되고, 비리비리 볼륨 조절 · 유튜브 광고 건너뛰기도 돼요.</p>
     <ul class="addst" data-addst><li class="muted">확인하는 중…</li></ul>
     <div class="row"><button class="primary" data-act="addon">추가기능 내려받기 · 넣기</button></div>
-    <p class="muted">새 버전이 나오면 다시 내려받아 전에 압축을 푼 곳에 덮어쓰고 lyrics_overlay.bat 만 다시 실행하면 돼요 (안내가 알려 줘요).</p>
+    <p class="muted">한 번 넣으면 새 버전은 둘 다 저절로 받아요. 예전에 넣은 것이면 위에 '새 버전이 있어요'가 뜨고, 단추를 누르면 바꾸는 법이 나와요.</p>
     <div class="setsubhd">확장 프로그램 기능</div>${fadeHtml}
     <p class="muted">소리 크기 맞추기는 확장 프로그램을 넣으면 늘 켜져요 · 배속 · 키 변경은 재생 막대의 버튼에서.</p>`) : ""}</div></div>`;
   // new rows: marked '새로' while this window is open (a new font: its pick and the option)
@@ -399,7 +399,7 @@ async function openPlayerSettings(want = "") {  // want: the part to show (e.g. 
     const ul = d.querySelector("[data-addst]"); if (!ul) return;
     const ov = await ovNeed(), ext = extNeed();
     const line = (name, st, ok) => `<li class="${ok ? "ok" : "warn"}"><b>${name}</b> ${st}</li>`;
-    ul.innerHTML = line("가사 오버레이", {"": "켜져 있음 · 최신", old: "새 버전이 있어요", off: "꺼져 있음 ([오버레이] 단추 또는 lyrics_overlay.bat)", new: "아직 없음"}[ov], !ov || ov === "off")
+    ul.innerHTML = line("가사 오버레이", {"": "켜져 있음 · 최신", old: "새 버전이 있어요", off: "꺼져 있음 ([오버레이] 단추로 켜요)", new: "아직 없음"}[ov], !ov || ov === "off")
       + line("확장 프로그램", {"": "있음 · 최신", old: "새 버전이 있어요", new: "아직 없음"}[ext], !ext);
   };
   if (addon) addonState();
@@ -488,7 +488,7 @@ function bindOverlayPower(btn, label) {  // label: fixed text, on/off by color o
     const first = !LOCAL.ovOn;
     LOCAL.ovEnable();  // from now on this browser talks to the overlay (no folder picking — user request)
     await check();
-    if (guide() && alive && !oldShown && ver < await ovLatest()) { oldShown = true; openSetupGuide("오버레이"); }
+    if (guide() && alive && !oldShown && await ovNeed() === "old") { oldShown = true; openSetupGuide("오버레이"); }  // the guide's own test (8+ updates itself) — else it opened saying '모두 최신'
     if (guide() && !alive && !store.get("ovSeen", false)) return openSetupGuide("오버레이");  // never ran here: nothing to start yet
     if (first && on()) return show();  // first press while the bat-started overlay already shows: keep it on
     try { await post("/api/ovset", {enabled: !on()}); } catch (e) { return uiAlert(e.message); }

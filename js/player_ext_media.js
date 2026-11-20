@@ -15,7 +15,8 @@
 function mpxMedia() {
   const VER = 5;  // 4: Niconico · Bilibili ads hidden · 5: the PC extension loads this file from GitHub itself (old static ones are asked to reinstall once)
   const host = location.hostname;
-  if (host === "ailee126.github.io" || (/^(127\.0\.0\.1|localhost)$/.test(host) && /stream_bridge/.test(location.pathname))) {
+  // the player itself is on ailee126.github.io too (/music_front/) — only the bridge path counts
+  if ((host === "ailee126.github.io" && /^\/music-bridge\//.test(location.pathname)) || (/^(127\.0\.0\.1|localhost)$/.test(host) && /stream_bridge/.test(location.pathname))) {
     window.MPX_EXT = VER;  // the bridge page (deployed · under test)
     return;
   }

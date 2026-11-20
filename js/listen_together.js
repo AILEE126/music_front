@@ -58,7 +58,15 @@ const ltChName = fast => fast ? "OPEN CHANNEL 2x!!" : "OPEN CHANNEL";
 const ltChRate = () => LT.chOn && LT.chFast && LT.role ? LT_CH2_RATE : 0;  // play_engine.js rateFor: the channel's speed
 const ltSpeed = () => ltChRate() || 1;  // song seconds per real second (positions sent between players)
 const LT_CH_COOL = 2;  // songs that must start before the same person can request again
-const ltChConf = () => typeof ONLINE !== "undefined" && ONLINE && VDB.filter && VDB.filter.channel && (VDB.filter.channel.groups || []).length ? VDB.filter.channel : null;
+/* each channel's playlist (user request 2026-11-20: the 2x!! channel plays a list of its own — Manage › 필터 › OPEN CHANNEL 2x!!,
+   filter.json channel2; not set → the 1× list). Both channels exist while OPEN CHANNEL is on. k: its saved list ("" · "2") */
+const ltChOk = c => c && (c.groups || []).length ? c : null;
+function ltChSrc(fast) {
+  const f = typeof ONLINE !== "undefined" && ONLINE && VDB.filter;
+  if (!f || !ltChOk(f.channel)) return null;
+  return fast && ltChOk(f.channel2) ? {conf: f.channel2, k: "2"} : {conf: f.channel, k: ""};
+}
+const ltChConf = (fast = LT.chFast) => (ltChSrc(fast) || {}).conf || null;
 const ltChTag = () => `<span class="ltchtag" title="${ltChName(LT.chFast)} 재생목록 — 필터는 공개하지 않음">${ltChName(LT.chFast)}</span>`;  // stands for the channel's filter
 const ltChHost = () => LT.chOn && LT.role === "host";
 // cooldown per browser (uid), not per name — the channel needs no nickname (user request 2026-11-17)
@@ -68,19 +76,21 @@ const ltCoolLeft = uid => LT.cool[uid] || 0;
    filter): Server/data/channel_list.json.gz {sig (the filter), data (VDB.dataSig), at, ids, cols, rows (data rows of those
    songs)} — read at start by everyone; made by a player with a write token (the filter is the player's JS, not the server's)
    whenever the filter or the song list changed, so the channel opens without the whole list */
-const ltChFilePath = () => `${LOCAL.data}channel_list.json.gz`;
-let ltChFileP = null, ltChUp = null;
+const ltChFilePath = k => `${LOCAL.data}channel${k}_list.json.gz`;  // channel_list · channel2_list (2x!!)
+const ltChFileP = {}, ltChUp = {};  // per k
+const ltChSrcs = () => [ltChSrc(false), ltChSrc(true)].filter((s, i, a) => s && (i === 0 || s.k !== a[0].k));
 function ltChPrefetch() {
-  ltChFileP = ltChConf() ? LOCAL.readBytes(ltChFilePath())
-    .then(gz => new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).json()).catch(() => null) : null;
+  for (const k of ["", "2"]) delete ltChFileP[k];
+  for (const {k} of ltChSrcs()) ltChFileP[k] = LOCAL.readBytes(ltChFilePath(k))
+    .then(gz => new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).json()).catch(() => null);
 }
 const ltChFileOk = (d, groups) => d && Array.isArray(d.ids) && d.sig === JSON.stringify(groups);
 /* 인기순 상위 N곡만 (user request 2026-11-20, Manage › 필터 › OPEN CHANNEL conf.top; 0 = all): cut after the filter, so the
    saved list keeps every passing song and the manage screen can show any N from it */
 const ltChTop = (conf, list) => conf.top > 0
   ? [...list].sort((a, b) => (b.rating || 0) - (a.rating || 0) || (+a.vocadb || 0) - (+b.vocadb || 0)).slice(0, conf.top) : list;
-async function ltChSongs(conf) {
-  const groups = conf.groups, d = ltChFileP && await ltChFileP;
+async function ltChSongs(fast) {
+  const {conf, k} = ltChSrc(fast), groups = conf.groups, d = ltChFileP[k] && await ltChFileP[k];
   if (ltChFileOk(d, groups)) {  // the list made before — a day old song list is fine for a shuffle
     if (!VDB.done) VDB.addRows(d.cols, d.rows);
     const list = d.ids.map(id => VDB.itemById(id)).filter(it => it && canPlay(it));
@@ -91,35 +101,36 @@ async function ltChSongs(conf) {
     return (await filterGroupsAsync(VDB.all(), groups, bgTick())).filter(canPlay);  // background: the player's timers keep running
   };
   const list = VDB.done ? await make() : await loadWait(make());  // still loading: the notice with the progress bar
-  ltChUpload(groups, list);
+  ltChUpload(groups, list, k);
   return ltChTop(conf, list);
 }
 /* write token: save the channel's list for everyone (only when the filter or the song list changed since the saved one) */
-async function ltChUpload(groups, list) {
-  if (!LOCAL.canWrite || ltChUp) return;
+async function ltChUpload(groups, list, k) {
+  if (!LOCAL.canWrite || ltChUp[k]) return;
   const sig = JSON.stringify(groups), data = VDB.dataSig;
-  ltChUp = (async () => {
-    const d = ltChFileP && await ltChFileP;
+  ltChUp[k] = (async () => {
+    const d = ltChFileP[k] && await ltChFileP[k];
     if (d && d.sig === sig && d.data === data) return;
     const ids = list.map(it => +it.vocadb).filter(Boolean), tick = bgTick();
     const doc = {sig, data, at: new Date().toISOString(), ids, cols: VDB.idx.cols, rows: await VDB.rowsOf(ids, tick)};
     const gz = await new Response(new Blob([JSON.stringify(doc)]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
-    await LOCAL.writeBytes(ltChFilePath(), gz, ltName() || "OPEN CHANNEL");
-    ltChFileP = Promise.resolve(doc);
-  })().catch(e => console.warn("OPEN CHANNEL 곡 목록을 못 올림:", e.message || e)).finally(() => { ltChUp = null; });
+    await LOCAL.writeBytes(ltChFilePath(k), gz, ltName() || "OPEN CHANNEL");
+    ltChFileP[k] = Promise.resolve(doc);
+  })().catch(e => console.warn("OPEN CHANNEL 곡 목록을 못 올림:", e.message || e)).finally(() => { ltChUp[k] = null; });
 }
 /* after loading (playlist_panel.js loadRest, write token only): make the saved list again when it's off */
 async function ltChRefresh() {
-  const conf = ltChConf();
-  if (!conf || !LOCAL.canWrite) return;
-  if (!ltChFileP) ltChPrefetch();
-  const d = await ltChFileP;
-  if (d && d.sig === JSON.stringify(conf.groups) && d.data === VDB.dataSig) return;
-  await searchBase();
-  ltChUpload(conf.groups, (await filterGroupsAsync(VDB.all(), conf.groups, bgTick())).filter(canPlay));
+  if (!LOCAL.canWrite) return;
+  for (const {conf, k} of ltChSrcs()) {  // each channel's own list
+    if (!ltChFileP[k]) ltChPrefetch();
+    const d = await ltChFileP[k];
+    if (d && d.sig === JSON.stringify(conf.groups) && d.data === VDB.dataSig) continue;
+    await searchBase();
+    ltChUpload(conf.groups, (await filterGroupsAsync(VDB.all(), conf.groups, bgTick())).filter(canPlay), k);
+  }
 }
 async function ltChJoin(fast = false) {
-  const conf = ltChConf();
+  const conf = ltChConf(fast);
   if (!conf) return;
   if (LT.chOn && LT.role && LT.chFast === fast) { LT.status = "지금 있는 채널입니다"; return ltRender(); }
   ltLeave(true);  // no nickname needed, no name check — the channel only counts listeners (user request 2026-11-17)
@@ -164,7 +175,7 @@ async function ltChStart(took) {
   LT.title = conf ? conf.title || "" : LT.title;
   if (!LT.chList) {  // a guest taking over already has it (ltChGuestPl)
     LT.status = "채널 재생목록을 만드는 중…"; ltRender();
-    const list = await ltChSongs(conf);
+    const list = await ltChSongs(LT.chFast);
     if (!ltChHost()) return;
     LT.chList = list; LT.status = "";
   }
@@ -209,7 +220,7 @@ function ltChRestore(conf) {
 async function ltChGuestPl() {
   const conf = ltChConf();
   if (!conf || !LT.chOn) return;
-  if (!LT.chList) { const list = await ltChSongs(conf); if (!LT.chOn) return; LT.chList = LT.chList || list; }
+  if (!LT.chList) { const list = await ltChSongs(LT.chFast); if (!LT.chOn) return; LT.chList = LT.chList || list; }
 }
 /* host lost the channel id while cut off and someone else holds it now → my guests and I join that one */
 function ltChDemote() {

@@ -681,8 +681,9 @@ async function ovNeed() {
 const extNeed = () => BILI_TOUCH() || EXT.ver >= EXT_VER ? "" : EXT.ver ? "old" : "new";
 function extGuide(box, {intro, touch, later, touchOk, done, ok}) {
   const ua = navigator.userAgent, brw = /Whale\//.test(ua) ? "whale" : /Edg\//.test(ua) ? "edge" : "chrome";
-  // the extensions page's button (Edge's own words, read from its ko.pak 2026-11-20)
-  const loadBtn = brw === "edge" ? "압축 풀린 파일 로드" : "압축해제된 확장 프로그램을 로드합니다";
+  // the extensions page's words (Edge · Whale read from their ko.pak 2026-11-20 — Whale says 확장앱)
+  const loadBtn = {edge: "압축 풀린 파일 로드", whale: "압축해제 된 확장앱 설치"}[brw] || "압축해제된 확장 프로그램을 로드합니다";
+  const delBtn = brw === "edge" ? "제거" : "삭제";
   let need = null, only = "", steps = [], step = 0, note = "", run = 0, poll = 0;
   const getBtn = k => ADDON_FILE_PAGE()
     ? `<a class="vg-cta vg-btn" href="${esc(APP.publicUrl)}#addon=${k}" target="_blank" rel="noopener">인터넷 주소로 열어서 받기</a>`
@@ -693,13 +694,13 @@ function extGuide(box, {intro, touch, later, touchOk, done, ok}) {
     const {ov, ext} = need, S = [];
     if (ext) S.push(
       {t: ext === "old" ? "확장 프로그램 새 버전 받기" : "확장 프로그램 받기", a: getBtn("ext"), n: fileNote,
-        l: ["{A}", "받은 zip 오른쪽 클릭 → <b>모두 압축 풀기</b> → <b>압축 풀기</b>"]},
+        l: ["{A}", "다운로드 폴더의 받은 zip 오른쪽 클릭 → <b>모두 압축 풀기</b> → <b>압축 풀기</b>"]},
       {t: "개발자 모드 켜기", a: addrBtn,
         l: ["{A}", "새 탭 주소창에 붙여 넣고 <b>Enter</b>", "<b>개발자 모드</b> 켜기"]},
       {t: "확장 프로그램 넣기",
         l: [`<b>${loadBtn}</b> 누르기`, `압축 푼 <b>${EXT_DIR}</b> 폴더 → <b>폴더 선택</b>`,
           "저절로 열리는 화면에서 <b>사용자 스크립트 허용</b> 켜기", "여기로 돌아와 <b>다 했어요</b>"],
-        n: (ext === "old" ? `먼저 예전 <b>${EXT_DIR}</b>을 <b>삭제</b>해 주세요. ` : "예전에 넣은 <b>비리비리 볼륨</b>이 있으면 삭제해 주세요. ")
+        n: (ext === "old" ? `먼저 예전 <b>${EXT_DIR}</b>을 <b>${delBtn}</b>해 주세요. ` : `예전에 넣은 <b>비리비리 볼륨</b>이 있으면 <b>${delBtn}</b>해 주세요. `)
           + "압축 푼 폴더는 지우지 마세요. 그 뒤 업데이트는 저절로 돼요."});
     // two lines (user 2026-11-20: the overlay looked like more steps than before) — once installed, the [오버레이] button
     // starts it again by itself (musicoverlay: link), so nothing about restarting here
@@ -739,7 +740,7 @@ function extGuide(box, {intro, touch, later, touchOk, done, ok}) {
       box.innerHTML = '<div class="vg-b">이미 다 넣었어요. 모두 최신이에요.</div><div class="vg-nav"><span></span><button type="button" class="primary" data-act="ok">확인</button></div>';
       return;
     }
-    const S = steps[step], last = step === steps.length - 1, why = step === 0 ? intro(only) : "";
+    const S = steps[step], last = step === steps.length - 1, why = step === 0 ? intro(S.ov ? "ov" : "ext") : "";  // why of the step shown, not of the button pressed
     const lines = S.l.map(x => `<li>${x.replace("{A}", `<span class="vg-a">${S.a}</span>`)}</li>`).join("");
     box.innerHTML = `<div class="vg-h"><span class="vg-n">${step + 1}/${steps.length}</span>${S.t}</div>`
       + `<div class="vg-b">${why ? `<p class="vg-why">${why}</p>` : ""}<ol class="vg-steps">${lines}</ol>`
@@ -792,30 +793,38 @@ function extGuide(box, {intro, touch, later, touchOk, done, ok}) {
 /* the guide as a window over a darkened screen (user request 2026-11-19, like ⚙ 설정) — 오버레이 button · 배속 · 키.
    what: the title's first word ('오버레이' → overlay only, '추가기능' → both, else the extension only) · after: run once
    everything answers (the buttons refresh) */
-let setupDlg = null, setupG = null, setupAfter = null;
+let setupDlg = null, setupG = null, setupAfter = null, setupWhat = "";
 function openSetupGuide(what, after) {
   setupAfter = after || null;
   if (!setupDlg) {
     setupDlg = document.createElement("dialog");
     setupDlg.id = "extDlg"; setupDlg.className = "uidlg extdlg";
-    setupDlg.innerHTML = '<div class="dlg-head hx"><span class="eg-what"></span> — 추가기능 넣기<button class="ib dlgx" title="닫기 (Esc)" aria-label="닫기">✕</button></div><div class="dlg-body"><div class="vguide"></div></div>';
+    setupDlg.innerHTML = '<div class="dlg-head hx"><span class="eg-what"></span>추가기능 넣기<button class="ib dlgx" title="닫기 (Esc)" aria-label="닫기">✕</button></div><div class="dlg-body"><div class="vguide"></div></div>';
     document.body.appendChild(setupDlg);
     const close = () => setupDlg.close(), fin = () => { close(); if (setupAfter) setupAfter(); };
     setupDlg.querySelector(".dlgx").onclick = close;
     setupG = extGuide(setupDlg.querySelector(".vguide"), {
-      intro: o => o === "ov" ? "" : "배속 · 키 · 소리 크기 맞추기 · 광고 없애기를 모든 영상에 써요. <b>비리비리</b> 곡은 꼭 필요해요.",
+      intro: o => o === "ov" ? "" : setupWhat.startsWith("OPEN CHANNEL")
+        ? `${esc(setupWhat)}은 모두 ${LT_CH2_RATE}배속으로 들어요. 니코니코 · SoundCloud · Vimeo · 비리비리 곡은 확장 프로그램이 있어야 빨라져요.`
+        : "배속 · 키 · 소리 크기 맞추기 · 광고 없애기를 모든 영상에 써요. <b>비리비리</b> 곡은 꼭 필요해요.",
       touch: "폰에서는 넣을 필요 없어요. 앱에 다 들어 있어요.",
       later: close, touchOk: close, ok: fin,
+      // the loader registers its script up to 30 s after 사용자 스크립트 허용 is turned on (bg.js) → keep asking ~45 s
       done: () => {
-        extProbe().then(v => {
+        const until = Date.now() + 45000;
+        (async () => {
+          let v = 0;
+          do { v = await extProbe(); } while (setupDlg.open && v < EXT_VER && Date.now() < until);
           if (!setupDlg.open) return;
           if (v >= EXT_VER) return fin();
-          setupG.note("아직 확장 프로그램이 안 보여요. 개발자 모드와 고른 폴더를 확인해 주세요.");
-        });
-        return "확인하는 중…";
+          setupG.note(v ? "아직 예전 확장 프로그램이 보여요. 예전 것을 지웠는지 봐 주세요."
+            : "아직 확장 프로그램이 안 보여요. <b>개발자 모드</b> · 고른 폴더 · <b>사용자 스크립트 허용</b>을 확인해 주세요.");
+        })();
+        return "확인하는 중… (30초쯤 걸릴 수 있어요)";
       }});
   }
-  setupDlg.querySelector(".eg-what").textContent = what;
+  setupWhat = what;
+  setupDlg.querySelector(".eg-what").textContent = what === "추가기능" ? "" : what + " — ";  // not '추가기능 — 추가기능 넣기'
   setupG.reset(what === "오버레이" ? "ov" : what === "추가기능" ? "" : "ext");
   if (!setupDlg.open) setupDlg.showModal();
 }
