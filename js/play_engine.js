@@ -89,7 +89,6 @@ class BridgePlayer {
       this.heard = performance.now();  // the frame still answers (LocalMedia.watch)
       this.ver = +m.ver || 1;  // bridge page version (2+: can "load" another YouTube song — older deployed page cannot · 4: rate, ext)
       if (m.ev === "ext") return extSeen(m.v);  // the extension in this browser (bridge page 4+)
-      if (m.ev === "loud") return gotLoud(m);  // what the extension measured for this video
       if (this.loopAt && performance.now() - this.loopAt < 1000 && (m.ev === "time" || m.ev === "state")) return;  // the loop's own paused/playing/time
       if (m.ev === "time") {
         const t = +m.t || 0, now = performance.now(), moved = Math.abs(t - this.t) > 0.01;
@@ -110,9 +109,10 @@ class BridgePlayer {
       else if (m.ev === "ready") {
         if (m.vid && m.vid !== this.ref.id) return;  // late message of the song before a "load"
         this.ready = true; clearTimeout(this.timer); if (+m.d) this.d = +m.d; if (this.ref.kind === "nico") gotNicoViews(this.ref.id, m.views);
-        // 배속 again: a rate sent while the page was still loading is lost (user report 2026-11-20: entering OPEN CHANNEL 2x!!
-        // the first song played at 1×) — the bridge page skips it when it already has it
+        // 배속 · 키 again: what was sent while the page was still loading is lost (user report 2026-11-20: entering
+        // OPEN CHANNEL 2x!! the first song played at 1×) — the bridge page skips a rate it already has
         this.cmd("rate", this.r);
+        if (this.fxSent) this.cmd("fx", JSON.parse(this.fxSent));
       }
       this.on(m);
     };
@@ -140,7 +140,7 @@ class BridgePlayer {
   cmd(cmd, v) { try { this.frame.contentWindow.postMessage({cmd, v}, "*"); } catch (e) {} }
   time() { return this.state === "playing" ? this.t + (performance.now() - this.at) / 1000 * this.r : this.t; }  // 0.25초마다 받는 시간 사이를 메움
   rate(r) { if (r === this.r) return; this.t = this.time(); this.at = performance.now(); this.r = r; this.cmd("rate", r); }
-  fx(o) { const k = JSON.stringify(o); if (k !== this.fxSent) { this.fxSent = k; this.cmd("fx", o); } }  // 키 · 소리 크기 (player_ext_media.js)
+  fx(o) { const k = JSON.stringify(o); if (k !== this.fxSent) { this.fxSent = k; this.cmd("fx", o); } }  // 키 변경 (player_ext_media.js)
   play() { this.cmd("play"); }
   pause() { this.cmd("pause"); }
   seek(t) { this.t = t; this.at = performance.now(); this.cmd("seek", t); }
@@ -186,7 +186,7 @@ function platformVolume(kind, v) {
 }
 
 /* 음원 플레이어 확장 (user request 2026-11-18 Bilibili volume · 2026-11-19 one extension for every player: 배속 · 볼륨 ·
-   키 변경 · 소리 크기 맞추기 · YouTube ads). Embeds take no speed / key / volume (Bilibili) from a page, so a tiny extension
+   키 변경 · YouTube ads). Embeds take no speed / key / volume (Bilibili) from a page, so a tiny extension
    the user loads unpacked (developer mode — no store, no Tampermonkey) does it inside their frames. Its one script is
    js/player_ext_media.js (mpxMedia — the phone app injects the same file into the same frames).
    Since 2026-11-20 (user request: updates by itself, never installed again) the extension is a loader (tools/player_ext/bg.js):
@@ -200,7 +200,7 @@ const EXT_ORIGINS = ["https://embed.nicovideo.jp/*", "https://www.youtube-nocook
 const EXT_LOADER = 2;  // 2: works without 사용자 스크립트 허용 (the folder's copy as a content script — bg.js fallback)
 const EXT_MANIFEST = JSON.stringify({
   manifest_version: 3, name: "음원 플레이어 확장", version: "5." + EXT_LOADER,
-  description: "음원 플레이어의 배속 · 키 변경 · 소리 크기 맞추기 · 광고 없애기를 니코니코 · 유튜브 · 비리비리 · SoundCloud · Vimeo 영상에 씁니다. 기능은 스스로 업데이트돼요.",
+  description: "음원 플레이어의 배속 · 키 변경 · 광고 없애기를 니코니코 · 유튜브 · 비리비리 · SoundCloud · Vimeo 영상에 씁니다. 기능은 스스로 업데이트돼요.",
   permissions: ["userScripts", "scripting", "alarms", "storage"],
   host_permissions: [...EXT_ORIGINS, "https://raw.githubusercontent.com/*"],
   background: {service_worker: "bg.js"},
@@ -320,24 +320,17 @@ const RATE_SELF = new Set(["", "yt", "file"]);
 const rateNeedsExt = kind => !RATE_SELF.has(kind || "");
 /* 같이듣기 · OPEN CHANNEL: everyone at 1× (the room keeps listeners at the same second) */
 const rateLocked = () => typeof LT !== "undefined" && !!LT.role;
-/* 키 변경 · 소리 크기 맞추기 (user request 2026-11-19, player_ext_media.js): online songs need the extension / app
+/* 키 변경 (user request 2026-11-19, player_ext_media.js): online songs need the extension / app
    (version 3), a plain file link can't (its host gives no CORS — Web Audio would hear silence), our mp3 works in the page */
 function fxBlock(kind) {
   if (!kind) return window.mpxAudioFor ? "" : "ext";
   if (kind === "file") return "file";
   return EXT.ver >= 3 ? "" : BILI_TOUCH() ? "touch" : "ext";
 }
-const levelOn = () => true;  // 소리 크기 맞추기: always on where the extension / app can (user request 2026-11-19 — the switch was removed)
-/* measured loudness per video (LUFS — what the extension sent; the next play starts at the right level) */
-const LOUD = store.get("loud", {}) || {};
-function gotLoud(m) {
-  if (!m.key || !isFinite(+m.lufs)) return;
-  const old = LOUD[m.key];
-  if (old && old[1] > +m.secs) return;  // keep the longer measure
-  delete LOUD[m.key]; LOUD[m.key] = [+m.lufs, +m.secs || 0];
-  const keys = Object.keys(LOUD); if (keys.length > 3000) keys.slice(0, keys.length - 3000).forEach(k => delete LOUD[k]);
-  store.set("loud", LOUD);
-}
+/* 소리 크기 맞추기 (2026-11-19: each song measured by the extension, the figure kept here) was taken out 2026-11-20 by user
+   request — all it brought was bugs (figures under the wrong song, a song starting on the gain of the one before). The
+   level is what the sites give (YouTube · Niconico level every video themselves) and platformVolume's fixed cut. */
+try { for (const k of ["loud", "loud2"]) localStorage.removeItem(STORE_PREFIX + k); } catch (e) {}  // the kept figures
 /* 페이드 인 · 아웃 (user request 2026-11-19): seconds at a song's start / end, 0 = off — settings ⚙ › 재생 */
 const fadeSecs = () => ({fin: Math.max(0, +store.get("fadeIn", 0) || 0), fout: Math.max(0, +store.get("fadeOut", 0) || 0)});
 
@@ -376,7 +369,7 @@ class LocalMedia extends EventTarget {
     el.addEventListener("volumechange", () => { if (el.muted === this.wasMuted) return; this.wasMuted = el.muted; this.applyVolume(); this.fire("volumechange"); });
     for (const ev of ["play", "playing", "seeked", "loadedmetadata"]) this.addEventListener(ev, () => this.fadeTick());
     this.addEventListener("pause", () => clearTimeout(this.fadeT));
-    addEventListener("extchange", () => this.applyFx());  // the extension / app script just showed up → key · 소리 크기 now
+    addEventListener("extchange", () => this.applyFx());  // the extension / app script just showed up → the key change now
     setInterval(() => this.watch(), 1000);
     // back in sight: the frame's timers were slowed meanwhile — give it a moment before watch() counts its silence
     const grace = () => { if (this.br) this.br.heard = performance.now(); };
@@ -553,23 +546,18 @@ class LocalMedia extends EventTarget {
     if (this.br) { this.br.volume(platformVolume(this.br.ref.kind, v)); this.br.mute(this.el.muted || this.priming || !!this.br.guiding); }
     this.applyFx();
   }
-  /* 키 변경 (semis, per song — play_speed.js sets it) · 소리 크기 맞추기 (setting): online = sent through the bridge to the
-     extension / app script in the site's frame; our mp3 = the same chain in this page (made only once wanted — an <audio>
-     can't be taken back out of Web Audio) */
+  /* 키 변경 (semis, per song — play_speed.js sets it): online = sent through the bridge to the extension / app script in
+     the site's frame; our mp3 = the same chain in this page (made only once wanted — an <audio> can't be taken back out
+     of Web Audio) */
   applyFx() {
-    const level = levelOn(), vol = this.el.muted ? 0 : this.uv * this.gain;
     if (this.refs) {
       if (!this.br || fxBlock(this.br.ref.kind)) return;
-      const key = this.br.ref.kind + ":" + this.br.ref.id, l = LOUD[key];
-      this.br.fx({semis: this.semis || 0, level, vol: Math.round(vol * 1000) / 1000, key, prior: l ? l[0] : null});
+      this.br.fx({semis: this.semis || 0});
       return;
     }
-    if (!this.local && !(this.semis || level) || !window.mpxAudioFor || !this.el.src) return;
+    if (!this.local && !this.semis || !window.mpxAudioFor || !this.el.src) return;
     if (!this.local) { try { this.local = window.mpxAudioFor(this.el); } catch (e) { return; } }
-    const {chain, lev} = this.local;
-    chain.setSemis(this.semis || 0);
-    if (lev.key !== this.el.src) lev.reset(this.el.src);
-    lev.on = level; lev.vol = vol; lev.apply();
+    this.local.chain.setSemis(this.semis || 0);
   }
   get semis() { return this.semisV || 0; }
   set semis(s) { this.semisV = Math.max(-12, Math.min(12, Math.round(+s || 0))); this.applyFx(); this.fire("fxchange"); }
@@ -811,7 +799,7 @@ function openSetupGuide(what, after) {
     setupG = extGuide(setupDlg.querySelector(".vguide"), {
       intro: o => o === "ov" ? "" : setupWhat.startsWith("OPEN CHANNEL")
         ? `${esc(setupWhat)}은 모두 ${LT_CH2_RATE}배속으로 들어요. 니코니코 · SoundCloud · Vimeo · 비리비리 곡은 확장 프로그램이 있어야 빨라져요.`
-        : "배속 · 키 · 소리 크기 맞추기 · 광고 없애기를 모든 영상에 써요. <b>비리비리</b> 곡은 꼭 필요해요.",
+        : "배속 · 키 변경 · 광고 없애기를 모든 영상에 써요. <b>비리비리</b> 곡은 꼭 필요해요.",
       touch: "폰에서는 넣을 필요 없어요. 앱에 다 들어 있어요.",
       later: close, touchOk: close, ok: fin,
       // the loader registers its script a moment after the folder is loaded → keep asking ~15 s

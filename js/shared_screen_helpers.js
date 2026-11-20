@@ -257,7 +257,7 @@ const SET_KEYS = {
   ov: ["ov.lead", "ov.target", "ov.clickthrough", "ov.info", "ov.size", "ov.info_size", "ov.outline", "ov.opacity", "ov.width_pct", "ov.align", "ov.reset"],  // ov.width_pct: 가로 폭 became % (2026-11-20)
   font: ["font.ja", "font.etc", "font.bold_ja", "font.bold_etc"],
   m: ["m.report", "m.overlay", "m.zoom", "m.ear.connectPlay", "m.ear.unplugPause", "m.ear.ask"],
-  play: ["play.fadein", "play.fadeout"],  // ⚙ › 재생 (2026-11-19; 소리 크기 맞추기 dropped — always on with the extension)
+  play: ["play.fadein", "play.fadeout"],  // ⚙ › 재생 (2026-11-19)
   addon: ["addon.get"],  // ⚙ › 추가기능 (2026-11-19, PC only)
 };
 /* ⚙ › 추가기능 (user request 2026-11-19): the PC add-ons (overlay + extension, play_engine.js openSetupGuide) — not on phones */
@@ -338,7 +338,6 @@ async function openPlayerSettings(want = "") {  // want: the part to show (e.g. 
   const fresh = Object.fromEntries(secs.map(([k]) => [k, setNew(k)]));  // new items, as they were when the window opened
   const nb = k => `<b class="setnb"${fresh[k].length ? "" : " hidden"}>${fresh[k].length}</b>`;
   // extension features (user request 2026-11-19): 페이드 in 추가기능 on a PC (its own 재생 part only where 추가기능 isn't shown — app).
-  // 소리 크기 맞추기 has no switch any more: always on wherever the extension / app can do it
   const fadeHtml = `
     <label class="rng" title="곡이 시작할 때 소리를 0 에서 서서히 키움 (0 = 끔)">페이드 인 <b data-fade-v="fadeIn"></b><input type="range" min="0" max="5" step="0.5" data-fade="fadeIn"></label>
     <label class="rng" title="곡이 끝나기 전 이만큼 동안 소리를 서서히 줄임 (0 = 끔)">페이드 아웃 <b data-fade-v="fadeOut"></b><input type="range" min="0" max="8" step="0.5" data-fade="fadeOut"></label>`;
@@ -362,12 +361,12 @@ async function openPlayerSettings(want = "") {  // want: the part to show (e.g. 
     <p class="muted">발음·번역 줄은 플레이어의 '발음'·'번역' 체크를 따릅니다.</p>
     <div class="row"><button data-act="reset">위치 처음으로 (화면 아래 가운데)</button></div>
     <div class="ovprev" data-ovprev aria-hidden="true"></div>`)}${addon ? sec("addon", `
-    <p class="muted">가사 오버레이(바탕이 투명한 가사 창)와 확장 프로그램은 따로 받아요. 아래 단추를 누르면 이 PC에 아직 없는 것만 차례로 알려 줘요. 확장 프로그램이 있어야 니코니코 · 유튜브 · SoundCloud · Vimeo · 비리비리 영상에 배속 · 키 변경 · 소리 크기 맞추기가 되고, 비리비리 볼륨 조절 · 유튜브 광고 건너뛰기도 돼요.</p>
+    <p class="muted">가사 오버레이(바탕이 투명한 가사 창)와 확장 프로그램은 따로 받아요. 아래 단추를 누르면 이 PC에 아직 없는 것만 차례로 알려 줘요. 확장 프로그램이 있어야 니코니코 · 유튜브 · SoundCloud · Vimeo · 비리비리 영상에 배속 · 키 변경이 되고, 비리비리 볼륨 조절 · 유튜브 광고 건너뛰기도 돼요.</p>
     <ul class="addst" data-addst><li class="muted">확인하는 중…</li></ul>
     <div class="row"><button class="primary" data-act="addon">추가기능 내려받기 · 넣기</button></div>
     <p class="muted">한 번 넣으면 새 버전은 둘 다 저절로 받아요. 예전에 넣은 것이면 위에 '새 버전이 있어요'가 뜨고, 단추를 누르면 바꾸는 법이 나와요.</p>
     <div class="setsubhd">확장 프로그램 기능</div>${fadeHtml}
-    <p class="muted">소리 크기 맞추기는 확장 프로그램을 넣으면 늘 켜져요 · 배속 · 키 변경은 재생 막대의 버튼에서.</p>`) : ""}</div></div>`;
+    <p class="muted">배속 · 키 변경은 재생 막대의 버튼에서.</p>`) : ""}</div></div>`;
   // new rows: marked '새로' while this window is open (a new font: its pick and the option)
   const rowOf = {"play.fadein": "[data-fade=fadeIn]", "play.fadeout": "[data-fade=fadeOut]", "ov.lead": "[data-lead-r]", "ov.reset": "[data-act=reset]", "ov.align": ".ovalign", "font.ja": "select[data-font=ja]", "font.etc": "select[data-font=etc]", "font.bold_ja": "[data-fbold=ja]", "font.bold_etc": "[data-fbold=etc]", "addon.get": "[data-act=addon]"};
   for (const k of Object.values(fresh).flat()) {
