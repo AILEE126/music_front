@@ -41,9 +41,9 @@ $WS_EX_TRANSPARENT = 0x20; $WS_EX_TOOLWINDOW = 0x80; $WS_EX_LAYERED = 0x80000; $
 
 # 오버레이 버전 (user request 2026-11-19): the player compares it (/ovprograms ver) with this file in its own tools/ folder
 # and asks for the new zip when the running one is older — bump it with every change of this file
-$OV_VER = 7   # 3: a newer bat replaces a running older overlay by itself · 4: parts (names, side by side) · 5: no terminal window (conhost --headless) · 6: negative x kept (no jump back to the middle) · width grows both sides · 7: place = centre, fitted to its monitor (4K · wide · dual) · 가로 폭 in % of the monitor · 정렬 · /frame (구역 표시)
-# data folder overlay\: next to tools\ in the player repo; in the 추가기능 zip (folder 오버레이\, play_engine.js setupZip)
-# inside that folder, so unzipping a new version over it keeps the settings
+$OV_VER = 8   # 3: a newer bat replaces a running older overlay by itself · 4: parts (names, side by side) · 5: no terminal window (conhost --headless) · 6: negative x kept (no jump back to the middle) · width grows both sides · 7: place = centre, fitted to its monitor (4K · wide · dual) · 가로 폭 in % of the monitor · 정렬 · /frame (구역 표시) · 8: updates itself from music_front main (start · hourly)
+# data folder overlay\: next to tools\ in the player repo; next to this file elsewhere (가사 오버레이 켜기.bat puts it in
+# %USERPROFILE%\MusicPlayerOverlay — play_engine.js ovBat), so a new version of this file keeps the settings
 $script:Root = if ((Split-Path -Leaf $PSScriptRoot) -eq 'tools') { Split-Path -Parent $PSScriptRoot } else { $PSScriptRoot }
 $script:NowFile = if ($NowFile) { $NowFile } else { Join-Path $script:Root 'overlay\now_playing.json' }
 $script:CfgFile = if ($CfgFile) { $CfgFile } else { Join-Path $script:Root 'overlay\lyrics_overlay.json' }
@@ -84,6 +84,35 @@ function Update-CfgFile($patch) {  # 이 창이 바꾼 값만 파일에 (다른 
 function Get-Epoch { [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }
 function Test-Editing { ((Get-Epoch) - [double]$script:cfg.editing_at) -lt $EDIT_MS }   # 설정 창이 열려 있음
 $script:editing = Test-Editing
+
+# ---- 자동 업데이트 (user request 2026-11-20: like the extension, the overlay takes its program from the public music_front repo
+# by itself) — at every start (bat · [오버레이] button link) and every hour while running: when main's file has a higher $OV_VER
+# it replaces this file and starts it (the newer one tells this one to quit — 한 번만 켜기 below). Not the player repo's own
+# tools\ copy (git keeps that one). MPX_OV_SRC: another address (tests only). Offline / no answer in 5 s → goes on as it is.
+$OV_SRC = if ($env:MPX_OV_SRC) { $env:MPX_OV_SRC } else { 'https://raw.githubusercontent.com/AILEE126/music_front/main/tools/lyrics_overlay.ps1' }
+function Update-Self {
+    if ((Split-Path -Leaf $PSScriptRoot) -eq 'tools') { return $false }
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $req = [Net.WebRequest]::Create($OV_SRC)
+        $req.Timeout = 5000
+        $req.CachePolicy = New-Object Net.Cache.RequestCachePolicy([Net.Cache.RequestCacheLevel]::NoCacheNoStore)
+        $res = $req.GetResponse()
+        try { $new = (New-Object IO.StreamReader($res.GetResponseStream(), [Text.Encoding]::UTF8)).ReadToEnd() } finally { $res.Close() }
+        $m = [regex]::Match($new, '\$OV_VER\s*=\s*(\d+)')
+        # only a whole, newer overlay that still updates itself
+        if (-not $m.Success -or [int]$m.Groups[1].Value -le $OV_VER -or $new -notmatch 'function Update-Self') { return $false }
+        [IO.File]::WriteAllText($PSCommandPath, $new.TrimStart([char]0xFEFF).Replace("`r`n", "`n").Replace("`n", "`r`n"), (New-Object Text.UTF8Encoding $true))
+        $a = '--headless "{0}" -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File "{1}"' -f (Join-Path $PSHOME 'powershell.exe'), $PSCommandPath
+        if ($Background) { $a += ' -Background' }
+        if ($Test) { $a += ' -Test {0}' -f $Test }
+        if ($NowFile) { $a += ' -NowFile "{0}"' -f $NowFile }
+        if ($CfgFile) { $a += ' -CfgFile "{0}"' -f $CfgFile }
+        Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\conhost.exe') -ArgumentList $a -WindowStyle Hidden
+        return $true
+    } catch { return $false }
+}
+if ((-not $Test -or $env:MPX_OV_SRC) -and (Update-Self)) { return }   # the new file runs instead
 
 # ---- 한 번만 켜기 ----
 $created = $false
@@ -453,6 +482,14 @@ function Step-Http {  # called every tick: answer whatever came in (each request
             if ($r) { Send-Http $s (Invoke-Http $r) }
         } catch {} finally { $c.Close() }
     }
+}
+
+# 자동 업데이트, 켜져 있는 동안 (한 시간마다): a newer file starts and tells this one to quit
+if (-not $Test) {
+    $script:updTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $script:updTimer.Interval = [TimeSpan]::FromHours(1)
+    $script:updTimer.Add_Tick({ [void](Update-Self) })
+    $script:updTimer.Start()
 }
 
 # ---- 0.15초마다: 설정·플레이어 소식이 바뀌었는지, 지금 보일 때인지 ----

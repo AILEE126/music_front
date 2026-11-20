@@ -224,6 +224,16 @@ button.onoff.on .lb.on{color:var(--ok)}
 :is(#streamHost,#extDlg) .vguide .vg-warn{margin:0 0 6px;padding-left:18px;color:var(--err);font-size:13.5px}  /* 추가기능 안내 notes in red (user request 2026-11-19) */
 :is(#streamHost,#extDlg) .vguide .vg-list{margin:0 0 4px;padding-left:22px}
 :is(#streamHost,#extDlg) .vguide .vg-note{font-size:13px;color:var(--muted)}
+/* 2026-11-20 (user request: short lines, the words to look for stand out): numbered lines, the button inside its line,
+   why on top in muted, what just happened in green */
+:is(#streamHost,#extDlg) .vguide .vg-steps{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:8px}
+:is(#streamHost,#extDlg) .vguide .vg-steps li::marker{font-weight:700;color:var(--accent)}
+:is(#streamHost,#extDlg) .vguide .vg-steps b{font-weight:800}
+:is(#streamHost,#extDlg) .vguide .vg-steps .vg-a{display:inline-flex;margin:0}
+:is(#streamHost,#extDlg) .vguide .vg-why{margin:0 0 8px;font-size:13.5px;color:var(--muted)}
+:is(#streamHost,#extDlg) .vguide .vg-b p.vg-note{margin:10px 0 0}
+:is(#streamHost,#extDlg) .vguide .vg-say{margin:8px 0 0;font-size:14px;font-weight:700;color:var(--ok)}
+:is(#streamHost,#extDlg) .vguide a.vg-cta.vg-btn{background:var(--accent);color:var(--accent-text);border:2px dashed var(--accent-text)}
 :is(#streamHost,#extDlg) .vguide .vg-nav{display:flex;align-items:center;justify-content:space-between;gap:8px}
 :is(#streamHost,#extDlg) .vguide .vg-nav span{display:flex;gap:6px}
 :is(#streamHost,#extDlg) .vguide button,:is(#streamHost,#extDlg) .vguide .vg-btn{font-size:14px;padding:6px 14px}

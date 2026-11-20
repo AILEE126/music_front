@@ -185,34 +185,67 @@ function platformVolume(kind, v) {
 /* 음원 플레이어 확장 (user request 2026-11-18 Bilibili volume · 2026-11-19 one extension for every player: 배속 · 볼륨 ·
    키 변경 · 소리 크기 맞추기 · YouTube ads). Embeds take no speed / key / volume (Bilibili) from a page, so a tiny extension
    the user loads unpacked (developer mode — no store, no Tampermonkey) does it inside their frames. Its one script is
-   js/player_ext_media.js (mpxMedia — the phone app injects the same file into the same frames); setupZip() builds the zip
-   right here from it, so it always matches this code. The old bili-volume extension (v1) still answers biliVol only. */
+   js/player_ext_media.js (mpxMedia — the phone app injects the same file into the same frames).
+   Since 2026-11-20 (user request: updates by itself, never installed again) the extension is a loader (tools/player_ext/bg.js):
+   it fetches that file from the public music_front main itself and registers it as a user script — a new feature reaches
+   every PC within an hour with no reinstall. extZip() builds the zip here: the loader, matches, and a copy of the file for
+   when GitHub can't be reached. The old static extensions (v1 bili-volume, v4 content script) are replaced by it. */
 const EXT_VER = window.MPX_VER || 0;
 const EXT_ORIGINS = ["https://embed.nicovideo.jp/*", "https://www.youtube-nocookie.com/*", "https://www.youtube.com/*", "https://player.bilibili.com/*",
   "https://w.soundcloud.com/*", "https://player.vimeo.com/*", "https://ailee126.github.io/music-bridge/*", "http://127.0.0.1/tools/stream_bridge/*"];  // 127.0.0.1: the bridge under test
+// loader version: bump only when bg.js or the manifest changes (new sites → a reinstall); the media script itself updates alone
+const EXT_LOADER = 1;
 const EXT_MANIFEST = JSON.stringify({
-  manifest_version: 3, name: "음원 플레이어 확장", version: EXT_VER + ".0",
-  description: "음원 플레이어의 배속 · 키 변경 · 소리 크기 맞추기 · 볼륨이 니코니코 · 유튜브 · 비리비리 · SoundCloud · Vimeo 영상에도 적용되게 합니다 (유튜브 · 니코니코 · 비리비리 광고 없애기 포함)",
-  content_scripts: [{matches: EXT_ORIGINS, js: ["media.js"], all_frames: true, run_at: "document_start", world: "MAIN"}],
+  manifest_version: 3, name: "음원 플레이어 확장", version: "5." + EXT_LOADER,
+  description: "음원 플레이어의 배속 · 키 변경 · 소리 크기 맞추기 · 광고 없애기를 니코니코 · 유튜브 · 비리비리 · SoundCloud · Vimeo 영상에 씁니다. 기능은 스스로 업데이트돼요.",
+  permissions: ["userScripts", "alarms", "storage"],
+  host_permissions: [...EXT_ORIGINS, "https://raw.githubusercontent.com/*"],
+  background: {service_worker: "bg.js"},
+  action: {default_title: "음원 플레이어 확장 (자동 업데이트, 누르면 지금 확인)"},
 }, null, 2);
-/* 추가기능 파일 (user request 2026-11-19): ONE zip for both PC add-ons — folder 오버레이/ (tools/lyrics_overlay.bat + .ps1)
-   and folder 추가기능 활성화 확장프로그램/ (manifest.json + media.js). Both guides (오버레이 button · 배속/키/비리비리) hand out
-   the same zip and walk through both. The overlay files are read from this player's own tools/ folder (same origin), so
-   the zip always matches this code; a page that can't read them (opened as a file) gets the extension only. */
-const EXT_DIR = "추가기능 활성화 확장프로그램", OV_DIR = "오버레이", SETUP_ZIP = "음원 플레이어 추가기능.zip";
-const OV_FILES = ["lyrics_overlay.bat", "lyrics_overlay.ps1"], OV_SRC = {};
-async function ovFiles() {
-  for (const f of OV_FILES) if (!OV_SRC[f]) {
-    const r = await fetch(new URL("../tools/" + f, location.href), {cache: "no-cache"});
-    if (!r.ok) throw new Error(f + " " + r.status);
-    OV_SRC[f] = new Uint8Array(await r.arrayBuffer());
+/* 추가기능 파일 (user request 2026-11-20: the one zip for both add-ons was too much work — each on its own, fewest steps):
+   · extension: 음원 플레이어 확장.zip (one folder: manifest.json + media.js) → unzip → load the folder unpacked
+     (browsers take no zip and no off-store package — checked 2026-11-20).
+   · overlay: ONE file 가사 오버레이 켜기.bat (ovBat) — it carries the ps1 (read from this player's own tools/, so it matches
+     this code), writes it to %USERPROFILE%\MusicPlayerOverlay and starts it; running it again = start again / update.
+   A page opened as a file (file://) can't hand these out: Windows marks its downloads 'restricted' (ZoneId 4) — Explorer then
+   leaves media.js out when unzipping and won't run a bat (user report 2026-11-20, tested). Downloads of the https player are
+   marked 'internet' (3): everything unzips, the bat asks once (PC 보호 → 실행). So a file page sends the user to the player's
+   internet address with #addon= (addonFromHash) to download there. */
+const EXT_DIR = "음원 플레이어 확장", EXT_ZIP = EXT_DIR + ".zip", OV_BAT = "가사 오버레이 켜기.bat";
+const OV_SELF_UPDATE = 8;  // the first overlay version ($OV_VER) that updates itself from GitHub
+const ADDON_FILE_PAGE = () => location.protocol === "file:";
+let OV_PS1 = "";
+async function ovPs1() {
+  if (!OV_PS1) {
+    const r = await fetch(new URL("../tools/lyrics_overlay.ps1", location.href), {cache: "no-cache"});
+    if (!r.ok) throw new Error("lyrics_overlay.ps1 " + r.status);
+    OV_PS1 = new TextDecoder().decode(await r.arrayBuffer());  // BOM dropped here, written back by the bat
   }
-  return OV_FILES.map(f => [OV_DIR + "/" + f, OV_SRC[f]]);
+  return OV_PS1;
 }
-/* the overlay version of those files ($OV_VER in the ps1 — bump it with every overlay change; the running overlay answers
-   its own in /ovprograms `ver`) → 0 when they can't be read */
+/* the overlay version of that file ($OV_VER in the ps1 — bump it with every overlay change; the running overlay answers
+   its own in /ovprograms `ver`) → 0 when it can't be read */
 async function ovLatest() {
-  try { return +((/\$OV_VER\s*=\s*(\d+)/.exec(new TextDecoder().decode((await ovFiles())[1][1])) || [])[1]) || 0; } catch (e) { return 0; }
+  try { return +((/\$OV_VER\s*=\s*(\d+)/.exec(await ovPs1()) || [])[1]) || 0; } catch (e) { return 0; }
+}
+/* 가사 오버레이 켜기.bat: ASCII lines, then the ps1 after the ##PS1# line (the marker is built in two parts so the command
+   itself doesn't contain it). MPX_OV_DIR: another install folder (tests only). The ps1 keeps its data in overlay\ next to it. */
+const OV_BAT_HEAD = [
+  "@echo off",
+  "rem Lyrics overlay of the music player (music_front js/play_engine.js ovBat): unpacks the PowerShell part below",
+  "rem into %USERPROFILE%\\MusicPlayerOverlay and starts it without a window. Run it again = start again / update.",
+  "setlocal",
+  'set "OVD=%USERPROFILE%\\MusicPlayerOverlay"',
+  'if defined MPX_OV_DIR set "OVD=%MPX_OV_DIR%"',
+  'set "OVB=%~f0"',
+  'if not exist "%OVD%" mkdir "%OVD%"',
+  "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$t = [IO.File]::ReadAllText($env:OVB, [Text.Encoding]::UTF8); $i = $t.IndexOf([char]10, $t.IndexOf('#' + '#PS1#')) + 1; [IO.File]::WriteAllText((Join-Path $env:OVD 'lyrics_overlay.ps1'), $t.Substring($i), (New-Object Text.UTF8Encoding $true))\"",
+  'start "" conhost.exe --headless powershell -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File "%OVD%\\lyrics_overlay.ps1" %*',
+  "exit /b",
+  "##PS1#"];
+async function ovBat() {
+  return new Blob([OV_BAT_HEAD.join("\r\n") + "\r\n" + (await ovPs1()).replace(/\r?\n/g, "\r\n")], {type: "application/octet-stream"});
 }
 /* stored (no compression) zip of [[path, text | bytes]] */
 function zipBlob(files) {
@@ -235,14 +268,20 @@ function zipBlob(files) {
   e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, size, true); e.setUint32(16, off, true);
   return new Blob([...parts, ...dir, e], {type: "application/zip"});
 }
-/* → {blob, ov: overlay files in it} */
-async function setupZip() {
-  const files = [[EXT_DIR + "/manifest.json", EXT_MANIFEST], [EXT_DIR + "/media.js", `// 음원 플레이어 확장 — music_front js/player_ext_media.js
-(${mpxMedia})();
-`]];
-  let ov = false;
-  if (OV_PC()) try { files.push(...await ovFiles()); ov = true; } catch (e) { console.warn("오버레이 파일을 못 읽음", e); }
-  return {blob: zipBlob(files), ov};
+/* 음원 플레이어 확장.zip — files at the top: Windows' 모두 압축 풀기 makes the folder 음원 플레이어 확장 (named after the zip)
+   with them right inside, the folder to load (no folder inside a folder) */
+async function extZip() {
+  const r = await fetch(new URL("../tools/player_ext/bg.js", location.href), {cache: "no-cache"});
+  if (!r.ok) throw new Error("bg.js " + r.status);
+  return zipBlob([["manifest.json", EXT_MANIFEST], ["bg.js", new Uint8Array(await r.arrayBuffer())],
+    ["matches.json", JSON.stringify(EXT_ORIGINS)],
+    ["media.js", `// 음원 플레이어 확장 — music_front js/player_ext_media.js (the copy used until GitHub answers)\n(${mpxMedia})();\n`]]);
+}
+function saveBlob(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
 }
 
 /* phone / tablet: no extensions to load there — the guide only says so */
@@ -618,53 +657,56 @@ class LocalMedia extends EventTarget {
   set playbackRate(v) { store.set("rate", +v || 1); this.applyRate(); this.fire("ratechange"); }
 }
 
-/* 추가기능 넣기 안내 (user request 2026-11-18 Bilibili volume · 2026-11-19 speed button · 2026-11-19 one guide for both PC
-   add-ons): whichever asked (오버레이 button, 배속 · 키, Bilibili), the guide hands out the one zip (setupZip) and walks
-   through every add-on this PC still lacks — the overlay (run its bat) and the extension (extensions page → load the folder).
-   One step at a time. An add-on that is there but older than this player's files ("old") gets: download again → unzip over
-   the old folder ('파일 바꾸기') → double-click the bat (the new one replaces the running old one itself) / ↻ on the extension.
-   An add-on that is up to date is left out. box: the card element. intro: why (first step) · touch: what a phone sees
-   instead · later / touchOk: buttons · done: the extension check (returns the note to show) · ok: all done (no extension
-   step). → {reset, note(text)} */
+/* 추가기능 넣기 안내 (user request 2026-11-18 Bilibili volume · 2026-11-19 speed button · 2026-11-20 each add-on on its own,
+   fewest steps, short lines with the words to look for in bold): one step at a time, only what this PC still lacks.
+   only: "ov" (오버레이 button) · "ext" (배속 · 키 · 2x!! · Bilibili) · "" both (⚙ › 추가기능).
+   · extension: 받기 (zip) → 모두 압축 풀기 · 주소 복사 → 개발자 모드 · 로드 → 그 폴더. A newer version = the same steps
+     (the old one deleted first).
+   · overlay: 받기 (one bat) → 열기 → PC 보호 › 추가 정보 › 실행; the step watches until it answers. A newer bat replaces a
+     running older overlay by itself.
+   A page opened as a file gets a link to the player's internet address instead of the download (ADDON_FILE_PAGE).
+   box: the card element. intro(only): why (first step) · touch: what a phone sees instead · later / touchOk: buttons ·
+   done: the extension check (returns the note to show) · ok: all done (no extension step). → {reset(only), note(text)} */
 /* the PC overlay: "" running + up to date (or not this PC's thing) · "old" running, older than these files · "off" ran in
    this browser before, not running now · "new" never seen */
 async function ovNeed() {
   if (!OV_PC()) return "";
   if (LOCAL.ovOn) {
     const r = await api("/api/ovprograms").catch(() => ({}));
-    if (r.running) { store.set("ovSeen", true); return (+r.ver || 0) < await ovLatest() ? "old" : ""; }
+    // from 8 on the overlay updates itself (start · hourly, lyrics_overlay.ps1 Update-Self) → only older ones are sent the new file
+    if (r.running) { store.set("ovSeen", true); const v = +r.ver || 0; return v < OV_SELF_UPDATE && v < await ovLatest() ? "old" : ""; }
   }
   return store.get("ovSeen", false) ? "off" : "new";
 }
 const extNeed = () => BILI_TOUCH() || EXT.ver >= EXT_VER ? "" : EXT.ver ? "old" : "new";
 function extGuide(box, {intro, touch, later, touchOk, done, ok}) {
   const ua = navigator.userAgent, brw = /Whale\//.test(ua) ? "whale" : /Edg\//.test(ua) ? "edge" : "chrome";
-  let need = null, steps = [], step = 0, note = "", run = 0, poll = 0;
-  const zipBtn = '<button type="button" class="vg-cta" data-get="zip">추가기능 내려받기</button>';
+  // the extensions page's button (Edge's own words, read from its ko.pak 2026-11-20)
+  const loadBtn = brw === "edge" ? "압축 풀린 파일 로드" : "압축해제된 확장 프로그램을 로드합니다";
+  let need = null, only = "", steps = [], step = 0, note = "", run = 0, poll = 0;
+  const getBtn = k => ADDON_FILE_PAGE()
+    ? `<a class="vg-cta vg-btn" href="${esc(APP.publicUrl)}#addon=${k}" target="_blank" rel="noopener">인터넷 주소로 열어서 받기</a>`
+    : `<button type="button" class="vg-cta" data-get="${k}">${k === "ext" ? "확장 프로그램 받기" : "오버레이 받기"}</button>`;
+  const fileNote = ADDON_FILE_PAGE() ? "파일로 연 화면에서 받으면 Windows가 막아요. 위 버튼으로 연 창에서 받아 주세요." : "";
   const addrBtn = '<button type="button" class="vg-cta" data-get="addr">주소 복사</button>';
   function build() {
-    const {ov, ext} = need, S = [], old = ov === "old" || ext === "old";
-    const what = [ov === "old" && "가사 오버레이", ext === "old" && "확장 프로그램"].filter(Boolean).join(" · ");
-    if (ov === "new" || ov === "old" || ext) S.push({t: old ? "새 버전 내려받기" : "추가기능 내려받기",
-      b: (old ? `새 버전이 나왔어요: <b>${what}</b><br>다시 받아 전에 받은 파일에 덮어써 주세요.` : intro)
-        + "<br>① 아래 버튼으로 내려받기{A}" + (old
-          ? "② 전에 압축을 푼 곳에 <b>압축 풀기</b> — 같은 파일이 있다고 물으면 <b>파일 바꾸기</b>"
-          : `② 지우지 않을 곳(예: 문서 폴더)에 <b>압축 풀기</b><br><span class="vg-note">폴더 안에 <b>${OV_DIR}</b> · <b>${EXT_DIR}</b> 두 폴더가 생겨요.</span>`),
-      a: zipBtn});
-    if (ov) S.push({t: "가사 오버레이 켜기", ov: true,
-      b: (ov === "off" ? `가사 오버레이 프로그램이 꺼져 있어요.<br>① 전에 압축을 푼 <b>${OV_DIR}</b> 폴더의 <b>lyrics_overlay.bat</b> 더블클릭`
-        : ov === "old" ? `① 덮어쓴 <b>${OV_DIR}</b> 폴더의 <b>lyrics_overlay.bat</b> 더블클릭 — 켜져 있던 옛 오버레이는 저절로 새 것으로 바뀌어요`
-        : `① 압축을 푼 <b>${OV_DIR}</b> 폴더의 <b>lyrics_overlay.bat</b> 더블클릭`)
-        + "<br>② <b>Windows의 PC 보호</b> 창이 뜨면 <b>추가 정보</b> → <b>실행</b>{A}"
-        + '<br><span class="vg-note">한 번 켜 두면 컴퓨터를 끌 때까지 뒤에서 돌고, 그동안은 [오버레이] 단추로 켜고 꺼요.</span>',
-      a: ov === "off" ? `<span class="vg-note">폴더가 없으면</span>${zipBtn}` : ""});
-    if (ext === "new") S.push(
-      {t: "확장 프로그램 화면 열기", b: "① <b>주소 복사</b>를 누르고 새 탭 주소창에 붙여 넣어 이동{A}② 오른쪽 위 <b>개발자 모드</b> 켜기", a: addrBtn},
-      {t: "확장 프로그램 폴더 넣기", b: `① <b>압축해제된 확장 프로그램을 로드합니다</b> 누르기<br>② 압축을 푼 <b>${EXT_DIR}</b> 폴더를 골라 <b>폴더 선택</b><br>③ 이 화면으로 돌아와 <b>다 했어요</b>`
-        + '<br><span class="vg-note">예전에 넣은 <b>음원 플레이어 확장 · 비리비리 볼륨</b>이 있으면 지워도 돼요.</span>', a: ""});
-    if (ext === "old") S.push({t: "확장 프로그램 새로 고침",
-      b: "① <b>주소 복사</b>를 누르고 새 탭 주소창에 붙여 넣어 이동{A}② <b>음원 플레이어 확장</b>의 <b>↻</b>(새로고침) 누르기<br>③ 이 화면으로 돌아와 <b>다 했어요</b>"
-        + `<br><span class="vg-note">예전 <b>music-player-ext</b> 폴더로 넣었다면: 그 확장은 <b>삭제</b> → <b>압축해제된 확장 프로그램을 로드합니다</b> → <b>${EXT_DIR}</b> 폴더.</span>`, a: addrBtn});
+    const {ov, ext} = need, S = [];
+    if (ext) S.push(
+      {t: ext === "old" ? "확장 프로그램 새 버전 받기" : "확장 프로그램 받기", a: getBtn("ext"), n: fileNote,
+        l: ["{A}", "받은 zip 오른쪽 클릭 → <b>모두 압축 풀기</b> → <b>압축 풀기</b>"]},
+      {t: "개발자 모드 켜기", a: addrBtn,
+        l: ["{A}", "새 탭 주소창에 붙여 넣고 <b>Enter</b>", "<b>개발자 모드</b> 켜기"]},
+      {t: "확장 프로그램 넣기",
+        l: [`<b>${loadBtn}</b> 누르기`, `압축 푼 <b>${EXT_DIR}</b> 폴더 → <b>폴더 선택</b>`,
+          "저절로 열리는 화면에서 <b>사용자 스크립트 허용</b> 켜기", "여기로 돌아와 <b>다 했어요</b>"],
+        n: (ext === "old" ? `먼저 예전 <b>${EXT_DIR}</b>을 <b>삭제</b>해 주세요. ` : "예전에 넣은 <b>비리비리 볼륨</b>이 있으면 삭제해 주세요. ")
+          + "압축 푼 폴더는 지우지 마세요. 그 뒤 업데이트는 저절로 돼요."});
+    // two lines (user 2026-11-20: the overlay looked like more steps than before) — once installed, the [오버레이] button
+    // starts it again by itself (musicoverlay: link), so nothing about restarting here
+    if (ov === "off") S.push({t: "가사 오버레이 켜기", ov: true, a: getBtn("ov"),
+      l: [`받아 둔 <b>${OV_BAT}</b> 열기`, "파일이 없으면 {A}"], n: fileNote});
+    else if (ov) S.push({t: ov === "old" ? "가사 오버레이 새 버전" : "가사 오버레이 켜기", ov: true, a: getBtn("ov"),
+      l: ["{A}", "받은 파일 <b>열기</b> — <b>PC 보호</b> 창이 뜨면 <b>추가 정보 → 실행</b>"], n: fileNote});
     return S;
   }
   const copy = async text => {
@@ -694,30 +736,33 @@ function extGuide(box, {intro, touch, later, touchOk, done, ok}) {
     }
     if (!need) { box.innerHTML = '<div class="vg-b"><span class="vg-note">확인하는 중…</span></div>'; return; }
     if (!steps.length) {
-      box.innerHTML = '<div class="vg-b">추가기능(가사 오버레이 · 확장 프로그램)이 모두 최신이에요.</div><div class="vg-nav"><span></span><button type="button" class="primary" data-act="ok">확인</button></div>';
+      box.innerHTML = '<div class="vg-b">이미 다 넣었어요. 모두 최신이에요.</div><div class="vg-nav"><span></span><button type="button" class="primary" data-act="ok">확인</button></div>';
       return;
     }
-    const S = steps[step], last = step === steps.length - 1;
-    const act = S.a || note ? `<div class="vg-a">${S.a}${note ? `<span class="vg-note">${note}</span>` : ""}</div>` : "";
-    const body = S.b.includes("{A}") ? S.b.replace("{A}", act) : S.b + act;
-    box.innerHTML = `<div class="vg-h"><span class="vg-n">${step + 1}/${steps.length}</span>${S.t}</div><div class="vg-b">${body}</div>` +
-      '<div class="vg-nav"><button type="button" class="vg-later" data-act="later">나중에</button><span>' +
-      (step ? '<button type="button" data-act="prev">이전</button>' : "") +
-      (last ? '<button type="button" class="primary" data-act="done">다 했어요</button>' : '<button type="button" class="primary" data-act="next">다음</button>') +
-      "</span></div>";
+    const S = steps[step], last = step === steps.length - 1, why = step === 0 ? intro(only) : "";
+    const lines = S.l.map(x => `<li>${x.replace("{A}", `<span class="vg-a">${S.a}</span>`)}</li>`).join("");
+    box.innerHTML = `<div class="vg-h"><span class="vg-n">${step + 1}/${steps.length}</span>${S.t}</div>`
+      + `<div class="vg-b">${why ? `<p class="vg-why">${why}</p>` : ""}<ol class="vg-steps">${lines}</ol>`
+      + (S.n ? `<p class="vg-note">${S.n}</p>` : "") + (note ? `<p class="vg-say">${note}</p>` : "") + "</div>"
+      + '<div class="vg-nav"><button type="button" class="vg-later" data-act="later">나중에</button><span>'
+      + (step ? '<button type="button" data-act="prev">이전</button>' : "")
+      + (last ? '<button type="button" class="primary" data-act="done">다 했어요</button>' : '<button type="button" class="primary" data-act="next">다음</button>')
+      + "</span></div>";
   }
   box.addEventListener("click", async e => {
     const b = e.target.closest("button"); if (!b) return;
-    if (b.dataset.get === "zip") {
-      const z = await setupZip(), a = document.createElement("a");
-      a.href = URL.createObjectURL(z.blob); a.download = SETUP_ZIP;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-      note = OV_PC() && !z.ov ? "내려받았어요. (오버레이 파일은 이 화면에서 읽지 못해 빠졌어요 — 플레이어 주소로 열어 주세요)" : "내려받았어요. 압축을 풀어 주세요.";
+    if (b.dataset.get === "ext") {
+      try { saveBlob(await extZip(), EXT_ZIP); note = "받았어요. 압축을 풀어 주세요."; }
+      catch (x) { note = "파일을 만들지 못했어요. 플레이어를 인터넷 주소로 열어 주세요."; }
+      return draw();
+    }
+    if (b.dataset.get === "ov") {
+      try { saveBlob(await ovBat(), OV_BAT); note = "받았어요. 받은 파일을 열어 주세요."; }
+      catch (x) { note = "오버레이 파일을 만들지 못했어요. 플레이어를 인터넷 주소로 열어 주세요."; }
       return draw();
     }
     if (b.dataset.get === "addr") {
-      note = await copy(`${brw}://extensions`) ? "주소를 복사했어요. 새 탭 주소창에 붙여 넣으세요." : "복사하지 못했어요. 다시 눌러 주세요.";
+      note = await copy(`${brw}://extensions`) ? "주소를 복사했어요." : "복사하지 못했어요. 다시 눌러 주세요.";
       return draw();
     }
     const act = b.dataset.act;
@@ -728,24 +773,25 @@ function extGuide(box, {intro, touch, later, touchOk, done, ok}) {
     else if (act === "touchok") return touchOk();
     else if (act === "ok") return (ok || later)();
     else if (act === "done") {
-      if (need.ov && await ovNeed()) note = "가사 오버레이가 아직 확인되지 않아요. lyrics_overlay.bat 을 실행했는지 확인해 주세요.";
+      if (need.ov && await ovNeed()) note = "오버레이가 아직 안 켜졌어요. 받은 파일을 열었는지 봐 주세요.";
       else if (need.ext) note = done() || "";
       else { clearInterval(poll); return (ok || later)(); }
     }
     draw(); ovWatch();
   });
   return {
-    async reset() {
+    async reset(o = "") {
       const r = ++run;
-      clearInterval(poll); need = null; steps = []; step = 0; note = ""; draw();
-      const n = {ov: await ovNeed(), ext: extNeed()};
+      only = o; clearInterval(poll); need = null; steps = []; step = 0; note = ""; draw();
+      const n = {ov: only === "ext" ? "" : await ovNeed(), ext: only === "ov" ? "" : extNeed()};
       if (r !== run) return;
       need = n; steps = build(); draw(); ovWatch();
     },
     note(t) { note = t; draw(); }};
 }
 /* the guide as a window over a darkened screen (user request 2026-11-19, like ⚙ 설정) — 오버레이 button · 배속 · 키.
-   what: the title's first word · after: run once everything answers (the buttons refresh) */
+   what: the title's first word ('오버레이' → overlay only, '추가기능' → both, else the extension only) · after: run once
+   everything answers (the buttons refresh) */
 let setupDlg = null, setupG = null, setupAfter = null;
 function openSetupGuide(what, after) {
   setupAfter = after || null;
@@ -757,23 +803,28 @@ function openSetupGuide(what, after) {
     const close = () => setupDlg.close(), fin = () => { close(); if (setupAfter) setupAfter(); };
     setupDlg.querySelector(".dlgx").onclick = close;
     setupG = extGuide(setupDlg.querySelector(".vguide"), {
-      // shorter, as a list (user request 2026-11-19): two red notes, then the two add-ons
-      intro: '<ul class="vg-warn"><li>모바일은 아래 프로그램 없이 아래 기능을 사용할 수 있어요.</li><li>Bilibili 출처의 음원은 이 확장프로그램이 필수에요.</li></ul>'
-        + '<ol class="vg-list"><li>가사 오버레이</li><li>확장프로그램 : 영상출처를 가리지않고 볼륨을 보다 정확하게 균일하게 만들고, 배속 · 음정변경 · 사이트별 광고제거 를 한번에 넣어요.</li></ol>',
-      touch: "이 기기에서는 PC 추가기능(가사 오버레이 · 확장 프로그램)을 넣을 수 없어요. 폰은 앱에서 돼요.",
+      intro: o => o === "ov" ? "" : "배속 · 키 · 소리 크기 맞추기 · 광고 없애기를 모든 영상에 써요. <b>비리비리</b> 곡은 꼭 필요해요.",
+      touch: "폰에서는 넣을 필요 없어요. 앱에 다 들어 있어요.",
       later: close, touchOk: close, ok: fin,
       done: () => {
         extProbe().then(v => {
           if (!setupDlg.open) return;
           if (v >= EXT_VER) return fin();
-          setupG.note("아직 확장 프로그램이 확인되지 않아요. 개발자 모드와 폴더를 다시 확인해 주세요.");
+          setupG.note("아직 확장 프로그램이 안 보여요. 개발자 모드와 고른 폴더를 확인해 주세요.");
         });
-        return "확장 프로그램을 확인하는 중…";
+        return "확인하는 중…";
       }});
   }
   setupDlg.querySelector(".eg-what").textContent = what;
-  setupG.reset();
+  setupG.reset(what === "오버레이" ? "ov" : what === "추가기능" ? "" : "ext");
   if (!setupDlg.open) setupDlg.showModal();
+}
+/* #addon=ext|ov (a page opened as a file sent the user here to download — extGuide getBtn): open that guide once */
+function addonFromHash() {
+  const m = /^#addon=(ext|ov)$/.exec(location.hash);
+  if (!m) return;
+  history.replaceState(null, "", location.pathname + location.search);
+  openSetupGuide(m[1] === "ov" ? "오버레이" : "확장 프로그램");
 }
 
 /* ---------- 재생기 ---------- */

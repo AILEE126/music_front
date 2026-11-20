@@ -2,7 +2,7 @@
    right of the volume in the play bar.
    배속: A menu of speeds (browser key rate, kept for
    every song). YouTube · files · our mp3 take it themselves; Niconico · SoundCloud · Vimeo · Bilibili only with the
-   음원 플레이어 확장 (play_engine.js setupZip). Where it can't apply the button is greyed and the song plays at 1×:
+   음원 플레이어 확장 (play_engine.js extZip). Where it can't apply the button is greyed and the song plays at 1×:
    · no extension → a click opens the extension guide (the same three steps as Bilibili's volume guide)
    · phone / tablet → a notice (no extensions there) · 같이듣기 · OPEN CHANNEL → everyone at 1×
    키: −12 ~ +12 (speed unchanged), kept per song (browser key keys) — online songs through the extension / app (v3), our mp3

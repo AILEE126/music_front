@@ -72,6 +72,7 @@ async function offlineOpened() {
   const rit = res && find(res.k), it = sit && canPlay(sit) ? sit : rit && canPlay(rit) ? rit : find(store.get("last", ""));
   if (it && canPlay(it) && !SHELL.now) { if (it === rit) SHELL.resumeAt(it, res.t); play(it, it === rit || it === sit, it === sit ? "pick" : ""); }
   if (typeof pnCheck === "function") setTimeout(() => pnCheck(true), 400);  // 패치노트: a new one pops up once (patch_notes.js)
+  addonFromHash();  // #addon=ext|ov: sent here from a page opened as a file to download an add-on (play_engine.js)
   await loadRest();
   qRestoreAfterReload(rit && it === rit ? rit : null);  // after an update reload: the queue as it was
 }

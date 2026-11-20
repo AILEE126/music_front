@@ -1,6 +1,7 @@
 /* 음원 플레이어 확장 · 앱 공용 (user request 2026-11-19: only what works both on a PC (extension) and in the app).
    ONE file, three uses:
-   · PC extension: its content script (play_engine.js setupZip wraps mpxMedia as media.js, world MAIN, document_start)
+   · PC extension: a loader (tools/player_ext/bg.js) fetches this file from music_front main and registers it as a user script
+     (world MAIN, document_start, every frame) — updates by itself
    · phone app: injected at document start into the same frames (music_app AdBlock.java · MusicAppPlugin.swift read it from
      the bundled music_front js/)
    · the player page loads it too: there it only hands its audio chain to the player (our own mp3 — key change · 소리 크기)
@@ -12,7 +13,7 @@
      every song at the same level) · Bilibili volume · YouTube ads cut out / skipped · Niconico / Bilibili ad boxes hidden.
      Reports {mpxAck: version} and {mpxLoud: {lufs, secs}} (what it measured, kept by the player for the next play). */
 function mpxMedia() {
-  const VER = 4;  // 4: Niconico · Bilibili ads hidden
+  const VER = 5;  // 4: Niconico · Bilibili ads hidden · 5: the PC extension loads this file from GitHub itself (old static ones are asked to reinstall once)
   const host = location.hostname;
   if (host === "ailee126.github.io" || (/^(127\.0\.0\.1|localhost)$/.test(host) && /stream_bridge/.test(location.pathname))) {
     window.MPX_EXT = VER;  // the bridge page (deployed · under test)
