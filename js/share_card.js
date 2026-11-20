@@ -8,14 +8,18 @@
     "base": "https://아이디.github.io/저장소/", "player": "<player address the page sends to (default APP.publicUrl)>"}
    (same idea as listen_turn.json — players read it with their own token; the token can touch only the share repo).
    The page sends visitors on with JS (bots don't run it) to <player>#play=<id>. A card is uploaded again only when its
-   content changed (csc-key); Pages takes ~1 min to show a new page, so the buttons wait until the page answers with the key. */
-const SHARE_V = 5;  // bump when the card drawing changes (every card is made again on its next share)
+   content changed (csc-key, also in the card's file name card_<key>.jpg).
+   Within 3 s (user request 2026-11-20: waiting ~1 min for Pages was too slow): the link is not the Pages page but the same
+   file at its commit on rawcdn.githack.com (text/html, live at once, no robots.txt); the card image is read from
+   raw.githubusercontent.com (image/jpeg — githack refuses images), its name new per key so no stale cache. Pages still
+   publishes the same page later. */
+const SHARE_V = 6;  // bump when the card drawing changes (every card is made again on its next share)
 const SHARE = {cfg: null};
 async function shareCfg() {
   if (!SHARE.cfg) {
     const c = await LOCAL.readJson(`${LOCAL.data}share_card.json`, null).catch(() => null);
-    if (!c || !c.repo || !c.token || !c.base) throw new Error("공유 저장소 설정(Server/data/share_card.json)이 아직 없습니다.");
-    SHARE.cfg = {branch: "main", player: APP.publicUrl, ...c, base: c.base.replace(/\/?$/, "/")};
+    if (!c || !c.repo || !c.token) throw new Error("공유 저장소 설정(Server/data/share_card.json)이 아직 없습니다.");
+    SHARE.cfg = {branch: "main", player: APP.publicUrl, ...c};  // base (the Pages address) is no longer used for links
   }
   return SHARE.cfg;
 }
@@ -180,8 +184,10 @@ async function shareDraw(it, {blur = false, img, ink = "white"} = {}) {
 }
 
 const shareAttr = s => String(s ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+const shareLink = (cfg, sha, id) => `https://rawcdn.githack.com/${cfg.repo}/${sha}/s/${id}/index.html`;
 function sharePage(cfg, id, t, key) {
-  const url = `${cfg.base}s/${id}/`, img = `${url}card.jpg?v=${key}`, play = `${cfg.player.split("#")[0]}#play=${id}`;
+  const img = `https://raw.githubusercontent.com/${cfg.repo}/${cfg.branch}/s/${id}/card_${key}.jpg`, play = `${cfg.player.split("#")[0]}#play=${id}`;
+  // no og:url: it would name the Pages address, which is not live yet when the link is posted
   // no description (user report 2026-11-18): 디스코드는 설명을 그림 위에 글로 또 보여 줌 — 정보는 카드 그림에만. 제목은 남김
   // (X 의 이름표 · 디스코드의 누르는 제목)
   return `<!doctype html>
@@ -191,7 +197,6 @@ function sharePage(cfg, id, t, key) {
 <meta name="csc-key" content="${key}">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="사이버노인정">
-<meta property="og:url" content="${shareAttr(url)}">
 <meta property="og:title" content="${shareAttr(t.title)}">
 <meta property="og:image" content="${shareAttr(img)}">
 <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
@@ -201,40 +206,45 @@ function sharePage(cfg, id, t, key) {
 <meta name="theme-color" content="#ff6b8b">
 <script>location.replace(${JSON.stringify(play)});</script>
 </head><body style="font-family:sans-serif;background:#16161d;color:#eee;text-align:center;padding:40px">
-<p><img src="card.jpg?v=${key}" alt="" style="max-width:100%;border-radius:12px"></p>
+<p><img src="${shareAttr(img)}" alt="" style="max-width:100%;border-radius:12px"></p>
 <p><a href="${shareAttr(play)}" style="color:#6ec6ff">사이버노인정에서 듣기</a></p>
 </body></html>
 `;
 }
 
-/* 공유 저장소에 한 커밋으로 (index.html + card.jpg) — git data API */
-async function shareCommit(cfg, files, msg) {
-  const gh = async (path, body, method = body ? "POST" : "GET") => {
-    const r = await fetch(`https://api.github.com/repos/${cfg.repo}/${path}`, {method, cache: "no-store",
-      headers: {Authorization: `Bearer ${cfg.token}`, Accept: "application/vnd.github+json", ...(body ? {"Content-Type": "application/json"} : {})},
-      body: body ? JSON.stringify(body) : undefined});
-    if (!r.ok) throw new Error(`공유 저장소 응답 ${r.status}${r.status === 401 ? " (토큰 만료?)" : r.status === 409 ? " (저장소가 비어 있음?)" : ""}`);
-    return r.json();
-  };
-  // blobs and the branch head at once (was one after another — 링크 생성이 너무 느림, user 2026-11-18)
-  const [ref, ...tree] = await Promise.all([gh(`git/ref/heads/${cfg.branch}`),
-    ...files.map(async ([path, content, enc]) => ({path, mode: "100644", type: "blob", sha: (await gh("git/blobs", {content, encoding: enc})).sha}))]);
-  const head = ref.object.sha, base = await gh(`git/commits/${head}`);
-  const nt = await gh("git/trees", {base_tree: base.tree.sha, tree});
-  const c = await gh("git/commits", {message: msg, tree: nt.sha, parents: [head]});
-  await gh(`git/refs/heads/${cfg.branch}`, {sha: c.sha}, "PATCH");
+const shareGh = async (cfg, path, body, method = body ? "POST" : "GET") => {
+  const r = await fetch(`https://api.github.com/repos/${cfg.repo}/${path}`, {method, cache: "no-store",
+    headers: {Authorization: `Bearer ${cfg.token}`, Accept: "application/vnd.github+json", ...(body ? {"Content-Type": "application/json"} : {})},
+    body: body ? JSON.stringify(body) : undefined});
+  if (method === "GET" && r.status === 404) return null;  // the song's folder before its first card
+  if (!r.ok) throw new Error(`공유 저장소 응답 ${r.status}${r.status === 401 ? " (토큰 만료?)" : r.status === 409 ? " (저장소가 비어 있음?)" : ""}`);
+  return r.json();
+};
+/* the branch head (commit + tree in one call) and the song's folder — fetched while the card is drawn */
+async function shareState(cfg, id) {
+  const [h, dir] = await Promise.all([shareGh(cfg, `commits/${cfg.branch}`), shareGh(cfg, `contents/s/${id}?ref=${cfg.branch}`)]);
+  if (!h) throw new Error("공유 저장소 응답 404 (저장소 · 브랜치 확인)");
+  return {head: h.sha, tree: h.commit.tree.sha, files: Array.isArray(dir) ? dir.map(f => f.name) : []};
+}
+/* 공유 저장소에 한 커밋으로 (index.html + card_<key>.jpg, the song's older cards removed) — git data API.
+   Text files go inline in the tree (no blob call). Returns the commit sha at once (the link only needs it) and `moved`,
+   the branch update the card image waits for — it lands well before anyone pastes the link. */
+async function shareCommit(cfg, st, files, drop, msg) {
+  const tree = [...await Promise.all(files.map(async ([path, content, enc]) => enc === "utf-8" ? {path, mode: "100644", type: "blob", content}
+    : {path, mode: "100644", type: "blob", sha: (await shareGh(cfg, "git/blobs", {content, encoding: enc})).sha})),
+    ...drop.map(path => ({path, mode: "100644", type: "blob", sha: null}))];
+  const nt = await shareGh(cfg, "git/trees", {base_tree: st.tree, tree});
+  const c = await shareGh(cfg, "git/commits", {message: msg, tree: nt.sha, parents: [st.head]});
+  return {sha: c.sha, moved: shareGh(cfg, `git/refs/heads/${cfg.branch}`, {sha: c.sha}, "PATCH")};
 }
 const shareB64 = blob => new Promise((res, rej) => { const f = new FileReader(); f.onload = () => res(String(f.result).split(",")[1]); f.onerror = rej; f.readAsDataURL(blob); });
-async function shareLive(url, key) {  // the page on Pages already has this card?
-  try { const r = await fetch(`${url}?k=${Date.now()}`, {cache: "no-store"}); return r.ok && (await r.text()).includes(`content="${key}"`); } catch (e) { return false; }
-}
 async function shareKey(s) {
   const h = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(s));
   return [...new Uint8Array(h)].slice(0, 6).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
 /* 공유 창: 카드 미리보기 · [링크 복사] [X 에 올리기] (디스코드는 링크를 붙이면 카드가 뜸).
-   User request 2026-11-18: the link itself is not shown; both buttons spin until the page is live on Pages. */
+   User request 2026-11-18: the link itself is not shown; both buttons spin until the card is committed (no Pages wait). */
 async function openShare(it = cur) {
   if (!it || !it.vocadb) return uiAlert(it ? "VocaDB 곡만 공유할 수 있습니다 (mp3 폴더 곡은 안 됨)." : "공유할 곡을 먼저 트세요.");
   document.querySelector("dialog.sharedlg")?.remove();
@@ -270,10 +280,12 @@ async function openShare(it = cur) {
     if (a === "x") window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(`${title} — 사이버노인정`)}&url=${encodeURIComponent(link)}`, "_blank", "noopener");
   });
   bc.addEventListener("change", () => { blur = bc.checked; make(); });  // the link follows the picked look: redraw + upload again
-  // one run = draw → preview → upload → wait for Pages; a newer run (blur toggle) makes the older one stop quietly
+  // one run = (draw ∥ read the share repo) → preview → one commit → link; a newer run (blur · ink toggle) makes the older one stop quietly
   async function make() {
-    const my = ++run, gone = () => d.dead || my !== run;
+    const my = ++run, gone = () => d.dead || my !== run, id = it.vocadb;
     link = ""; busy(true); bspin(true);
+    const pre = shareCfg().then(async cfg => ({cfg, st: await shareState(cfg, id)}));
+    pre.catch(() => {});  // its error is shown after the preview
     try {
       // the card first, so the preview shows even when the share settings are missing (user report 2026-11-18: 미리보기 안 됨)
       const card = await shareDraw(it, {blur, img, ink});
@@ -282,26 +294,22 @@ async function openShare(it = cur) {
       bspin(false);
       d.querySelector(".shimg").innerHTML = `<img alt="" src="${URL.createObjectURL(card.blob)}">`;
       st(card.thumb ? "링크 만드는 중…" : "썸네일을 받지 못해 글자만 있는 카드입니다. 링크 만드는 중…");
-      const cfg = await shareCfg(), id = it.vocadb;
+      const {cfg, st: rs} = await pre;
       const key = await shareKey(JSON.stringify([SHARE_V, card.text, card.thumb, card.blur, card.ink, cfg.player]));
-      const url = `${cfg.base}s/${id}/`, ready = m => { if (gone()) return; link = url; busy(false); st(m); };
-      if (await shareLive(url, key)) return ready("이미 만들어 둔 카드입니다. 링크를 붙여 넣으면 카드가 뜹니다.");
+      const ready = (sha, m) => { if (gone()) return; link = shareLink(cfg, sha, id); busy(false); st(m); };
+      const jpg = `card_${key}.jpg`;
+      if (rs.files.includes(jpg)) return ready(rs.head, "이미 만들어 둔 카드입니다. 링크를 붙여 넣으면 카드가 뜹니다.");
       if (gone()) return;
-      const page = sharePage(cfg, id, card.text, key);
-      await shareCommit(cfg, [[`s/${id}/index.html`, page, "utf-8"], [`s/${id}/card.jpg`, await shareB64(card.blob), "base64"], [".nojekyll", "", "utf-8"]],
-        `share ${id}: ${card.text.title}`.slice(0, 120));
-      // Pages publishes in ~1 min — a link posted before that gets no card (X · 디스코드 remember it), so the buttons wait
-      const t0 = Date.now();
-      while (!gone() && Date.now() - t0 < 300000) {
-        st(`깃허브 페이지에 반영되는 중… ${Math.round((Date.now() - t0) / 1000)}초 (보통 1분 안)`);
-        if (await shareLive(url, key)) return ready("카드가 준비됐습니다. 링크를 붙여 넣으면 카드가 뜹니다.");
-        await new Promise(r => setTimeout(r, 2000));
-      }
-      ready("반영이 늦습니다 — 조금 뒤에 올리세요 (일찍 올리면 카드가 안 뜰 수 있음).");
+      const drop = rs.files.filter(f => /^card.*\.jpg$/.test(f)).map(f => `s/${id}/${f}`);
+      const c = await shareCommit(cfg, rs, [[`s/${id}/index.html`, sharePage(cfg, id, card.text, key), "utf-8"],
+        [`s/${id}/${jpg}`, await shareB64(card.blob), "base64"]], drop, `share ${id}: ${card.text.title}`.slice(0, 120));
+      ready(c.sha, "카드가 준비됐습니다. 링크를 붙여 넣으면 카드가 뜹니다.");
+      await c.moved;  // failed (someone else's share moved the branch first) → the image would 404: take the link back
     } catch (e) {
       if (gone()) return;
       if (!d.querySelector(".shimg img")) d.querySelector(".shimg").textContent = "";
-      btns.forEach(b => b.classList.remove("shbusy"));  // stay disabled: no link
+      link = "";
+      btns.forEach(b => { b.disabled = true; b.classList.remove("shbusy"); });  // stay disabled: no link
       bspin(false);
       st(e.message);
     }
