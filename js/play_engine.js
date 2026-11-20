@@ -27,9 +27,8 @@ function vidRef(url) {
    vocadb · secs: Bilibili needs the song's length — ours first (secs), else VocaDB's API (LocalMedia.biliLength) */
 const streamRefs = it => [...new Set([it.video_link, ...(it.sources || [])].filter(Boolean))].map(vidRef).filter(Boolean)
   .map(r => it.vocadb ? {...r, vocadb: it.vocadb, secs: +it.secs || 0} : r);
-/* 틀 수 있는 곡: 오프라인 곡(고른 mp3 폴더) · 원곡 영상 주소가 있는 온라인 곡.
-   deleted: original video confirmed gone (Manage › 오류 신고) — user request: shown greyed, never played or queued */
-const canPlay = it => !!it && (it.site === "local" || (it.site === "stream" && !it.deleted && (it._pn ?? streamRefs(it).length) > 0));  // _pn: playable links, counted once (search_dialog.js playableFast)
+/* 틀 수 있는 곡: 오프라인 곡(고른 mp3 폴더) · 원곡 영상 주소가 있는 온라인 곡 (삭제된 곡 표시는 2026-11-20 없앰) */
+const canPlay = it => !!it && (it.site === "local" || (it.site === "stream" && (it._pn ?? streamRefs(it).length) > 0));  // _pn: playable links, counted once (search_dialog.js playableFast)
 
 /* Diagnostic log (user: songs stop while another tab is in front — record what happened while hidden, read it after coming back).
    Last 400 lines kept in this browser (survives reload); playerDiag() in the console or a stall report attaches it. */
@@ -822,7 +821,7 @@ function makePlayer(el) {
     async load(it, autoplay = true, how = "") {
       if (!it) return;
       if (!canPlay(it)) {
-        uiAlert(it.deleted ? "이 곡은 원곡 영상이 삭제되어 재생할 수 없습니다." : it.site === "stream" ? "이 곡은 재생할 수 있는 영상 주소(니코니코·유튜브·비리비리·SoundCloud 등)가 없습니다." : "오프라인 폴더에서 그 곡을 찾을 수 없습니다. 폴더를 다시 연결하세요.");
+        uiAlert(it.site === "stream" ? "이 곡은 재생할 수 있는 영상 주소(니코니코·유튜브·비리비리·SoundCloud 등)가 없습니다." : "오프라인 폴더에서 그 곡을 찾을 수 없습니다. 폴더를 다시 연결하세요.");
         return;
       }
       this.queueOnLoad(it, how);  // 지난 곡·다음 곡 순서 (play_queue.js)

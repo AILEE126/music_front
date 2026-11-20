@@ -68,7 +68,7 @@ async function offlineOpened() {
   const find = k => { try { return k && LOCAL.item(...k.split(/\/(.*)/s)); } catch (e) { return null; } };
   // shared song: plays at once, not put in the playlist (user request 2026-11-18) — before the resumed / last song
   const sit = sid && find(`stream/vocadb_${sid}`);
-  if (sid && !(sit && canPlay(sit))) uiAlert(sit ? "공유된 곡은 지금 재생할 수 없습니다 (영상 없음·삭제됨)." : "공유된 곡을 찾지 못했습니다.");
+  if (sid && !(sit && canPlay(sit))) uiAlert(sit ? "공유된 곡은 지금 재생할 수 없습니다 (영상 없음)." : "공유된 곡을 찾지 못했습니다.");
   const rit = res && find(res.k), it = sit && canPlay(sit) ? sit : rit && canPlay(rit) ? rit : find(store.get("last", ""));
   if (it && canPlay(it) && !SHELL.now) { if (it === rit) SHELL.resumeAt(it, res.t); play(it, it === rit || it === sit, it === sit ? "pick" : ""); }
   if (typeof pnCheck === "function") setTimeout(() => pnCheck(true), 400);  // 패치노트: a new one pops up once (patch_notes.js)
@@ -91,14 +91,13 @@ async function offlineIntro() {
 }
 /* 처음 화면: 깃허브 토큰 입력만 (user request — repo field, Server\data folder and mp3-folder choices removed;
    offline mp3 folder is connected from the list after switching to offline). Repo = last one used or the default.
-   Nothing open yet → can't be closed until a token opens. Already open ('다른 토큰으로 열기') → 취소 · Esc close it and the
-   player stays as it was (user request 2026-11-14: the box wouldn't go away). */
+   Can't be closed until a token opens. No '다른 토큰으로 열기' (user request 2026-11-20: one token per user). */
 /* 마지막 토큰 생성 (user request 2026-11-17) — shown in the entry dialog. Kept here because the player can't read our data before a
    token opens it; the newest 생성 시간 in 음원 관리 › 토큰 관리 is the value to put here */
 const TOKEN_MADE = "2026-11-16 14:00";
 async function offlineDialog(err = "") {
   if (!VDB.idx) $("libInfo").textContent = "";
-  const gh = LOCAL.savedGitHub(), repo = (gh || {}).repo || "AILEE126/music_backend", cancelable = LOCAL.ready;
+  const gh = LOCAL.savedGitHub(), repo = (gh || {}).repo || "AILEE126/music_backend";
   document.querySelector("dialog.offdlg")?.remove();
   const d = document.createElement("dialog");
   d.className = "uidlg offdlg";
@@ -109,15 +108,14 @@ async function offlineDialog(err = "") {
       <label class="ghform ghfield"><span class="ghlab"><span class="ltreq">*</span>닉네임</span><input type="text" id="ghWho" maxlength="8" autocomplete="off" spellcheck="false"></label>
       <div class="ghform ghfield"><span class="ghlab">대표색상</span><span id="ghClr"></span></div>
       <label class="ghform ghfield" id="ghViaRow" hidden><span class="ghlab"><span class="ltreq">*</span>소개받은 닉네임</span><input type="text" id="ghVia" placeholder="토큰을 준 사람의 닉네임" maxlength="8" autocomplete="off" spellcheck="false"></label>
-      <div class="ghform ghbtns"><button class="primary" id="ghOpen">열기</button>${cancelable ? '<button id="ghCancel" title="지금 열린 그대로 (Esc)">취소</button>' : ""}</div>
+      <div class="ghform ghbtns"><button class="primary" id="ghOpen">열기</button></div>
     <div class="offerr" id="offErr"></div></div>`;
   const q = sel => d.querySelector(sel), btns = () => d.querySelectorAll("button");
   const showErr = m => { q("#offErr").textContent = m; };
   showErr(err);
   let done = false;
-  d.addEventListener("cancel", e => { if (!cancelable) e.preventDefault(); });  // Esc: closes only when something is open already
-  d.addEventListener("close", () => { if (done) return; if (cancelable) d.remove(); else d.showModal(); });  // first open: comes back until a token opens
-  if (cancelable) q("#ghCancel").onclick = () => { done = true; d.close(); d.remove(); };
+  d.addEventListener("cancel", e => e.preventDefault());  // no Esc
+  d.addEventListener("close", () => { if (!done) d.showModal(); });  // comes back until a token opens
   const tryOpen = async open => {
     showErr(""); btns().forEach(b => b.disabled = true); q("#offErr").textContent = "여는 중…";
     try { await open(); }

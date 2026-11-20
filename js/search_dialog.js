@@ -171,7 +171,7 @@ async function playableCount(its, tick) {
 }
 /* 재생 가능 세기: 곡마다 영상 주소 풀이는 한 번만 (deleted 는 그때그때) */
 // kept on the song (_pn), not in a WeakMap — 1M entries there cost far more room (2026-11-19)
-const playableFast = it => it.site !== "stream" ? canPlay(it) : !it.deleted && (it._pn ?? (it._pn = streamRefs(it).length)) > 0;
+const playableFast = it => it.site !== "stream" ? canPlay(it) : (it._pn ?? (it._pn = streamRefs(it).length)) > 0;
 /* 목록 칸의 도는 표시 — 금방 끝나면 안 보이게 조금 뒤에 */
 let busyTimer = 0;
 function listBusy(on) {

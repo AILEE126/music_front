@@ -154,7 +154,7 @@ $("reportQ").addEventListener("input", () => {
   if (reportReq()) { reportCanSend(); return; }  // request: the box is the song name, no search
   const raw = $("reportQ").value.trim(), seq = ++reportSeq;
   const show = (hits, more) => {
-    $("reportList").innerHTML = hits.map((it, i) => `<div class="ri" data-i="${i}">${verChipHtml(it)}${titleHtml(it)} <span class="hint">${esc(shortName(it.artist || ""))}${it.deleted ? " · 삭제됨" : ""}${it.api ? " · VocaDB" : ""}</span></div>`).join("")
+    $("reportList").innerHTML = hits.map((it, i) => `<div class="ri" data-i="${i}">${verChipHtml(it)}${titleHtml(it)} <span class="hint">${esc(shortName(it.artist || ""))}${it.api ? " · VocaDB" : ""}</span></div>`).join("")
       + (more ? '<div class="hint">우리 DB 에서 찾는 중…</div>' : "") || (raw ? '<div class="hint">맞는 곡이 없습니다</div>' : "");
     $("reportList").onclick = e => { const r = e.target.closest(".ri[data-i]"); if (!r) return; $("reportQ").value = ""; setReportSong(LOCAL.remember(hits[+r.dataset.i])); };
   };
@@ -172,8 +172,6 @@ $("reportSend").onclick = async () => {
   if (!$("reportKind").value) return;
   const it = reportReq() ? null : reportIt, req = reportReq() ? $("reportQ").value.trim() : "";
   if (!it && !req && !reportIdea()) return;
-  // user request: reporting a deleted song is allowed, but ask first
-  if (it && it.deleted && !await uiConfirm("해당 곡은 삭제됐습니다. 신고하시겠습니까?", "예")) return;
   const playing = it && SHELL.now && keyOf(SHELL.now) === keyOf(it);
   reportBusy = true; sendingBtn($("reportSend"), true); $("reportCancel").disabled = true;
   const done = () => { reportBusy = false; sendingBtn($("reportSend"), false); $("reportCancel").disabled = false; };

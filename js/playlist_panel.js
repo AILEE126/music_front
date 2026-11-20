@@ -285,7 +285,6 @@ window.addEventListener("resize", () => renderRows(true));
 function badgesHtml(it) {
   // two lines (user request 2026-11-18): lyrics state on top, sync state (+ %) under it
   const bs = [], ss = [], vdbLyr = (it.flags || []).includes("VocaDB 가사 있음");
-  if (it.deleted) bs.push('<span class="b err" title="원곡 영상이 삭제되어 재생할 수 없음">삭제됨</span>');
   if (it.site === "stream" && it.api) bs.push('<span class="b src" title="VocaDB 에서 찾은 곡 — 가사는 VocaDB 가사 (있으면)">voca</span>');
   else if (it.site === "local") { if (!it.lyrics) bs.push('<span class="b warn" title="같은 이름의 가사·싱크 json 이 없음">가사X</span>'); }
   else if (it.lyrics === "namu") bs.push('<span class="b src" title="나무위키에서 받은 가사">namu</span>');
@@ -329,7 +328,6 @@ $("btnFindCur").onclick = () => {
 $("list").addEventListener("click", e => {
   const el = e.target.closest(".item"); if (!el || guestPl) return;  // 손님: 방장 재생목록은 보기만
   const i = +el.dataset.i;
-  if (el.classList.contains("gone")) return;  // deleted song: can't be picked
   play(view[i], true, ONLINE ? "" : "pick");  // playlist song: ⏭ goes on from it
 });
 /* drag a playlist row to reorder (user request 2026-11-14: the playlist moved to the side panel) */
