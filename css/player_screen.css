@@ -742,14 +742,15 @@ body.m .acard .cslist:has(.songs.two){width:min(330px,calc(100vw - 90px))}
 .acard .csong .v{font-size:12px;color:var(--muted)}
 .acard .csong .voc{color:var(--vc)}
 html[data-theme=light] .acard .csong .voc{color:color-mix(in srgb,var(--vc) 62%,#000)}
-body.simple .acard .csong .v{filter:saturate(.6)}
 .acard .csong .tsub{margin-left:6px;color:var(--muted);font-size:12px}
 .acard{position:fixed;z-index:1001;display:flex;flex-direction:column;width:max-content;max-width:min(420px,calc(100vw - 8px));max-height:min(560px,85vh);overflow:hidden;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.5);font-size:13px;line-height:1.5;white-space:normal}
 .acard .ctop{display:flex;gap:10px;align-items:flex-start;padding:10px;min-height:0;overflow:auto;overscroll-behavior:contain}
 /* footer bar: a click on the name searches (user request 2026-11-22: stand out) */
 .acard .chint{flex:none;display:flex;align-items:center;justify-content:center;gap:6px;padding:7px 12px;background:var(--prod);color:var(--card);font-weight:700;font-size:12.5px;letter-spacing:.01em}
 .acard .chint svg{width:14px;height:14px;flex:none}
-body.simple .acard .chint{filter:saturate(.6)}
+/* 간단 (user request 2026-11-22): the card like the rest — no song thumbnails, colors lowered */
+body.simple .acard{filter:saturate(.6)}
+body.simple .acard .csong .thumb{display:none}
 .acard .pic{width:42px;height:42px;object-fit:cover;border-radius:6px;flex:none;background:var(--chip)}
 .acard .pic.full{width:96px;height:auto;max-height:440px;object-fit:contain;border-radius:0;background:none}
 /* a wide voicebank picture (MEIKO lies across) would be tiny in the 96px column — above the info, card-wide (2026-11-22) */
