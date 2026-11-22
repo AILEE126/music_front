@@ -575,11 +575,9 @@ html[data-theme=light] :is(.fcat.own,.fdd-opt.own){--own:#7c3aed}
 .fchip:has(.slist) .k{line-height:1.5}
 .fchip button,.fgroup .gx,.fgroup .gh{cursor:pointer}
 /* 기본 필터 chip · dragging conditions between groups (user request 2026-11-17) */
-.fchip.fdef{gap:4px;padding:1px 6px 1px 7px;background:var(--accent);color:var(--accent-text);box-shadow:none;font-weight:700;cursor:pointer}
+.fchip.fdef{gap:4px;padding:1px 6px 1px 7px;background:var(--accent);color:var(--accent-text);box-shadow:none;font-weight:700}
 .fchip.fdef .k{color:inherit;font-size:11px;margin:0}
 .fchip.fdef svg{flex:none;width:12px;height:12px}
-.fchip.fdef.open svg:last-child{transform:rotate(180deg)}
-.fchip.indef{background:var(--accent-soft);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 35%,transparent)}
 .fchip[draggable="true"]{cursor:grab}
 .fchip.drag{opacity:.4}
 .fgroup.dropto{outline:2px dashed var(--accent);outline-offset:1px}

@@ -3,7 +3,7 @@
    (music_backend Server/ui/js/filter_manage_panel.js). 두 저장소에 같은 내용의 사본 (music_front js/ · Server/ui/js) — 둘 다 바꿈.
    화면마다 다른 것(카테고리 값이 어디서 오는지 · 바뀐 뒤 할 일 · 이름 붙이기)만 makeFilterEditor(H) 의 H 로 받음.
 
-   필터 = 그룹 [{x: 제외 그룹, m: 그룹으로 남김, d: 원곡만 칩 펼침, c: [{k: 종류, v: 값 | [값, …]}]}] — 그룹 안 조건은 모두 맞아야(교집합),
+   필터 = 그룹 [{x: 제외 그룹, m: 그룹으로 남김, c: [{k: 종류, v: 값 | [값, …]}]}] — 그룹 안 조건은 모두 맞아야(교집합),
    포함 그룹끼리는 하나라도 맞으면 보임(합집합), 제외 그룹의 조건에 모두 맞는 곡은 빠짐. cur: 새 조건이 들어갈 그룹.
    곡 종류는 그룹마다 꼭 하나 (user request 2026-11-14) · 새 그룹은 원곡만 조건(F_ORIG_DEF)으로 시작.
    필터에는 정렬 · 몇 번째부터 · 몇 곡도 같이 들어감 (user request 2026-11-22): {groups, sort, from, n} — 예전에 저장한 것은 그룹만 (배열).
@@ -41,7 +41,7 @@ function filterRange(x) {
   if (!l) return "";
   return `${l} ${f.n > 0 ? `${f.from.toLocaleString()} - ${(f.from + f.n).toLocaleString()}번` : f.from > 0 ? `${f.from.toLocaleString()}번부터` : "전체"}`;
 }
-const F_HELP = "• 조건은 선택된 그룹(밝은 상자)에 들어갑니다&#10;• 한 그룹 안 조건은 모두 맞아야 보입니다 (그리고)&#10;• 그룹끼리는 하나라도 맞으면 보입니다 (또는)&#10;• 빨간 − 그룹에 맞는 곡은 빠집니다&#10;• 그룹을 누르면 선택, 동그라미(＋/−)를 누르면 포함↔제외&#10;• 조건을 끌어 다른 그룹에 놓으면 그 그룹으로 옮겨집니다&#10;• '원곡만' 칩을 누르면 펼치기·접기";
+const F_HELP = "• 조건은 선택된 그룹(밝은 상자)에 들어갑니다&#10;• 한 그룹 안 조건은 모두 맞아야 보입니다 (그리고)&#10;• 그룹끼리는 하나라도 맞으면 보입니다 (또는)&#10;• 빨간 − 그룹에 맞는 곡은 빠집니다&#10;• 그룹을 누르면 선택, 동그라미(＋/−)를 누르면 포함↔제외&#10;• 조건을 끌어 다른 그룹에 놓으면 그 그룹으로 옮겨집니다&#10;• '원곡만'은 원곡만 스위치로만 넣고 뺍니다";
 const F_DEF_SVG = '<svg class="fdi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>';
 
 /* 펼친 목록을 칸 바로 아래에. 화면을 줄여 두면(--ui-zoom) 잰 위치와 style 의 px 단위가 달라 그 비율로 나눔 */
@@ -95,7 +95,8 @@ function makeFilterEditor(H) {
   };
   E.changed = keep => { E.ensure(); E.render(); if (H.onChange) H.onChange(keep); };
   /* 원곡만 접기 (user request 2026-11-17): a group holding every 원곡만 condition shows them as one '원곡만' chip (with the
-     starting 곡 종류 when it is there too); clicking it unfolds / folds (g.d). → their indices in g.c, or null */
+     starting 곡 종류 when it is there too). It never unfolds (user request 2026-11-22: the unfolded conditions looked like the
+     removed 기본 필터) and is only a label — no ×, no drag: 원곡만 goes in / out with the switch only. → their indices in g.c, or null */
   E.defIdx = g => {
     const idx = bs => {
       const out = [];
@@ -129,7 +130,6 @@ function makeFilterEditor(H) {
       if (t) t.v = c.v;
       else if (!dst.c.some(x => x.k === c.k && same(x.v, c.v))) dst.c.push(c);
     }
-    if (ci < 0) dst.d = src.d;
     E.groups.forEach(g => { g.m = true; });
     return true;
   }
@@ -204,8 +204,7 @@ function makeFilterEditor(H) {
       return `<div class="fgroup${g.x ? " exc" : ""}${i === E.cur ? " cur" : ""}" data-g="${i}" title="${i === E.cur ? "새 조건이 이 그룹에 들어감" : "누르면 이 그룹 선택"}">`
         + `<button class="gh" title="${g.x ? "제외 그룹 — 누르면 포함으로" : "포함 그룹 — 누르면 제외로"}">${g.x ? "−" : "＋"}</button>`
         + cs.filter(c => c.k === "type" && !isDef(c)).map(c => chipHtml(g, c, "", ed(i), true)).join("")
-        + (di ? `<span class="fchip fdef${g.d ? " open" : ""}" draggable="true" data-def="1" title="${defTitle()}&#10;누르면 ${g.d ? "접기" : "펼치기"} · 끌어서 다른 그룹으로 (곡 종류는 그대로)">${F_DEF_SVG}<span class="k">원곡만</span>${DD_CHEV}</span>`
-          + (g.d ? cs.filter(isDef).map(c => chipHtml(g, c, " indef", ed(i), true)).join("") : "") : "")
+        + (di ? `<span class="fchip fdef" data-def="1" title="${defTitle()}&#10;넣고 빼기는 아래 원곡만 스위치로">${F_DEF_SVG}<span class="k">원곡만</span></span>` : "")
         + cs.filter(c => c.k !== "type" && !isDef(c)).map(c => chipHtml(g, c, "", ed(i), true)).join("")
         + (E.real(g, i) ? "" : '<span class="empty">조건을 고르세요</span>')
         + `<button class="gx" title="그룹 지우기">✕</button></div>`;
@@ -450,7 +449,7 @@ function makeFilterEditor(H) {
   H.chips.addEventListener("click", e => {
     const gEl = e.target.closest(".fgroup"); if (!gEl || gEl.dataset.g == null) return;
     const gi = +gEl.dataset.g, chip = e.target.closest(".fchip");
-    if (chip && chip.dataset.def) { E.groups[gi].d = !E.groups[gi].d; return E.render(); }  // fold only — the filter is the same
+    if (chip && chip.dataset.def) return;  // a label only — the 원곡만 switch puts it in / takes it out
     if (e.target.closest(".gx")) { E.groups.splice(gi, 1); if (E.cur >= gi) E.cur = Math.max(0, E.cur - 1); }
     else if (chip && e.target.closest("button")) E.groups[gi].c.splice(+chip.dataset.c, 1);
     else if (chip) { e._fdd = true; if (dd && dd.akey === `chip:${gi}:${chip.dataset.c}`) return closeDD(); return editChip(gi, +chip.dataset.c); }
@@ -488,17 +487,15 @@ function makeFilterEditor(H) {
   }
 
   /* ---------- 읽기만 하는 필터 표시 (재생목록의 필터 · 같이듣기 · 음원 관리의 OPEN CHANNEL · 사용자 저장 필터) ----------
-     raw: every condition as it is · else the 원곡만 conditions under one '원곡만' chip — open: unfolded (a click on it folds,
-     the screen's own handler), else folded with the conditions in its title */
-  E.roHtml = (x, {raw = false, open = false} = {}) => {
+     raw: every condition as it is · else the 원곡만 conditions under one '원곡만' chip (the conditions in its title) */
+  E.roHtml = (x, {raw = false} = {}) => {
     const gs = filterOf(x).groups, range = filterRange(x);
     const box = g => {
       const cs = g.c.filter(known), ds = new Set(raw ? [] : E.defIdx(g) || []), isDef = c => ds.has(g.c.indexOf(c));
       const one = (c, cls = "") => `<span class="fchip${cls}"><span class="k">${esc(H.chipKind(c))}</span>${E.chipVal(c)}</span>`;
       return `<div class="fgroup${g.x ? " exc" : ""}"><span class="gh">${g.x ? "−" : "＋"}</span>`
         + cs.filter(c => c.k === "type" && !isDef(c)).map(c => one(c)).join("")
-        + (!ds.size ? "" : open ? `<span class="fchip fdef open" data-rodef="1" title="누르면 접기·펼치기">${F_DEF_SVG}<span class="k">원곡만</span>${DD_CHEV}</span>` + cs.filter(isDef).map(c => one(c, " indef")).join("")
-          : `<span class="fchip fdef" title="${defTitle()}">${F_DEF_SVG}<span class="k">원곡만</span></span>`)
+        + (ds.size ? `<span class="fchip fdef" title="${defTitle()}">${F_DEF_SVG}<span class="k">원곡만</span></span>` : "")
         + cs.filter(c => c.k !== "type" && !isDef(c)).map(c => one(c)).join("") + "</div>";
     };
     const live = gs.filter(g => g.c && g.c.length);
