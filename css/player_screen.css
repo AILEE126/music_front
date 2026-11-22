@@ -763,7 +763,7 @@ body.simple .acard .csong .thumb{display:none}
 /* tap cards (phones): picture · info · button stay, only the song list scrolls when the card is cut off (user request 2026-11-23) */
 /* tap cards (phones) are a popup: centered, fixed place and size (almost the whole screen), the screen dimmed behind (user request 2026-11-23) */
 .acard.tap{inset:0!important;margin:auto;width:min(560px,calc(100% - 20px));height:80%;max-width:none;max-height:none;box-shadow:0 0 0 100vmax rgba(0,0,0,.5),0 8px 24px rgba(0,0,0,.5)}
-.acard.tap:has(.songs.two){max-width:none}  /* the wide-list limit shrank the popup once the songs came in */
+.acard.tap:has(.songs.two),.acard.tap:has(.scard){max-width:none}  /* the wide-list / song-card limits shrank the popup once the songs came in */
 /* phones (user 2026-11-23, producers too): the top third = picture (left third) + info (the rest), the songs under them,
    the button last */
 .acard.tap .ctop{flex:1 1 0;min-height:0;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);grid-template-rows:minmax(0,1fr) minmax(0,2fr) auto;align-items:stretch;gap:8px 12px}
@@ -782,6 +782,16 @@ body.simple .acard .csong .thumb{display:none}
 .acard .desc{white-space:pre-line}
 .acard .links{display:flex;flex-wrap:wrap;gap:4px}
 .acard .links a{font-size:12px;padding:1px 6px;border-radius:4px;box-shadow:inset 0 0 0 1px var(--line);text-decoration:none}
+.acard .scard{gap:12px}  /* 원곡 ↗ card: one song, like the now-playing header (user request 2026-11-23) */
+.acard .scard .spic{width:160px;height:90px;object-fit:cover;border-radius:6px;flex:none;background:var(--chip);display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--muted)}
+.acard:has(.scard){max-width:min(540px,calc(100vw - 8px))}
+.acard .scard .body{max-width:340px}
+.acard .scard .st b{font-size:17px}
+.acard .scard .st .tsub{font-size:12px}
+.acard .scard .stags{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+.acard .scard .b.kara{--bc:var(--muted);color:var(--bc);border:1px solid var(--bc);background:none}
+body.m .acard .scard{flex-direction:column}
+body.simple .acard .scard .spic{display:none}
 .vpop .h{flex:1 0 100%;font-size:11px;color:var(--muted)}
 .vpop .b.vocal{color:var(--vc);background:color-mix(in srgb,var(--vc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--vc) 55%,transparent)}
 .songmeta .fn{margin-top:4px;font-size:11.5px;color:var(--muted);line-height:1.5}

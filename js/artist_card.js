@@ -2,7 +2,7 @@
    producer · vocal names of the artist line (producers colored, vocals in their vocal chip's color) and the 프로듀서 · 보컬 ·
    태그 칩 that have a VocaDB entry.
    Hover shows the card — producer · vocal: picture, other names (e.g. 뭐든지모에화 went by many names) and their top 10
-   songs in our DB by popularity, numbered, 1–10 left · 11–20 right (to look at only); tag: description, links; at its foot the hint that a click searches.
+   songs in our DB by popularity, numbered, 1–10 left · 11–20 right (to look at only); tag: description, links; 원곡 칩 (lyrics_view.js): its other versions like the producer's songs; at its foot the hint that a click searches.
    A click on the chip opens 곡 검색 filtered to it. Phones (no hover): a tap opens the card with '검색에서 보기' at its top.
    Read from export/db/artist|tag/<id // 2000>.json.gz (수집 › 아티스트 정보 전체 · 태그 전체 — user request: keep them in
    our tables, producers and voicebanks in one table); one not stored yet is asked from VocaDB (once per visit).
@@ -72,11 +72,15 @@ const cardGet = (k, id) => { const key = `${k}:${id}`;
   if (!cardCache.has(key)) cardCache.set(key, cardFetch(k, id).catch(e => { cardCache.delete(key); throw e; }));
   return cardCache.get(key); };
 /* 곡 검색 fresh: its 원곡만 group + this name under its filter key (프로듀서 · 보컬 · 태그), every match by popularity */
-function cardSearch(fk, name) {
+/* name: one name or several (any of them) · q: search text */
+function cardSearch(fk, name, q = "") {
   cardClose();
   if ($("searchDlg").open) $("searchDlg").close();
   openSearch();
-  FE.set({groups: [{x: false, c: [...F_ORIG_DEF[0].c, {k: fk, v: [name]}]}], sort: "RatingScore", from: 0, n: 0});
+  if (q) $("sQ").value = q;
+  // 원곡 칩: its 원제 as the search text, 모든곡 (covers · remixes too) (user request 2026-11-23)
+  if (fk === "orig") { FE.setOrig(false, true); FE.render(); return; }
+  if ([].concat(name).length) FE.set({groups: [{x: false, c: [...F_ORIG_DEF[0].c, {k: fk, v: [].concat(name)}]}], sort: "RatingScore", from: 0, n: 0});
   FE.render();
 }
 
@@ -138,6 +142,26 @@ function cardHtml(x, el, withSearch) {
     ${withSearch && ONLINE ? CARD_GO : ""}</div></div>${!withSearch && ONLINE ? CARD_HINT : ""}`;
 }
 
+/* 원곡 ↗ card (user request 2026-11-23): the main original alone, like the now-playing header — thumbnail, title + other
+   names, producer feat. vocals, then 공식 여부 · 곡 종류 · 노래방, 투고일 · VocaDB 점수 · 파생 버전 수 */
+function songCardHtml(it, withSearch) {
+  const tk = it.type ? VDB_TYPE_KO[it.type] || it.type : "", sub = titleSubHtml(it), nv = origVersions(it).length;
+  const kara = (it.tags || []).filter(t => KARAOKE_TAG[t])
+    .map(b => `<span class="b kara" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b] || "#888"}">${esc(KARAOKE_TAG[b])}</span>`);
+  const names = (s, fk) => s.split(", ").map(n => fk === "singer" ? `<span class="prod voc" style="--vc:${esc(vocalPair(n)[1])}">${esc(shortName(n))}</span>`
+    : `<span class="prod">${esc(shortName(n))}</span>`).join(", ");
+  const facts = [it.date && `투고 ${esc(it.date)}`, it.rating && `VocaDB 점수 ${(+it.rating).toLocaleString()}`, nv && `파생 버전 ${nv.toLocaleString()}개`].filter(Boolean);
+  return `<div class="ctop scard">${coverHtml(it, "spic")}<div class="body"><div class="cinfo">
+    <div class="st"><b>${esc(titleOf(it))}</b>${sub ? `<span class="tsub">${sub}</span>` : ""}</div>
+    <div class="sa">${artistLineHtml(it, undefined, names)}</div>
+    <div class="stags">${verChipHtml(it)}${tk ? tagChipHtml("type", tk, tk, "", "곡 종류") : ""}${kara.join("")}</div>
+    ${facts.length ? `<div class="row k">${facts.join(" · ")}</div>` : ""}</div>
+    ${withSearch ? CARD_GO : ""}</div></div>${withSearch ? "" : CARD_HINT.replace("해당 정보를", "원제 · 프로듀서로")}`;
+}
+/* a card target's click: 원곡 ↗ → 원곡만 + 원제 + 프로듀서 (lyrics_view.js origSearch) · 원곡 칩 → 원제, 모든곡 · else that name */
+const cardGo = el => el.dataset.ck === "s" ? origSearch(VDB.itemById(el.dataset.cid))
+  : cardSearch(el.dataset.fk, el.dataset.n, el.dataset.fk === "orig" ? el.dataset.n : "");
+
 /* tap cards: the list shows as many songs as the phone's popup holds, no scroll (user request 2026-11-23 — the count follows
    the screen size): drawn whole, then songs dropped from the end until it fits */
 function cardFit(p, its, what) {
@@ -167,6 +191,20 @@ async function cardOpen(el, withSearch = false) {
   p.className = withSearch ? "acard tap" : "acard"; p._from = el;
   cardSet(p, `<div class="ctop"><div class="body"><div class="nm">${esc(el.dataset.n)}</div><div class="row k">불러오는 중…</div></div></div>`);
   document.body.appendChild(p); cardPlace(p, el);
+  if (el.dataset.ck === "s") {
+    const it = VDB.itemById(el.dataset.cid);
+    if (it) { cardSet(p, songCardHtml(it, withSearch)); cardPlace(p, el);
+      p.querySelector("img.spic")?.addEventListener("load", () => { if (cardEl === p) cardPlace(p, el); }); }
+    return;
+  }
+  if (el.dataset.ck === "o") {  // 원곡 칩: its other versions in our DB, most popular first (lyrics_view.js origVersions)
+    const vs = origVersions(VDB.itemById(el.dataset.cid)).sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    cardSet(p, `<div class="ctop"><div class="body">
+      <div class="cinfo"><div class="nm">${esc(el.dataset.n)} <small class="ty">원곡</small></div></div><div class="cslist"></div>${withSearch ? CARD_GO : ""}</div></div>${withSearch ? "" : CARD_HINT}`);
+    cardFit(p, {n: vs.length, top: vs.slice(0, CARD_SONGS)}, "파생 버전");
+    cardPlace(p, el);
+    return;
+  }
   let html;
   try { html = cardHtml(await cardGet(el.dataset.ck, +el.dataset.cid), el, withSearch); }
   catch (e) { html = `<div class="ctop"><div class="body"><div class="nm">${esc(el.dataset.n)}</div><div class="row k">${esc(e.message)}</div></div></div>`; }
@@ -203,10 +241,10 @@ document.addEventListener("mouseover", e => {
 document.addEventListener("click", e => {
   if (e.target.closest(".acard [data-cclose]")) { e.stopPropagation(); cardClose(); return; }
   const s = e.target.closest(".acard [data-csearch]");
-  if (s) { e.stopPropagation(); const el = cardEl._from; cardSearch(el.dataset.fk, el.dataset.n); return; }
+  if (s) { e.stopPropagation(); cardGo(cardEl._from); return; }
   const el = e.target.closest(".icard[data-cid]");
   if (el && cardTouch()) { e.stopPropagation(); cardEl && cardEl._from === el ? cardClose() : cardOpen(el, true); return; }
-  if (el && !cardTouch() && ONLINE) { e.stopPropagation(); cardSearch(el.dataset.fk, el.dataset.n); return; }
+  if (el && !cardTouch() && ONLINE) { e.stopPropagation(); cardGo(el); return; }
   if (cardEl && !e.target.closest(".acard")) cardClose();
 }, true);
 // a scroll that moves the name closes its card — not other scrolls (user report 2026-11-22: the lyrics scroll at every line)

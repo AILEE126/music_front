@@ -135,12 +135,15 @@ addEventListener("mousedown", e => { if (!e.target.closest(".vpop, [data-vmore],
 addEventListener("keydown", e => { if (e.key === "Escape") vocalPopClose(); });
 addEventListener("scroll", e => { if (!(e.target.closest && e.target.closest(".vpop"))) vocalPopClose(); }, true);
 addEventListener("resize", vocalPopClose);
-/* 원곡 ↗ (user request 2026-11-21): a chip after 싱크 표시 that plays the song's main original — only on songs that are not it.
+/* 원곡 ↗ (user request 2026-11-21): a chip after 싱크 표시 for the song's main original — only on songs that are not it.
+   A click searches it (2026-11-23: 원곡만 + its 원제 + its producers as the filter; LOCAL plays it).
    Main original = of the same song (origId up to the top, then every version under the top — sameSong) the versions by the
    top song's producer, the long one with the most VocaDB rating (실패작 소녀: the Niconico upload, not the album 'Original'
    VocaDB puts on top). Other people's covers / remixes never count as it. */
 let origKids = null;  // origId → versions made from it, over every song (made once when the whole list is in)
-function mainOrig(it) {
+const mainOrig = it => { const f = origFamily(it); return f && f.best !== it ? f.best : null; };
+/* the song's family: {best: its main original, fam: every version of the same song (it too)} */
+function origFamily(it) {
   if (!it || !it.vocadb) return null;
   let top = it;
   for (let o = it.origId, seen = new Set([String(it.vocadb)]), i = 0; o && i < 20 && !seen.has(String(o)); i++) {
@@ -160,13 +163,20 @@ function mainOrig(it) {
   if (!seen.has(String(it.vocadb))) fam.push(it);
   const tp = peopleSet(top.composer), own = x => x === top || [...peopleSet(x.composer)].some(p => tp.has(p));
   const best = fam.filter(own).sort((a, b) => (isShortVer(a) ? 1 : 0) - (isShortVer(b) ? 1 : 0) || (b.rating || 0) - (a.rating || 0))[0];
-  return best && best !== it ? best : null;
+  return {best: best || it, fam};
 }
+/* 원곡 칩 (user request 2026-11-23): on the main original itself, when other versions of it are in our DB — hover shows
+   them like the producer card (artist_card.js, look only), a click searches its 원제 in 곡 검색 with 모든곡 */
+const origVersions = it => { const f = origFamily(it); return f && f.best === it ? f.fam.filter(x => x !== it) : []; };
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-orig]"); if (!b) return;
   e.stopPropagation();
-  play(VDB.itemById(b.dataset.orig));
+  const o = VDB.itemById(b.dataset.orig); if (o) ONLINE ? origSearch(o) : play(o);  // LOCAL (no 곡 검색): play it
 });
+/* 곡 검색: 원곡만 + the original's 원제 + its producers as the filter (user request 2026-11-23 — was: play it) */
+function origSearch(o) {
+  if (o) cardSearch("composer", String(o.composer || "").split(", ").filter(Boolean), o.def || o.title || "");
+}
 /* 곡 태그 칩 묶음 순서 when filter.json has none (= server filter_settings.CHIP_GROUPS) */
 const CHIP_ORDER = ["producer", "vocal", "support", "kara", "gone", "list", "tag", "file"];
 function renderMeta(it) {
@@ -205,7 +215,12 @@ function renderMeta(it) {
     + (notes.length ? `<div class="fn" title="노래방 수록 목록의 각주">${notes.map(n => `<div>※ ${esc(n)}</div>`).join("")}</div>` : "");
   box.querySelector(".cats").prepend(sync);
   const o = mainOrig(it);
-  if (o) sync.insertAdjacentHTML("afterend", `<button type="button" class="b file orig" data-orig="${esc(o.vocadb)}" title="${esc(`원곡: ${titleOf(o)}${o.date ? ` (${o.date})` : ""} — 누르면 재생`)}">원곡 ↗</button>`);
+  // SERVER: hover = the original's own card (artist_card.js songCardHtml) · LOCAL: a tooltip, a click plays it
+  if (o) sync.insertAdjacentHTML("afterend", ONLINE
+    ? `<button type="button" class="b file orig icard" data-orig="${esc(o.vocadb)}" data-cid="${esc(o.vocadb)}" data-ck="s" data-n="${esc(titleOf(o))}">원곡 ↗</button>`
+    : `<button type="button" class="b file orig" data-orig="${esc(o.vocadb)}" title="${esc(`원곡: ${titleOf(o)}${o.date ? ` (${o.date})` : ""} — 누르면 재생`)}">원곡 ↗</button>`);
+  else if (ONLINE && origVersions(it).length)
+    sync.insertAdjacentHTML("afterend", `<button type="button" class="b file orig icard" data-cid="${esc(it.vocadb)}" data-ck="o" data-fk="orig" data-n="${esc(it.def || it.title || "")}">원곡</button>`);
 }
 async function loadSong() {
   const it = cur; if (!it) return;
