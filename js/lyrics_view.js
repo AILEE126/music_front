@@ -281,7 +281,7 @@ function lyricsSources(s) {
   // 가사·싱크 나눔 (user request 2026-11-18): another version of the same song (length within ±5 s) lent its lyrics / sync —
   // said on one small line under the sources, so the two lines take little room
   const sh = s.shared;
-  const shared = sh ? `<div class="lshare">${sh.original ? "원곡" : "같은 곡"} [${esc(sh.title)}] 에서 ${sh.sync && s.sync && !s.sync_pending ? "가사와 싱크를" : "가사를"} 공유받습니다.</div>` : "";
+  const shared = sh ? `<div class="lshare">${sh.original ? "원곡" : "같은 곡"} [${esc(sh.title)}] 에서 ${s.sync && (sh.sync && !s.sync_pending || s.sync_pending && s.sync_pending.from) ? "가사와 싱크를" : "가사를"} 공유받습니다.</div>` : "";
   return `<div class="lsrc"><span><b>원문</b> ${row("o")}</span><span><b>발음</b> ${row("r")}</span><span><b>번역</b> ${row("t")}</span>${shared}</div>`;
 }
 function renderLyrics() {

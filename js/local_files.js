@@ -373,13 +373,21 @@ const LOCAL = {
     if (!d) return {site, name, title: it.title, artist: it.artist, sync_fail: null, lyrics_src: "", lyrics_kind: "", lyrics_file: "",
       raw: "", notes: [], groups: [], sync_state: "", sync: null, link: null, live: false, load_err: vErr};
     if (it.vocadb && d.groups.length) {
-      const pj = await this.readJson(this.pendingPath(it), null);
+      let pj = await this.readJson(this.pendingPath(it), null), from = null;
+      if (!pj && (pj = await this.donorPending(d))) from = d.shared.id;
       if (pj && Array.isArray(pj.times) && pj.times.length === d.groups.length && pj.lyrics_hash === await syncHash(d)) {
         d.sync = pj; d.sync_state = "ok";
-        d.sync_pending = pj.pending || {};  // 고친 싱크가 음원 관리의 확인(반영)을 기다리는 중
+        d.sync_pending = {...(pj.pending || {}), ...(from ? {from} : {})};  // 고친 싱크가 음원 관리의 확인(반영)을 기다리는 중
       }
     }
     return d;
+  },
+  /* 가사·싱크 나눔 + 확인 대기 (user request 2026-11-23): a version that shares the donor's lyrics and has no sync of its own
+     also plays the donor's waiting sync edit, not only its confirmed sync */
+  async donorPending(d) {
+    const sh = d && d.shared;
+    if (!sh || !sh.id || (d.sync && !sh.sync)) return null;  // a sync of its own wins
+    return this.readJson(`${this.base}sync_pending/vocadb/${sh.id}.json`, null);
   },
 
   /* 자동 가사 hangul reading (user 2026-11-16: the readings were made but romaji still showed) — export/db/reading/<id // 1000>.json.gz
@@ -452,6 +460,8 @@ const LOCAL = {
       return {sj: v && Array.isArray(v.times) ? v : null, pend: null};
     }
     const d = await this.readJson(`${this.out}/db/lyrics/${it.vocadb}.json`, null);
+    const dp = await this.donorPending(d);  // the donor's waiting edit is what this version plays — edits start from it
+    if (dp && Array.isArray(dp.times)) { const s = {...dp}; delete s.pending; return {sj: s, pend: null}; }
     return {sj: d && d.sync ? {...d.sync} : null, pend: null};
   },
   /* 관리자 토큰 (user request 2026-11-20): no 확인 대기, no report, no server needed — whatever the song's state (also with
@@ -461,15 +471,15 @@ const LOCAL = {
      lets the server put the sync into its table when it runs and mark the song's 싱크 수정 reports up to then handled
      (error_reports.apply_player_requests; also at server start, before the export that would write the old sync back). */
   async savePending(it, sj, what) {
-    const path = this.pendingPath(it);
-    const admin = typeof isAdmin === "function" && isAdmin();
+    const path = this.pendingPath(it), lpath = `${this.out}/db/lyrics/${it.vocadb}.json`;
     await this.locked(path, async () => {
       const old = await this.readJson(path, null);
-      if (admin) {
+      const doc = it.lyrics ? await this.readJson(lpath, null) : null;
+      // 가사·싱크 나눔 (user request 2026-11-23): an admin applies a sync only on the donor (original) — on a version that
+      // shares its lyrics the edit waits for 확인 like anyone's
+      if (typeof isAdmin === "function" && isAdmin() && !(doc && doc.shared)) {
         const who = this.gh ? await this.ghWho() : String(store.get("reportWho", "") || "").trim();
         const s = {...sj}; delete s.pending; delete s.lyrics;
-        const lpath = `${this.out}/db/lyrics/${it.vocadb}.json`;
-        const doc = it.lyrics ? await this.readJson(lpath, null) : null;
         if (doc) {
           doc.sync = s; doc.sync_state = "ok";
           await this.writeText(lpath, JSON.stringify(doc), who);  // the server rewrites it in its own form once it applies the request

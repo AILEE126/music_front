@@ -153,12 +153,14 @@ async function admApplySync() {
   await admEach(its, async it => {
     const pj = await LOCAL.readJson(LOCAL.pendingPath(it), null).catch(() => null);
     const rid = pj && pj.pending && pj.pending.report;
-    if (rid) { rids.push(String(rid)); songs.push({vocadb: String(it.vocadb), title: it.title || it.name || ""}); }
+    // a version sharing another's lyrics: applied only on the manage screen (user request 2026-11-23 — admins apply on the original)
+    const doc = rid && it.lyrics ? await LOCAL.readJson(`${LOCAL.out}/db/lyrics/${it.vocadb}.json`, null).catch(() => null) : null;
+    if (rid && !(doc && doc.shared)) { rids.push(String(rid)); songs.push({vocadb: String(it.vocadb), title: it.title || it.name || ""}); }
   });
   const skip = ADM.sel.size - rids.length;
-  if (!rids.length) { uiAlert("고른 곡 중 싱크 수정이 반영을 기다리는 곡이 없습니다."); return; }
+  if (!rids.length) { uiAlert("고른 곡 중 싱크 수정이 반영을 기다리는 곡이 없습니다 (가사를 공유받는 곡은 원곡에서만 반영됩니다)."); return; }
   if (!await uiConfirm(`${rids.length.toLocaleString()}곡의 고친 싱크를 반영할까요?`
-    + (skip ? `\n(싱크 수정 대기가 없는 ${skip.toLocaleString()}곡은 빠집니다)` : "")
+    + (skip ? `\n(싱크 수정 대기가 없거나 가사를 공유받는 ${skip.toLocaleString()}곡은 빠집니다)` : "")
     + "\n\n서버가 다음에 데이터를 올릴 때 반영됩니다 — 그때까지도 모든 플레이어는 고친 싱크로 틉니다.", "반영")) return;
   try {
     const who = LOCAL.gh ? await LOCAL.ghWho() : String(store.get("reportWho", "") || "").trim();
