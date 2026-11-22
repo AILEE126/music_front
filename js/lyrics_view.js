@@ -59,12 +59,21 @@ async function showSong(it) {
 function showViews(it) {
   const date = it.date ? `투고 ${it.date}` : "";
   $("nowDate").textContent = date; $("nowDate").title = "";
-  if (it.site !== "stream" || !/nicovideo\.jp|nico\.ms/.test(it.video || "")) return;
+  if (it.site !== "stream") return;
+  // no count → say why in its place (user request 2026-11-22): YouTube … can't give one, Niconico failed this time
+  const none = (msg, tip) => {
+    if (!cur || keyOf(cur) !== keyOf(it)) return;
+    $("nowDate").textContent = [date, msg].filter(Boolean).join(" · ");
+    $("nowDate").title = tip;
+  };
+  if (!/nicovideo\.jp|nico\.ms/.test(it.video || "")) return none("재생수를 가져올 수 없는 영상입니다", "재생수는 니코니코 원곡만 받을 수 있음");
+  const fail = () => none("재생수 가져오기에 실패했습니다", "니코니코 재생수를 이번에 받지 못함");
   api(`/api/stream/views?name=${encodeURIComponent(it.name)}`).then(r => {
-    if (!cur || keyOf(cur) !== keyOf(it) || r.views == null) return;
+    if (!cur || keyOf(cur) !== keyOf(it)) return;
+    if (r.views == null) return fail();
     $("nowDate").textContent = [date, `재생수 ${r.views.toLocaleString()}회`].filter(Boolean).join(" · ");
     $("nowDate").title = "니코니코 원곡 재생수 (지금 받은 값)";
-  }).catch(() => {});
+  }).catch(fail);
 }
 /* 곡 태그: 보컬(보컬 색) → 노래방(TJ·JOY만; 내려간 기기는 어느 기기든 취소선 칩 — user request 2026-11-15) → 내부 분류(한국·일본 목록) → 나무위키 분류(평범한 칩) · 아래에 노래방 목록 각주(작게) */
 const KARAOKE_TAG = {TJ: "TJ", JOYSOUND: "JOY"};
