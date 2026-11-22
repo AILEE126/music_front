@@ -13,7 +13,7 @@
    file at its commit on rawcdn.githack.com (text/html, live at once, no robots.txt); the card image is read from
    raw.githubusercontent.com (image/jpeg — githack refuses images), its name new per key so no stale cache. Pages still
    publishes the same page later. */
-const SHARE_V = 6;  // bump when the card drawing changes (every card is made again on its next share)
+const SHARE_V = 8;  // bump when the card drawing or its page changes (every card is made again on its next share)
 const SHARE = {cfg: null};
 async function shareCfg() {
   if (!SHARE.cfg) {
@@ -125,11 +125,12 @@ async function shareDraw(it, {blur = false, img, ink = "white"} = {}) {
   const grad = g.createLinearGradient(0, H * .25, 0, H);
   grad.addColorStop(0, `rgba(${sh},0)`); grad.addColorStop(.45, `rgba(${sh},.55)`); grad.addColorStop(1, `rgba(${sh},.9)`);
   g.fillStyle = grad; g.fillRect(0, 0, W, H);
-  // 아래에서부터 쌓음: 프로듀서 · 엔진 → 일본어 제목 → 제목 — 왼쪽 아래 구석에 바짝 (user request 2026-11-18: 처음 배치가 더 예쁨.
-  // X 가 왼쪽 아래에 덮는 제목 이름표에 아랫줄이 조금 가려지는 건 감수 — 위로 올린 배치는 사용자가 되돌림)
-  const E = 36;  // 글자의 왼쪽 · 아래 여백
+  // 아래에서부터 쌓음: 프로듀서 · 엔진 → 일본어 제목 → 제목 — 왼쪽 아래 구석 (user request 2026-11-18).
+  // User 2026-11-23: X always lays its title label over the bottom-left corner (it can't be hidden — a blank
+  // twitter:title falls back to og:title) → the text block sits above that label's band.
+  const E = 36, XB = 92;  // 글자의 왼쪽 여백 · 아래 여백 (X 이름표 자리)
   g.textBaseline = "alphabetic"; g.shadowColor = `rgba(${sh},.6)`; g.shadowBlur = 12;
-  let y = H - E;
+  let y = H - XB;
   const meta = [["프로듀서", t.producer], ["엔진", t.engine]].filter(([, v]) => v);
   g.font = `600 30px ${SHARE_FONT}`;
   let x = E;
@@ -277,7 +278,9 @@ async function openShare(it = cur) {
       st(ok ? "링크를 복사했습니다." : "복사하지 못했습니다.");
       if (ok) { b.textContent = "복사됨 ✓"; setTimeout(() => { if (!d.dead) b.textContent = "링크 복사"; }, 1500); }
     }
-    if (a === "x") window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(`${title} — 사이버노인정`)}&url=${encodeURIComponent(link)}`, "_blank", "noopener");
+    // user request 2026-11-23: reuse one X tab — a page can only reuse a tab it opened itself (named target), never the
+    // user's own X tab. No "noopener" (that always opens a new tab); the opener link is cut by hand instead.
+    if (a === "x") { const w = window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(title)}&url=${encodeURIComponent(link)}`, "csc_x"); if (w) { try { w.opener = null; } catch (e) {} w.focus(); } }
   });
   bc.addEventListener("change", () => { blur = bc.checked; make(); });  // the link follows the picked look: redraw + upload again
   // one run = (draw ∥ read the share repo) → preview → one commit → link; a newer run (blur · ink toggle) makes the older one stop quietly
@@ -290,7 +293,10 @@ async function openShare(it = cur) {
       // the card first, so the preview shows even when the share settings are missing (user report 2026-11-18: 미리보기 안 됨)
       const card = await shareDraw(it, {blur, img, ink});
       if (gone()) return;
-      img = card.img; title = card.text.title;
+      img = card.img;
+      // tweet text (user request 2026-11-23): 제목 — 프로듀서 feat. 가수들
+      const {producer: pr, engine: en} = card.text, by = [pr, en && `feat. ${en}`].filter(Boolean).join(" ");
+      title = by ? `${card.text.title} — ${by}` : card.text.title;
       bspin(false);
       d.querySelector(".shimg").innerHTML = `<img alt="" src="${URL.createObjectURL(card.blob)}">`;
       st(card.thumb ? "링크 만드는 중…" : "썸네일을 받지 못해 글자만 있는 카드입니다. 링크 만드는 중…");
