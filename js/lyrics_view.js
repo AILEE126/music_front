@@ -124,8 +124,40 @@ addEventListener("mousedown", e => { if (!e.target.closest(".vpop, [data-vmore],
 addEventListener("keydown", e => { if (e.key === "Escape") vocalPopClose(); });
 addEventListener("scroll", e => { if (!(e.target.closest && e.target.closest(".vpop"))) vocalPopClose(); }, true);
 addEventListener("resize", vocalPopClose);
+/* 원곡 ↗ (user request 2026-11-21): a chip after 싱크 표시 that plays the song's main original — only on songs that are not it.
+   Main original = of the same song (origId up to the top, then every version under the top — sameSong) the versions by the
+   top song's producer, the long one with the most VocaDB rating (실패작 소녀: the Niconico upload, not the album 'Original'
+   VocaDB puts on top). Other people's covers / remixes never count as it. */
+let origKids = null;  // origId → versions made from it, over every song (made once when the whole list is in)
+function mainOrig(it) {
+  if (!it || !it.vocadb) return null;
+  let top = it;
+  for (let o = it.origId, seen = new Set([String(it.vocadb)]), i = 0; o && i < 20 && !seen.has(String(o)); i++) {
+    seen.add(String(o));
+    const p = VDB.itemById(o); if (!p) break;
+    if (sameSong(it, p)) top = p;
+    o = p.origId;
+  }
+  if (!origKids && VDB.done) {
+    origKids = new Map();
+    for (const x of VDB.all()) if (x.origId) { const k = String(x.origId); (origKids.get(k) || origKids.set(k, []).get(k)).push(x); }
+  }
+  const fam = [top], seen = new Set([String(top.vocadb)]);
+  for (let i = 0; i < fam.length && fam.length < 5000; i++)
+    for (const x of (origKids && origKids.get(String(fam[i].vocadb))) || [])
+      if (!seen.has(String(x.vocadb)) && sameSong(x, top)) { seen.add(String(x.vocadb)); fam.push(x); }
+  if (!seen.has(String(it.vocadb))) fam.push(it);
+  const tp = peopleSet(top.composer), own = x => x === top || [...peopleSet(x.composer)].some(p => tp.has(p));
+  const best = fam.filter(own).sort((a, b) => (isShortVer(a) ? 1 : 0) - (isShortVer(b) ? 1 : 0) || (b.rating || 0) - (a.rating || 0))[0];
+  return best && best !== it ? best : null;
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-orig]"); if (!b) return;
+  e.stopPropagation();
+  play(VDB.itemById(b.dataset.orig));
+});
 /* 곡 태그 칩 묶음 순서 when filter.json has none (= server filter_settings.CHIP_GROUPS) */
-const CHIP_ORDER = ["vocal", "kara", "gone", "list", "tag", "file"];
+const CHIP_ORDER = ["producer", "vocal", "kara", "gone", "list", "tag", "file"];
 function renderMeta(it) {
   const tags = it.tags || [], notes = it.notes || [], box = $("songMeta");
   const kara = tags.filter(t => KARAOKE_TAG[t]).map(t => [KARAOKE_TAG[t], t]);
@@ -156,6 +188,8 @@ function renderMeta(it) {
   box.innerHTML = `<div class="cats">${chips.join("")}${open ? plain.join("") : ""}${more}</div>`
     + (notes.length ? `<div class="fn" title="노래방 수록 목록의 각주">${notes.map(n => `<div>※ ${esc(n)}</div>`).join("")}</div>` : "");
   box.querySelector(".cats").prepend(sync);
+  const o = mainOrig(it);
+  if (o) sync.insertAdjacentHTML("afterend", `<button type="button" class="b file orig" data-orig="${esc(o.vocadb)}" title="${esc(`원곡: ${titleOf(o)}${o.date ? ` (${o.date})` : ""} — 누르면 재생`)}">원곡 ↗</button>`);
 }
 async function loadSong() {
   const it = cur; if (!it) return;
