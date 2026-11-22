@@ -101,9 +101,10 @@ async function cardSongs(fk, name) {
   cardSongMemo.map.set(key, res);
   return res;
 }
-const cardSongsHtml = ({n, top}) => `<div class="row"><span class="k">곡 ${n.toLocaleString()}개 · 인기순${n > top.length ? ` 상위 ${top.length}곡` : ""}</span></div>`
+/* phones (tap cards): one column, as many as fit the popup — no scrolling (cardFit; user request 2026-11-23) */
+const cardSongsHtml = ({n, top}, what = "곡") => (top = top.slice(0, CARD_SONGS), `<div class="row"><span class="k">${what} ${n.toLocaleString()}개 · 인기순${n > top.length ? ` 상위 ${top.length}곡` : ""}</span></div>`
   + (top.length ? `<div class="songs${top.length > CARD_COL ? " two" : ""}">${[top.slice(0, CARD_COL), top.slice(CARD_COL)].filter(c => c.length)
-    .map((c, ci) => `<div class="scol">${c.map((it, i) => `<div class="csong"><span class="no">${ci * CARD_COL + i + 1}</span>${coverHtml(it, "thumb")}<div class="m"><div class="t">${titleHtml(it)}</div>${cardVocalsHtml(it)}</div></div>`).join("")}</div>`).join("")}</div>` : "");
+    .map((c, ci) => `<div class="scol">${c.map((it, i) => `<div class="csong"><span class="no">${ci * CARD_COL + i + 1}</span>${coverHtml(it, "thumb")}<div class="m"><div class="t">${titleHtml(it)}</div>${cardVocalsHtml(it)}</div></div>`).join("")}</div>`).join("")}</div>` : ""));
 /* second line of a song: its vocals, each in its vocal color (user request 2026-11-22), 4 at most + '+N' */
 function cardVocalsHtml(it) {
   const vs = vocalsOf(it);
@@ -117,6 +118,8 @@ const CARD_VOICE = new Set(["Vocaloid", "UTAU", "CeVIO", "SynthesizerV", "NEUTRI
   "ACEVirtualSinger", "AIVOICE", "OtherVoiceSynthesizer"]);
 const CARD_HINT = `<div class="chint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>클릭하면 해당 정보를 검색합니다</div>`;
 
+/* tap cards: '검색에서 보기' under the list, on the right (user request 2026-11-23) */
+const CARD_GO = `<button type="button" class="csearch" data-csearch>검색에서 보기</button>`;
 function cardHtml(x, el, withSearch) {
   const {ck, cid, n: shown} = el.dataset;
   const type = ck === "a" ? ART_TYPE_KO[x.t] ?? x.t : (typeof TAG_CAT_KO !== "undefined" && TAG_CAT_KO[x.t]) || x.t;
@@ -124,21 +127,35 @@ function cardHtml(x, el, withSearch) {
   const desc = String(x.d || "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_#>]/g, "").replace(/\n-{3,}\n/g, "\n").trim();
   const links = (x.l || []).filter(([, u]) => /^https?:/i.test(u));
   const host = u => { try { return new URL(u).hostname; } catch (e) { return u; } };
-  return `<div class="ctop">${x.p ? `<img class="pic${CARD_VOICE.has(x.t) ? " full" : ""}" src="${esc(x.p)}" alt="" referrerpolicy="no-referrer">` : ""}<div class="body">
-    ${withSearch && ONLINE ? `<button type="button" class="csearch" data-csearch>검색에서 보기</button>` : ""}
+  return `<div class="ctop${el.dataset.fk === "composer" ? " cprod" : ""}">${x.p ? `<img class="pic${CARD_VOICE.has(x.t) ? " full" : ""}" src="${esc(x.p)}" alt="" referrerpolicy="no-referrer">` : ""}<div class="body"><div class="cinfo">
     <div class="nm">${esc(x.n || shown)}${shown && shown !== x.n ? ` <small>${esc(shown)}</small>` : ""} <small class="ty">${esc(type || "")}</small></div>
     ${x.u ? `<div class="row"><span class="k">상위 태그</span>${esc(x.u)}</div>` : ""}
     ${other.length ? `<div class="row"><span class="k">다른 이름</span>${esc(other.join(", "))}</div>` : ""}
-    ${ck === "a" ? `<div class="cslist"><div class="row k">곡 목록 불러오는 중…</div></div>` : `
+    ${ck === "a" ? `</div><div class="cslist"><div class="row k">곡 목록 불러오는 중…</div></div>` : `
     ${desc ? `<div class="row desc">${esc(desc.length > 300 ? desc.slice(0, 300) + "…" : desc)}</div>` : ""}
     ${links.length ? `<div class="row links">${links.slice(0, 14).map(([t, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t || host(u))}</a>`).join("")}</div>` : ""}
-    <div class="row"><a href="https://vocadb.net/T/${cid}" target="_blank" rel="noopener">VocaDB 에서 보기</a></div>`}
-    </div></div>${!withSearch && ONLINE ? CARD_HINT : ""}`;
+    <div class="row"><a href="https://vocadb.net/T/${cid}" target="_blank" rel="noopener">VocaDB 에서 보기</a></div></div>`}
+    ${withSearch && ONLINE ? CARD_GO : ""}</div></div>${!withSearch && ONLINE ? CARD_HINT : ""}`;
 }
 
+/* tap cards: the list shows as many songs as the phone's popup holds, no scroll (user request 2026-11-23 — the count follows
+   the screen size): drawn whole, then songs dropped from the end until it fits */
+function cardFit(p, its, what) {
+  if (its) p._list = {its, what};
+  const box = p.querySelector(".cslist"), l = p._list;
+  if (!box || !l) return;
+  box.innerHTML = cardSongsHtml(l.its, l.what);
+  if (!p.classList.contains("tap")) return;
+  for (let n = Math.min(l.its.top.length, CARD_SONGS); n > 0 && box.scrollHeight > box.clientHeight + 1; )
+    box.innerHTML = cardSongsHtml({n: l.its.n, top: l.its.top.slice(0, --n)}, l.what);
+}
+
+/* card content (+ phones: a close button at the top right, user request 2026-11-23) */
+const cardSet = (p, html) => { p.innerHTML = html + (p.classList.contains("tap") ? `<button type="button" class="cclose" data-cclose title="닫기" aria-label="닫기">✕</button>` : ""); };
 let cardEl = null, cardTimer = 0;
 function cardClose() { clearTimeout(cardTimer); if (cardEl) { cardEl.remove(); cardEl = null; } }
 function cardPlace(p, el) {
+  if (p.classList.contains("tap")) return;  // phones: a centered popup (css .acard.tap)
   const f = uiZoom(), r = el.getBoundingClientRect(), w = p.offsetWidth * f, h = p.offsetHeight * f;
   const x = Math.max(4, Math.min(r.left, innerWidth - w - 4)), y = r.bottom + 4 + h <= innerHeight ? r.bottom + 4 : Math.max(4, r.top - 4 - h);
   p.style.left = x / f + "px"; p.style.top = y / f + "px";
@@ -147,25 +164,25 @@ async function cardOpen(el, withSearch = false) {
   if (cardEl && cardEl._from === el) return;
   cardClose();
   const p = cardEl = document.createElement("div");
-  p.className = "acard"; p._from = el;
-  p.innerHTML = `<div class="ctop"><div class="body"><div class="nm">${esc(el.dataset.n)}</div><div class="row k">불러오는 중…</div></div></div>`;
+  p.className = withSearch ? "acard tap" : "acard"; p._from = el;
+  cardSet(p, `<div class="ctop"><div class="body"><div class="nm">${esc(el.dataset.n)}</div><div class="row k">불러오는 중…</div></div></div>`);
   document.body.appendChild(p); cardPlace(p, el);
   let html;
   try { html = cardHtml(await cardGet(el.dataset.ck, +el.dataset.cid), el, withSearch); }
   catch (e) { html = `<div class="ctop"><div class="body"><div class="nm">${esc(el.dataset.n)}</div><div class="row k">${esc(e.message)}</div></div></div>`; }
   if (cardEl !== p) return;
-  p.innerHTML = html; cardPlace(p, el);
+  cardSet(p, html); cardPlace(p, el);
   p.querySelector("img.pic")?.addEventListener("load", e => {
     const img = e.target;
     if (img.classList.contains("full") && img.naturalWidth > img.naturalHeight) img.parentNode.classList.add("wide");
-    if (cardEl === p) cardPlace(p, el);
+    if (cardEl === p) { cardFit(p); cardPlace(p, el); }  // the picture took its room: fit the list again
   });
   const box = p.querySelector(".cslist");
   if (!box) return;
   let its;
   try { its = await cardSongs(el.dataset.fk, el.dataset.n); } catch (e) { its = {n: 0, top: []}; }
   if (cardEl !== p) return;
-  box.innerHTML = cardSongsHtml(its); cardPlace(p, el);
+  cardFit(p, its); cardPlace(p, el);
 }
 // names become card targets only once master is read (VDB.full): redraw the now-playing song's info then (user report
 // 2026-11-22: before the first play the artist line had no cards)
@@ -184,6 +201,7 @@ document.addEventListener("mouseover", e => {
 // click: that name's songs in 곡 검색 (LOCAL has no 곡 검색 — nothing) · phones: a tap opens the card with '검색에서 보기' ·
 // a click elsewhere closes the card
 document.addEventListener("click", e => {
+  if (e.target.closest(".acard [data-cclose]")) { e.stopPropagation(); cardClose(); return; }
   const s = e.target.closest(".acard [data-csearch]");
   if (s) { e.stopPropagation(); const el = cardEl._from; cardSearch(el.dataset.fk, el.dataset.n); return; }
   const el = e.target.closest(".icard[data-cid]");
