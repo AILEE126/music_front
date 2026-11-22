@@ -97,7 +97,9 @@ var OFFDIR = (() => {
           video: g("TXXX:VIDEO") || g("TXXX:SOURCE"), videos: [], nico: "", tags: [], nums: {}, ord: {local: 0},
           cover: cover ? 1 : 0, _url: url, _cover: cover, _side: side || null,
           lyrics: sj && sj.groups && sj.groups.length ? "own" : "", sync, method: sj && sj.sync ? sj.sync.method || "" : "",
-          score: sj && sj.sync ? sj.sync.score : null, vocals: [], categories: [], notes: []});
+          score: sj && sj.sync ? sj.sync.score : null, vocals: [], categories: [], notes: [],
+          // list badges / filters (user request 2026-11-22): no server here — the mp3's own json says it, none → 가사X · 싱크X
+          ly: sj && sj.groups && sj.groups.length ? "ours" : "none", st: sync === "ok" || sync === "stale" ? sync : "none"});
       };
       const queue = mp3s.slice(), run = async () => { while (queue.length) { await one(queue.shift()); k++; } };
       await Promise.all(Array.from({length: 6}, run));
@@ -140,7 +142,7 @@ var OFFDIR = (() => {
       d.sync = s; d.sync_state = "ok";
       const w = await it._side.createWritable();
       await w.write(JSON.stringify(d, null, 1)); await w.close();
-      Object.assign(it, {sync: "ok", method: s.method});
+      Object.assign(it, {sync: "ok", st: "ok", method: s.method});
       return this.lyrics(b.name);
     },
     /* 화면 요청 중 오프라인 곡(site=local)의 것 (shared_screen_helpers.js api() 가 보냄) */

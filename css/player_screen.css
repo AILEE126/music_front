@@ -733,12 +733,39 @@ label.inline{display:flex;align-items:center;gap:4px;font-size:13px;cursor:point
 .editbar.show{display:flex}
 .editbar>span{flex-basis:100%}
 .editrow{display:flex;align-items:center;gap:8px;width:100%}  /* +/− at the bottom-left, save · cancel at the right */
+/* 파트분리 (admin, user request 2026-11-21): vocal picks in the part bar · lyrics groups clickable */
+.pvocals{display:flex;flex-wrap:wrap;gap:6px}
+.pv{display:inline-flex;align-items:center;gap:5px}
+.pv i{width:9px;height:9px;border-radius:50%;background:var(--pc,transparent);box-shadow:0 0 0 1px rgba(127,127,127,.35)}
+.pnew{display:flex;flex-wrap:wrap;gap:6px;align-items:center;flex-basis:100%}
+.pnew[hidden]{display:none}
+.pnew #partNewName{width:150px}
+.pslots,.ppal{display:inline-flex;gap:4px;align-items:center}
+.pslot{width:26px;height:26px;padding:0;border-radius:6px;background:var(--pc,transparent)}
+.pslot:not([style]){background:repeating-linear-gradient(45deg,transparent 0 4px,rgba(127,127,127,.25) 4px 6px)}
+.pslot.on{outline:2px solid var(--accent);outline-offset:1px}
+.ppal button{width:20px;height:20px;padding:0;border-radius:50%;background:var(--pc)}
+.pcustom{display:inline-flex;align-items:center;gap:4px}
+.pcustom input{width:28px;height:24px;padding:0;border:0;background:none}
+.pv.on,#btnParts.on,#btnLyrEdit.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+#lyrics.parting .g{cursor:pointer}
+#lyrics.parting .g:hover{outline:2px dashed var(--accent);outline-offset:-2px}
+.editrow[hidden],.offset[hidden]{display:none}
+/* 가사편집 (admin, user request 2026-11-22): row buttons under each group, the open row edited in place */
+#lyrics.lyring .g{cursor:default}
+.g .ltools{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;margin-top:6px}
+.g .ltools button{font-size:12px;padding:2px 8px}
+.g .ledit{display:flex;flex-direction:column;gap:6px}
+.g .ledit label{display:flex;gap:8px;align-items:center}
+.g .ledit label span{flex:none;width:64px;font-size:12px;color:var(--muted)}
+.g .ledit input{flex:1;min-width:0;font-size:15px}
+.g .lebtn{display:flex;gap:6px;justify-content:flex-end}
 /* 폰 싱크 맞추기 (user request 2026-11-16): no guide text, only +/− and 저장 · 취소; ↑ ↓ float over the lyrics' bottom-right */
 body.m .editbar>span{display:none}
 body.m .editbar{padding:20px 16px 8px}
 .editkeys{display:none}
 /* one card-colored pill split in two (like the player's other cards / context menu), not two loud circles — user request 2026-11-16 */
-body.m .main:has(#editbar.show) .editkeys{display:flex;flex-direction:column;position:absolute;right:16px;bottom:24px;z-index:5;
+body.m .main:has(#editbar.show.sync) .editkeys{display:flex;flex-direction:column;position:absolute;right:16px;bottom:24px;z-index:5;
   background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.45)}
 .editkeys button{display:flex;align-items:center;justify-content:center;width:60px;height:60px;padding:0;border:0;border-radius:0;background:transparent;color:var(--text);
   touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:background .12s,color .12s}

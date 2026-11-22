@@ -8,7 +8,7 @@
      right-click again → 선택한 곡 싱크 반영. The player has no server: it leaves Server/data/sync_apply/<id>.json
      {ids, who, at} on the data branch and the server applies it in its next upload round (error_reports.apply_player_requests)
      — every player already plays the pending sync meanwhile. Songs with no waiting sync edit are left out. */
-const ADM = {byVid: new Map(), syncRid: new Map(), busy: false, last: 0, sel: null, anchor: -1, ok: false, tok: ""};
+const ADM = {byVid: new Map(), syncRid: new Map(), fixed: new Map(), busy: false, last: 0, sel: null, anchor: -1, ok: false, tok: ""};
 const ADM_CACHE = "adm.reports", ADM_EVERY = 10 * 60 * 1000;
 const isAdmin = () => ADM.ok && typeof LOCAL !== "undefined" && LOCAL.ready && LOCAL.canWrite;
 /* is this token a 관리자 token? (looked up again whenever the token changes and at every reload of the reports) */
@@ -45,15 +45,17 @@ async function admLoad() {
       if (r) cache[id] = [String(r.kind || ""), String((r.song || {}).vocadb || "")];
     });
     store.set(ADM_CACHE, Object.fromEntries(ids.filter(id => !known[id] && cache[id]).map(id => [id, cache[id]])));
-    const queued = new Set();  // 싱크 반영 asked already, the server hasn't run it yet
+    const queued = new Set(), fixed = new Map();  // 싱크 반영 asked already / an admin's own sync save, the server hasn't run it yet
     await admEach(reqs.filter(n => n.endsWith(".json")), async n => {
       const q = await LOCAL.readJson(`${d}sync_apply/${n}`, null).catch(() => null);
       for (const x of (q && q.ids) || []) queued.add(String(x));
+      for (const x of (q && q.syncs) || []) if (x && x.sync) fixed.set(String(x.vocadb), x.sync);
     });
+    ADM.fixed = fixed;
     const by = new Map(), sync = new Map();
     for (const id of ids) {
       const k = known[id], [kind, vid] = k ? [k.kind, k.vocadb] : cache[id] || ["", ""];
-      if ((k && k.done) || queued.has(id) || !kind || !vid) continue;
+      if ((k && k.done) || queued.has(id) || !kind || !vid || (kind === "싱크 수정" && fixed.has(vid))) continue;
       (by.get(vid) || by.set(vid, new Set()).get(vid)).add(kind);
       if (kind === "싱크 수정") sync.set(vid, id);  // ids are in time order → the newest stays
     }
@@ -62,11 +64,22 @@ async function admLoad() {
   } catch (e) { console.warn("관리자: 오류 신고 목록을 못 읽음:", e.message || e); }
   finally { ADM.busy = false; }
 }
+/* an admin's own sync save (local_files.js savePending, user request 2026-11-20): no 확인 대기 — the song's 싱크 수정
+   reports count as handled (the server marks them when it runs the request). The list row is the server's data, which
+   the save wrote itself (LOCAL.oursCell, user request 2026-11-22 — was a row laid over it here until the server ran) */
+function admSynced(it, s) {
+  ADM.fixed.set(String(it.vocadb || ""), s);
+  const vid = String(it.vocadb || ""), k = ADM.byVid.get(vid);
+  ADM.syncRid.delete(vid);
+  if (k) { k.delete("싱크 수정"); if (!k.size) ADM.byVid.delete(vid); }
+  admChanged();
+}
 /* reports changed → the search window's categories are counted again, the rows' badges redrawn */
 function admChanged() {
   catMemo = new WeakMap();  // filter_panel.js
   if ($("searchDlg").open) catsLater();
   renderRows(true);
+  partsBtn();  // 파트분리 button: admin only (lyrics_view.js)
 }
 
 /* ---- 선택 모드 ---- */

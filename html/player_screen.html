@@ -118,6 +118,9 @@
     <div class="toolbar">
       <span class="chip err" id="failChip" hidden></span>
       <button id="btnEdit" title="가사 줄마다 시간을 직접 찍어 싱크 맞추기">싱크</button>
+      <button id="btnParts" title="가사 묶음마다 부르는 보컬 정하기 (관리자)" hidden>파트분리</button><!-- user request 2026-11-21: admin token only -->
+      <button id="btnLyrEdit" title="가사 행 추가 · 편집 · 삭제 (관리자)" hidden>가사편집</button><!-- user request 2026-11-22: 파트분리 · 가사편집 show only inside 싱크 (admin), the three switch -->
+
       <span class="grow"></span>
       <select id="xLang" title="VocaDB 의 다른 언어 번역 (영어·중국어 등) 줄 — 곡에 있는 언어만 고를 수 있음"><option value="">다른 언어 끔</option></select><!-- user request 2026-11-14: a select left of the toggles, not a 4th toggle -->
       <div class="seg" title="가사 줄 보이기 · 숨기기"><!-- user request: three joined on/off buttons instead of checkboxes -->
@@ -129,10 +132,19 @@
 
     <div class="bartab"><button class="tab" id="btnBar" title="가사 도구 접기 · 펴기" aria-label="가사 도구 접기 · 펴기"><svg viewBox="0 0 14 10" aria-hidden="true"><path d="M3 1.5v7M7 1.5v7M11 1.5v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></div><!-- user request: a tab hanging under the lyrics-tool bar folds / unfolds it · stays on the bar, not the sync guide -->
 
-    <div class="editbar" id="editbar">
-      <span>재생하면서 각 묶음이 시작될 때 <kbd>Space</kbd> 또는 <kbd>↓</kbd> — 점선 묶음에 지금 시간을 찍습니다. <kbd>↑</kbd> 한 묶음 뒤로, 묶음을 누르면 그 묶음부터.</span>
+    <div class="editbar" id="editbar"><!-- one bar for 싱크 · 파트분리 · 가사편집 (user request 2026-11-22): 저장 · 취소 cover all three -->
+      <span id="editGuide"></span>
+      <div class="editrow" id="partRow" hidden><div class="pvocals" id="partVocals"></div></div><!-- 파트분리 (user request 2026-11-21, admin token only) -->
+      <div class="editrow pnew" id="partNew" hidden><!-- 파트 추가 (user request 2026-11-21): own name + up to 3 colors -->
+        <input id="partNewName" maxlength="40" placeholder="파트 이름 (예: ??)">
+        <span class="pslots" id="partSlots"></span>
+        <span class="ppal" id="partPal"></span>
+        <label class="pcustom" title="색 직접 고르기">직접 <input type="color" id="partPick" value="#9e9e9e"></label>
+        <button id="partSlotClear" title="고른 칸 비우기">칸 비우기</button>
+        <button class="primary" id="partNewAdd">추가</button><button id="partNewClose">닫기</button>
+      </div>
       <div class="editrow">
-        <div class="offset" title="가사가 노래보다 빠르면 +, 느리면 − (찍은 시간 전체를 밂 · 저장해야 남음)"><!-- user request: moved to the sync guide's bottom-left -->
+        <div class="offset" id="offBox" title="가사가 노래보다 빠르면 +, 느리면 − (찍은 시간 전체를 밂 · 저장해야 남음)"><!-- user request: moved to the sync guide's bottom-left -->
           <button id="offMinus">−</button><span id="offVal">±0.0초</span><button id="offPlus">+</button>
         </div>
         <span style="flex:1"></span>

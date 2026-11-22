@@ -37,14 +37,19 @@ function prepItem(it) {
 }
 /* 곡 상태 (user request 2026-11-15: 싱크 · 가사 유무 · 번역명도 태그처럼 필터에) — 코드가 정하는 태그. 순서 = 목록 순서.
    규칙은 음원 관리 › 필터 › 하위 태그에 보임 (vocadb/filter_settings.py FLAGS 와 같음) */
-const FLAGS = ["싱크 있음", "싱크 없음", "우리 가사 있음", "VocaDB 가사 있음", "가사 없음", "한글 제목 있음", "한글 제목 없음", "보컬 15명 넘음"];
+// sync · lyrics flags = the playlist badges (user request 2026-11-22): 싱크 없음 = 싱크X, 가사 없음 = 가사X …
+const FLAGS = ["싱크 있음", "싱크 없음", "싱크 실패", "가사다름", "재싱크 필요", "우리 가사 있음", "파트분리", "VocaDB 가사 있음", "가사 없음",
+               "한글 제목 있음", "한글 제목 없음", "보컬 15명 넘음"];
+const SYNC_FLAG = {ok: "싱크 있음", none: "싱크 없음", fail: "싱크 실패", stale: "가사다름", resync: "재싱크 필요"};
 /* 보컬이 너무 많은 곡 (user request 2026-11-16, e.g. 合音声大決闘戦): 보컬은 앞 VOCAL_SHOW 명만 보이고 나머지는 '+N' 칩 —
    그 칩은 곡 상태 태그 MANY_VOCALS 의 색 (필터 › 하위 태그에서 색 지정) */
 const VOCAL_SHOW = 15, MANY_VOCALS = "보컬 15명 넘음";
 /* vdbLyrics: VocaDB 에 원문 가사 (data.lyrics = Y) · koTitle: 한글 제목이 있고 원제와 다름 */
 function songFlags(it, vdbLyrics, koTitle) {
-  return [it.sync === "ok" ? "싱크 있음" : "싱크 없음", ...(it.lyrics ? ["우리 가사 있음"] : []), ...(vdbLyrics ? ["VocaDB 가사 있음"] : []),
-          ...(!it.lyrics && !vdbLyrics ? ["가사 없음"] : []), koTitle ? "한글 제목 있음" : "한글 제목 없음",
+  const ly = songLy(it);
+  return [SYNC_FLAG[songSyncState(it)], ...(ly === "ours" || ly === "parts" ? ["우리 가사 있음"] : []), ...(ly === "parts" ? ["파트분리"] : []),
+          ...(vdbLyrics ? ["VocaDB 가사 있음"] : []),
+          ...(ly === "none" ? ["가사 없음"] : []), koTitle ? "한글 제목 있음" : "한글 제목 없음",
           ...(people(it.singer).length > VOCAL_SHOW ? [MANY_VOCALS] : [])];
 }
 /* 보컬 종류 (user request 2026-11-16): data.vocal_kind (VocaDB 보컬의 artistType) — 엔진 · 섞임(엔진 + 사람) · 사람 · 정보 없음 (빈칸).
@@ -201,8 +206,15 @@ async function filterGroupsAsync(its, groups, tick) {
 const sameCats = () => [{id: "same_sort", label: "같은 곡 정렬", k: "same_sort", rows: SAME_SORTS.map(v => [v, ""]), lab: v => v},
                         {id: "same_cut", label: "같은 곡 자르기", k: "same_cut", rows: SAME_CUTS.map(v => [v, ""]), lab: v => `상위 ${v}곡`}];
 const KARA_RE = /^(TJ|금영|DAM|UGA|JOYSOUND)$/;
-const STATES = {lyrics: "가사 있음", nolyrics: "가사 없음", ok: "싱크됨", need: "싱크 필요", stale: "싱크 다시", resync: "재싱크 필요", fail: "싱크 실패",
+// labels = the playlist badges (user request 2026-11-22: the filter works as the screen shows)
+const STATES = {lyrics: "가사 있음", nolyrics: "가사X", parts: "파트분리", ok: "싱크됨", need: "싱크X", stale: "가사다름", resync: "재싱크 필요", fail: "싱크 실패",
                 "src:namu": "나무위키 가사", "src:vocaro": "VL 가사", "src:own": "직접 넣은 가사", "src:link": "연결 가사"};
+/* the lyrics · sync state as sent (user request 2026-11-22: only the server decides — music_backend table_export._state;
+   mp3 folder songs: offline_folder.js from their json). Badges (playlist_panel.js) and filters read only these.
+   ly: parts · ours · vocadb · none · st: ok · none · fail · stale · resync — nothing sent = none */
+const songLy = it => it.ly || "none";
+const songHasLyr = it => songLy(it) !== "none";
+const songSyncState = it => it.st || "none";
 /* 검색 글자 (user request 2026-11-19, sized for 1M songs: every keystroke folded ~10 fields of every song again — 1.3 s over
    44만 곡): the song's searchable names folded once and kept (_fq), same parts once, joined by \u0001 (a match never spans
    two of them). The singer is left out when the artist line already holds it */
@@ -230,8 +242,8 @@ const FKIND = {
   cat: ["나무위키", (it, v) => (it.categories || []).includes(v)],
   year: ["년도", (it, v) => it._year === v],
   state: ["상태", (it, v) => v.startsWith("src:") ? it.lyrics === v.slice(4)
-    : v === "lyrics" ? !!it.lyrics : v === "nolyrics" ? !it.lyrics : v === "ok" ? it.sync === "ok"
-    : v === "need" ? (it.site === "stream" ? !!(it.karaoke && it.sync !== "ok") : !!(it.lyrics && it.sync !== "ok")) : v === "stale" || v === "resync" ? it.sync === v : v === "fail" ? !!it.sync_fail : false],
+    : v === "lyrics" ? songHasLyr(it) : v === "nolyrics" ? !songHasLyr(it) : v === "parts" ? songLy(it) === "parts"
+    : songSyncState(it) === (v === "need" ? "none" : v)],
 };
 /* 곡의 처리 안 된 오류 신고 종류 — 관리자 플레이어가 정함 (music_front admin_tools.js). 그 밖에서는 없음 → 카테고리도 안 보임 */
 var reportKindsOf = it => [];
@@ -278,7 +290,7 @@ function filterCatsCounter(online) {
   const m = {ini: new Map(), singer: new Map(), vcount: new Map(), vkind: new Map(), composer: new Map(), kara: new Map(), tags: new Map(),
              cat: new Map(), year: new Map(), state: new Map(), flag: new Map(), ver: new Map(), file: new Map(), report: new Map()};
   const inc = (map, x) => map.set(x, (map.get(x) || 0) + 1);
-  const states = Object.keys(STATES).filter(k => !online || !/^(lyrics|nolyrics|src:)/.test(k));  // 온라인: 싱크 상태만 (가사는 그때 읽음)
+  const states = Object.keys(STATES).filter(k => !online || !/^src:/.test(k));  // 온라인: no lyrics sources (not shown in the list either, 2026-11-22)
   return {
     add(it) {
       inc(m.ini, it._ini);

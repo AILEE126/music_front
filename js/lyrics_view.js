@@ -6,7 +6,7 @@ const syncShell = () => { if (SHELL.now && cur && keyOf(SHELL.now) === keyOf(cur
 /* 재생목록의 곡을 누르면 그 곡부터 (⏭ 는 재생목록 순서대로) · 검색 창에서 바로 튼 곡은 재생목록 지금 곡 다음에 들어감 */
 async function play(it, autoplay = true, how = "pick") {  // how '': 재생 목록에서 그 곡 다음부터 (처음 열 때 지난 곡)
   if (!it) return;
-  if (editing && !await uiConfirm("직접 맞추던 싱크를 저장하지 않고 다른 곡으로 넘어갈까요?")) return;
+  if (editing && !await uiConfirm("편집하던 싱크·파트·가사를 저장하지 않고 다른 곡으로 넘어갈까요?")) return;
   stopEdit();
   SHELL.load(it, autoplay, how);  // 곡이 바뀌면 재생기가 알려 줌 → showSong
 }
@@ -16,7 +16,7 @@ async function playView() {
   if (ONLINE && !guestPl && !PL.restored && !view.length) await loadWait(PL.whenRestored());
   const list = view.filter(canPlay);
   if (!list.length) return ONLINE ? openSearch() : uiAlert("재생할 곡이 없습니다.");
-  if (editing && !await uiConfirm("직접 맞추던 싱크를 저장하지 않고 다른 곡으로 넘어갈까요?")) return;
+  if (editing && !await uiConfirm("편집하던 싱크·파트·가사를 저장하지 않고 다른 곡으로 넘어갈까요?")) return;
   stopEdit();
   if (!listFilter) SHELL.setQueue(list);  // filtered view: keep the whole playlist (⏭ follows the filter — SHELL.playFilter)
   SHELL.load(SHELL.shuffle ? list[Math.floor(Math.random() * list.length)] : list[0], true);
@@ -198,10 +198,13 @@ async function loadSong() {
   catch (e) { if (cur !== it) return; song = null; $("lyrics").innerHTML = `<div class="empty">가사를 받아오는데 실패했습니다.<br><span class="hint">${esc(e.message)}</span></div>`; renderSyncChip(); return; }
   if (cur !== it) return;  // 가사를 받는 사이 다른 곡으로 넘어감 (온라인 곡은 위키를 읽느라 늦게 옴) → 늦게 온 앞 곡 가사로 덮지 않음
   song = s;
+  songTimes();
+  renderLyrics(); renderSyncChip();
+}
+function songTimes() {
   const sj = song.sync;
   times = sj && (song.sync_state === "ok" || song.sync_state === "resync") ? sj.times : null;  // 재싱크 필요여도 지난 싱크로 우선 표시
   offset = sj ? +sj.offset || 0 : 0;
-  renderLyrics(); renderSyncChip();
 }
 function renderSyncChip() {
   const c = $("syncChip"), sj = song && song.sync;
@@ -229,6 +232,7 @@ function renderSyncChip() {
   $("failChip").hidden = !fail;
   if (fail) { $("failChip").textContent = `자동 싱크 실패: ${fail.reason}`; $("failChip").title = `${fail.at} · 모델 ${fail.model || "?"}`; }
   $("btnEdit").disabled = !has;
+  partsBtn();
   $("offMinus").disabled = $("offPlus").disabled = !times && !editing;
 }
 function showOff() {
@@ -279,22 +283,24 @@ function renderLyrics() {
   const partTag = p => p ? `<div class="part" style="--pc:${/^#[0-9a-f]{6}$/i.test(p.color) ? inkOf(p.color) : "transparent"}">${
     (p.colors || [null]).map(c => c && /^#[0-9a-f]{6}$/i.test(c) ? `<i style="--pc:${inkOf(c)}"></i>` : "<i></i>").join("")}${esc(p.name)}</div>` : "";
   // 동시에 부르는 묶음(g.cols): 보컬마다 칸을 나란히 (칸 위에 그 보컬 이름)
+  const lyring = editing && editMode === "lyrics";  // 가사편집: row buttons under each group, the open row as inputs
   box.innerHTML = lyricsSources(song) + notes + song.groups.map((g, i) => `<div class="g${times && song.sync.method !== "manual" && matched[i] === false ? " guess" : ""}" data-i="${i}">
-      ${g.cols ? lyrCols(g, p => partTag(p) || '<div class="part">&nbsp;</div>') : partTag(g.part) + g.lines.map(l => lyrLine(l.role + (l.auto ? " auto" : "") + (l.lang ? ` xl-${l.lang}` : ""), l.text, g.vc)).join("")}
+      ${lyring && i === lyrEdit ? lyrEditor(g) : g.cols ? lyrCols(g, p => partTag(p) || '<div class="part">&nbsp;</div>') : partTag(g.part) + g.lines.map(l => lyrLine(l.role + (l.auto ? " auto" : "") + (l.lang ? ` xl-${l.lang}` : ""), l.text, g.vc)).join("")}
       <div class="prog"><i></i></div>
       <div class="stamp"><button data-d="-1" title="1초 앞으로">&lt;&lt;</button><button data-d="-0.2" title="0.2초 앞으로">&lt;</button><span class="tv"></span><button data-d="0.2" title="0.2초 뒤로">&gt;</button><button data-d="1" title="1초 뒤로">&gt;&gt;</button></div>
+      ${lyring && i !== lyrEdit ? lyrTools(g) : ""}
     </div>`).join("");
-  box.className = (times ? "" : "nosync ") + (editing ? "editing " : "") + ($("showR").checked ? "" : "hide-r ") + ($("showT").checked ? "" : "hide-t ") + ($("showP").checked ? "" : "hide-p ");
+  box.className = (times && !editing ? "" : "nosync ") + (editing ? {sync: "editing ", parts: "parting ", lyrics: "lyring "}[editMode] : "") + ($("showR").checked ? "" : "hide-r ") + ($("showT").checked ? "" : "hide-t ") + ($("showP").checked ? "" : "hide-p ");
   renderXLang();
   box.scrollTop = 0;
-  if (editing) renderStamps();
+  if (editing && editMode === "sync") renderStamps();
   tick(true);
 }
 
 $("lyrics").addEventListener("click", e => {
   const g = e.target.closest(".g"); if (!g) return;
   const i = +g.dataset.i;
-  if (editing) {
+  if (editing) {  // 싱크 (파트분리 · 가사편집 clicks are taken before this — capture listener below)
     const d = e.target.closest("button[data-d]");
     if (d) { if (editTimes[i] != null) { editTimes[i] = Math.max(0, +(editTimes[i] + +d.dataset.d).toFixed(2)); editOk[i] = true; audio.currentTime = Math.max(0, editTimes[i] - 0.5); } }
     else { cursor = i; if (editTimes[i] != null) audio.currentTime = Math.max(0, editTimes[i] - 1); }
@@ -433,7 +439,17 @@ function nudge(d) {
 $("offMinus").onclick = () => nudge(-0.2);
 $("offPlus").onclick = () => nudge(0.2);
 
-/* ================= 직접 맞추기 ================= */
+/* ================= 직접 맞추기 · 파트분리 · 가사편집 ================= */
+// user request 2026-11-22: 싱크 opens one edit — admins get 파트분리 · 가사편집 next to it and switch between the three freely;
+// what was changed in one stays while in the others, 저장 keeps all three at once and 취소 drops all three
+var editMode = "sync", editBase = null, editStart = null;  // the groups · times the edit began with (취소 · what changed)
+const EDIT_GUIDE = {
+  sync: "재생하면서 각 묶음이 시작될 때 <kbd>Space</kbd> 또는 <kbd>↓</kbd> — 점선 묶음에 지금 시간을 찍습니다. <kbd>↑</kbd> 한 묶음 뒤로, 묶음을 누르면 그 묶음부터.",
+  parts: "보컬을 고르고 가사 묶음을 누르면 그 묶음의 파트가 됩니다. <kbd>Shift</kbd> 누르고 누르면 앞에 누른 묶음부터 여기까지.",
+  lyrics: "묶음마다 위·아래에 행 추가 · 편집 · 삭제. 편집 칸에서 <kbd>Enter</kbd> 확인, <kbd>Esc</kbd> 되돌리기. 저장 · 취소는 싱크 · 파트분리 · 가사편집 모두에 한 번에.",
+};
+// 파트분리 · 가사편집: admin token, our lyrics only (not VocaDB's lyrics, not an mp3 folder)
+const moreEdit = () => typeof isAdmin === "function" && isAdmin() && !!(cur && cur.lyrics && cur.site !== "local" && song && song.groups.length && song.lyrics_kind !== "vocadb");
 function startEdit() {
   if (!song || !song.groups.length) return;
   editing = true; SHELL.editing = true;
@@ -441,7 +457,8 @@ function startEdit() {
   editFoldedVid = document.body.classList.contains("m") && VID.on;
   if (editFoldedVid) { VID.on = false; showVideo(); }
   // phone (user request 2026-11-16): the lyrics tool bar folds too, and unfolds when done (the remembered fold stays as it was)
-  editFoldedBar = document.body.classList.contains("m") && !document.body.classList.contains("barfold");
+  // — not for admins: the bar holds the 싱크 · 파트분리 · 가사편집 switch (2026-11-22)
+  editFoldedBar = document.body.classList.contains("m") && !document.body.classList.contains("barfold") && !moreEdit();
   if (editFoldedBar) applyBar(true);
   editTimes = song.groups.map((_, i) => times ? +(times[i] + offset).toFixed(2) : null);
   editShift = offset;  // the song's current push is baked into editTimes; show it as the start value
@@ -450,20 +467,38 @@ function startEdit() {
   editOk = song.groups.map((_, i) => !!times && (song.sync.method === "manual" || m[i] !== false));
   cursor = 0;
   if (times) { const t = audio.currentTime; cursor = Math.max(0, editTimes.findIndex(x => x > t)); }
-  $("editbar").classList.add("show"); $("btnEdit").classList.add("on");
+  editBase = JSON.parse(JSON.stringify(song.groups)); editStart = JSON.stringify([editTimes, editOk]);
+  lyrEdit = -1; lyrNew = false; parting = null;
+  $("editbar").classList.add("show");
   $("offMinus").disabled = $("offPlus").disabled = false; showOff();
-  $("lyrics").classList.add("editing", "nosync");
-  renderStamps();
+  partsBtn();
+  setEditMode("sync");
 }
+/* ends the edit — whatever was not saved goes (취소 · another song) */
 function stopEdit() {
-  editing = false; editTimes = null; editOk = null; SHELL.editing = false;
+  if (editBase && song) song.groups = editBase;
+  editing = false; editTimes = null; editOk = null; editBase = editStart = null; parting = null; lyrEdit = -1; SHELL.editing = false;
   if (editFoldedVid) { editFoldedVid = false; VID.on = true; showVideo(); }
   if (editFoldedBar) { editFoldedBar = false; applyBar(false); }
-  $("editbar").classList.remove("show"); $("btnEdit").classList.remove("on");
+  $("editbar").classList.remove("show", "sync"); $("partNew").hidden = true;
+  for (const id of ["btnEdit", "btnParts", "btnLyrEdit"]) $(id).classList.remove("on");
+  partsBtn();
   showOff(); $("offMinus").disabled = $("offPlus").disabled = !times;
-  $("lyrics").classList.remove("editing");
+  $("lyrics").classList.remove("editing", "parting", "lyring");
   $("lyrics").classList.toggle("nosync", !times);
   $("lyrics").querySelectorAll(".g.cursor").forEach(el => el.classList.remove("cursor"));
+}
+function setEditMode(m) {
+  if (m !== "sync" && !parting) m = "sync";
+  if (m !== "lyrics" && lyrEdit >= 0 && !lyrApply()) return;  // a row open in 가사편집 is taken as it is first
+  editMode = m;
+  for (const [id, k] of [["btnEdit", "sync"], ["btnParts", "parts"], ["btnLyrEdit", "lyrics"]]) $(id).classList.toggle("on", m === k);
+  $("editGuide").innerHTML = EDIT_GUIDE[m];
+  $("offBox").hidden = m !== "sync";
+  $("partRow").hidden = m !== "parts";
+  if (m !== "parts") $("partNew").hidden = true;
+  $("editbar").classList.toggle("sync", m === "sync");  // phone ↑ ↓ keys: 싱크 only
+  rerenderKeepScroll();
 }
 function renderStamps() {
   $("lyrics").querySelectorAll(".g").forEach((el, i) => {
@@ -486,9 +521,13 @@ function editDown() { if (audio.paused) audio.play(); else stamp(); }
 function editUp() { cursor = Math.max(0, cursor - 1); renderStamps(); }
 // pointerdown, not click: the stamp lands when the finger touches, and the button never takes focus
 for (const [id, fn] of [["editDown", editDown], ["editUp", editUp]])
-  $(id).addEventListener("pointerdown", e => { e.preventDefault(); if (editing) fn(); });
+  $(id).addEventListener("pointerdown", e => { e.preventDefault(); if (editing && editMode === "sync") fn(); });
 $("btnEdit").onclick = async () => {
-  if (editing) return stopEdit();
+  if (editing) {
+    if (editMode !== "sync") return setEditMode("sync");
+    if (editChanged() && !await uiConfirm("고친 내용을 저장하지 않고 편집을 끝낼까요?", "끝내기")) return;
+    stopEdit(); renderLyrics(); return;
+  }
   // OPEN CHANNEL (user request 2026-11-20): syncing leaves the channel — asked first; the channel's song stays here to sync
   if (typeof LT !== "undefined" && LT.chOn && LT.role) {
     if (!await uiConfirm("싱크를 수정하면 OPEN CHANNEL 에서 나가집니다. 나가고 싱크를 수정할까요?", "나가고 싱크 수정")) return;
@@ -496,11 +535,24 @@ $("btnEdit").onclick = async () => {
   }
   startEdit();
 };
+$("btnParts").onclick = () => { if (editing) setEditMode("parts"); };
+$("btnLyrEdit").onclick = () => { if (editing) setEditMode("lyrics"); };
 $("btnEditCancel").onclick = () => { stopEdit(); renderLyrics(); };
-$("btnEditSave").onclick = async () => {
-  // 찍지 않은 묶음은 앞뒤 시간 사이를 고르게 채움
-  const T = editTimes.slice(), n = T.length;
-  if (T.every(x => x == null)) { uiAlert("찍은 시간이 없습니다."); return; }
+
+/* what the edit changed: 가사 (rows · text) · 파트 · 싱크 (times; new lyrics re-save the times when there are any) */
+const lyrKey = g => JSON.stringify([g.orig, g.lines.map(l => [l.role, l.text, l.lang || ""])]);
+const partKey = gs => JSON.stringify(gs.map(g => g.cols ? null : g.part || null));
+function editChanges() {
+  const lyr = song.groups.length !== editBase.length || song.groups.some((g, i) => lyrKey(g) !== lyrKey(editBase[i]));
+  const prt = !!parting && (partKey(song.groups) !== partKey(editBase) || (lyr && song.groups.some(g => g.part)));
+  const syn = JSON.stringify([editTimes, editOk]) !== editStart || (lyr && editTimes.some(x => x != null));
+  return {lyr, prt, syn};
+}
+const editChanged = () => { const c = editChanges(); return c.lyr || c.prt || c.syn; };
+// 찍지 않은 묶음은 앞뒤 시간 사이를 고르게 채움 → null when nothing is stamped
+function fillTimes(src) {
+  const T = src.slice(), n = T.length;
+  if (T.every(x => x == null)) return null;
   let first = T.findIndex(x => x != null);
   for (let i = first - 1; i >= 0; i--) T[i] = Math.max(0, T[i + 1] - 3);
   for (let i = 1; i < n; i++) if (T[i] == null) {
@@ -509,17 +561,206 @@ $("btnEditSave").onclick = async () => {
     for (let k = i; k < j; k++) T[k] = +(a + (b - a) * (k - i + 1) / (j - i + 1)).toFixed(2);
     i = j;
   }
+  return T;
+}
+$("btnEditSave").onclick = async () => {
+  if (lyrEdit >= 0 && !lyrApply()) return;
+  const ch = editChanges();
+  if (!ch.lyr && !ch.prt && !ch.syn) { stopEdit(); renderLyrics(); return; }
+  const T = ch.syn ? fillTimes(editTimes) : null;
+  if (ch.syn && !T) { uiAlert("찍은 시간이 없습니다."); return; }
   // user request 2026-11-17: spinner + "서버에 전송중..." on 저장, 취소 locked, the song doesn't move on until it's sent
-  sendingBtn($("btnEditSave"), true); $("btnEditCancel").disabled = true;
+  const lock = on => { for (const id of ["btnEditCancel", "btnEdit", "btnParts", "btnLyrEdit"]) $(id).disabled = on; };
+  sendingBtn($("btnEditSave"), true); lock(true);
   await SHELL.sending(async () => {
-    try { song = await post("/api/sync/save", {site: song.site, name: song.name, times: T, matched: editOk, offset: 0}); }
-    catch (e) { uiAlert(e.message); return; }
-    finally { sendingBtn($("btnEditSave"), false); $("btnEditCancel").disabled = false; }
-    stopEdit(); times = song.sync.times; offset = 0; syncShell();
-    // the song's list mark is already updated (LOCAL.synced) — re-downloading the whole list (MBs on GitHub) left the load bar up
-    renderLyrics(); renderSyncChip(); renderList();
+    const s = song, groups = s.groups, ok = editOk.slice(), from = await lyricsHash(editBase);
+    // in this order: new lyrics first, then the parts and times of those lyrics
+    try {
+      if (ch.lyr) song = await post("/api/lyrics/save", {site: s.site, name: s.name, from, groups});
+      if (ch.prt) song = await post("/api/parts/save", {site: s.site, name: s.name, parts: groups.map(g => g.cols ? null : g.part || null), vc: groups.map(g => g.vc)});
+      if (ch.syn) song = await post("/api/sync/save", {site: s.site, name: s.name, times: T, matched: ok, offset: 0});
+    } catch (e) {
+      if (song === s) { uiAlert(e.message); return; }  // nothing kept yet — the edit stays open
+      uiAlert(e.message + "\n(앞 단계까지는 저장됐습니다)");
+    } finally { sendingBtn($("btnEditSave"), false); lock(false); }
+    editBase = null; stopEdit(); songTimes(); syncShell();
+    // the song's list mark is already updated (admin: LOCAL.oursCell) — re-downloading the whole list (MBs on GitHub) left the load bar up
+    rerenderKeepScroll(); renderSyncChip(); renderList();
   });
 };
+
+/* ================= 파트분리 (관리자) ================= */
+// user request 2026-11-21: admin token only — pick a vocal, click lyrics groups to give them that part
+// (shift-click: from the last clicked group). Saved like an admin's sync (local_files.js saveParts); groups sung at once stay
+var parting = null;  // {orig: [{part, vc}], brush, last, plain, own: {name: colors}} — while editing, admin only
+const partColors = n => (parting && parting.own[n]) || (n.includes("합창") ? vocalsOf(cur).map(v => v[1]) : n.split("·").map(x => vocalColor(x.trim()))).slice(0, 3);
+const PART_GRAY = "#9e9e9e";  // ready-made gray for lines like an unknown speaker's words (user request 2026-11-21)
+/* 파트분리 · 가사편집 buttons: only while editing (user request 2026-11-22), admin only */
+function partsBtn() {
+  const ok = editing && moreEdit();
+  $("btnParts").hidden = $("btnLyrEdit").hidden = !ok;
+  if (ok && !parting) initParting();  // also when the admin token is read after the edit began
+  if (!ok && editing && editMode !== "sync") setEditMode("sync");
+}
+function rerenderKeepScroll() {
+  const box = $("lyrics"), st = box.scrollTop;
+  renderLyrics();
+  box.scrollTop = st; userScrollAt = Date.now();
+}
+function initParting() {
+  const orig = song.groups.map(g => ({part: g.part, vc: g.vc}));
+  parting = {orig, brush: null, last: -1, plain: (orig.find(o => !o.part) || {}).vc || vocalsOf(cur).map(v => v[1]).slice(0, 3), own: {}};
+  drawPartVocals();
+  pickBrush(parting.names[0]);
+}
+function drawPartVocals() {
+  const names = parting.names = [...new Set([...vocalsOf(cur).map(v => v[0]), ...song.groups.map(g => g.part && g.part.name).filter(Boolean), ...Object.keys(parting.own), "합창"])];
+  const dot = n => { const o = parting.orig.find(o => o.part && o.part.name === n); return (o && o.part.color) || partColors(n)[0] || "#888888"; };
+  $("partVocals").innerHTML = names.map(n => `<button class="pv" data-n="${esc(n)}"><i style="--pc:${esc(inkOf(dot(n)))}"></i>${esc(n)}</button>`).join("")
+    + '<button class="pv" data-n="" title="이 묶음은 파트 표시 없음 (곡의 보컬 색)">파트 없음</button>'
+    + '<button id="btnPartNew" title="이름과 색(최대 3개)을 정해 새 파트 만들기">+ 파트 추가</button>';
+  if (parting.brush != null) pickBrush(parting.brush);
+}
+function pickBrush(n) {
+  parting.brush = n;
+  $("partVocals").querySelectorAll(".pv").forEach(b => b.classList.toggle("on", b.dataset.n === n));
+}
+function setPart(i, n) {
+  const g = song.groups[i];
+  if (!g || g.cols) return;
+  if (!n) { delete g.part; g.vc = parting.plain; return; }
+  const same = parting.orig.find(o => o.part && o.part.name === n);  // a part the page already has keeps its color
+  if (same) { g.part = {...same.part}; g.vc = same.vc; return; }
+  const c = partColors(n), own = parting.own[n];
+  g.part = {name: n, color: c[0] || "", ...(own || n.includes("·") ? {colors: c} : {}), ...(own ? {own: 1} : {})}; g.vc = c;
+}
+$("partVocals").addEventListener("click", e => {
+  if (!parting) return;
+  if (e.target.closest("#btnPartNew")) return openPartNew();
+  const b = e.target.closest(".pv"); if (b) pickBrush(b.dataset.n);
+});
+/* 파트 추가 (user request 2026-11-21): a part of its own name (e.g. '??' for an unknown speaker) and 1–3 colors — each slot
+   from the song's vocal colors, a picked RGB color or the ready gray. own: 1 tells the export to keep these colors */
+var partSlots = null, partSlot = 0;
+function openPartNew() {
+  partSlots = [PART_GRAY, "", ""]; partSlot = 0;
+  $("partNewName").value = "";
+  const pal = [...vocalsOf(cur).map(v => [v[0], v[1]]), ["회색", PART_GRAY]].filter((v, i, a) => a.findIndex(w => w[1] === v[1]) === i);
+  $("partPal").innerHTML = pal.map(([n, c]) => `<button data-c="${esc(c)}" title="${esc(n)}" style="--pc:${esc(inkOf(c))}"></button>`).join("");
+  drawPartSlots();
+  $("partNew").hidden = false;
+  $("partNewName").focus();
+}
+function drawPartSlots() {
+  $("partSlots").innerHTML = partSlots.map((c, i) => `<button class="pslot${i === partSlot ? " on" : ""}" data-i="${i}" title="${i + 1}번째 색${i ? " (없어도 됨)" : ""}"${c ? ` style="--pc:${esc(inkOf(c))}"` : ""}></button>`).join("");
+}
+const setSlot = c => { partSlots[partSlot] = c; if (c && partSlot < 2 && !partSlots[partSlot + 1]) partSlot++; drawPartSlots(); };
+$("partSlots").addEventListener("click", e => { const b = e.target.closest(".pslot"); if (b) { partSlot = +b.dataset.i; drawPartSlots(); } });
+$("partPal").addEventListener("click", e => { const b = e.target.closest("button"); if (b) setSlot(b.dataset.c); });
+$("partPick").addEventListener("change", e => setSlot(e.target.value.toLowerCase()));
+$("partSlotClear").onclick = () => { partSlots[partSlot] = ""; drawPartSlots(); };
+$("partNewClose").onclick = () => { $("partNew").hidden = true; };
+$("partNewAdd").onclick = () => {
+  const n = $("partNewName").value.trim(), c = partSlots.filter(Boolean);
+  if (!n) return uiAlert("파트 이름을 적어 주세요.");
+  if (!c.length) return uiAlert("색을 하나 이상 골라 주세요.");
+  if (parting.names.includes(n)) return uiAlert("이미 있는 파트 이름입니다.");
+  parting.own[n] = c;
+  $("partNew").hidden = true;
+  drawPartVocals(); pickBrush(n);
+};
+// capture: in 파트분리 a click on a group sets its part, in 가사편집 it runs the row buttons (no seek in either)
+$("lyrics").addEventListener("click", e => {
+  if (!editing || editMode === "sync") return;
+  e.stopImmediatePropagation();
+  const g = e.target.closest(".g"); if (!g) return;
+  const i = +g.dataset.i;
+  if (editMode === "lyrics") return lyrClick(e, i);
+  const [a, b] = e.shiftKey && parting.last >= 0 ? [Math.min(parting.last, i), Math.max(parting.last, i)] : [i, i];
+  for (let k = a; k <= b; k++) setPart(k, parting.brush);
+  parting.last = i;
+  rerenderKeepScroll();
+}, true);
+
+/* ================= 가사편집 (관리자) ================= */
+// user request 2026-11-22: rows added above / below, edited and deleted right in the lyrics (no popup) — like 싱크.
+// A row = one lyrics group (원문 · 발음 · 번역 lines); groups sung at once (cols) can be moved around or deleted, not edited
+var lyrEdit = -1, lyrNew = false, lyrLines = null;  // the row open for editing · it was just added · the lines its inputs stand for
+const LYR_ROLE = {o: "원문", r: "발음", t: "번역", x: "다른 언어"};
+function lyrTools(g) {
+  return `<div class="ltools"><button data-l="up" title="이 행 위에 새 행">위에 추가</button><button data-l="down" title="이 행 아래에 새 행">아래에 추가</button>`
+    + `<button data-l="edit"${g.cols ? ' disabled title="여러 보컬이 동시에 부르는 행은 고칠 수 없습니다"' : ""}>편집</button><button data-l="del">삭제</button></div>`;
+}
+function lyrEditor(g) {
+  const ord = {o: 0, r: 1, t: 2};
+  lyrLines = g.lines.slice();
+  for (const r of ["o", "r", "t"]) if (!lyrLines.some(l => l.role === r)) lyrLines.push({role: r, text: ""});
+  lyrLines.sort((a, b) => (ord[a.role] ?? 3) - (ord[b.role] ?? 3));
+  return `<div class="ledit">${lyrLines.map((l, k) => `<label><span>${LYR_ROLE[l.role] || esc(l.role)}${l.lang ? ` (${esc(l.lang)})` : ""}</span><input type="text" data-k="${k}" value="${esc(l.text)}"></label>`).join("")}
+    <div class="lebtn"><button class="primary" data-l="ok">확인</button><button data-l="back">되돌리기</button></div></div>`;
+}
+function lyrRemove(i) {
+  song.groups.splice(i, 1); editTimes.splice(i, 1); editOk.splice(i, 1);
+  if (cursor > i || cursor >= song.groups.length) cursor = Math.max(0, cursor - 1);
+}
+/* the open row's inputs → its lines. → false (kept open: nothing written), "gone" (a new row left empty is dropped), true */
+function lyrApply() {
+  const i = lyrEdit, g = song.groups[i], box = $("lyrics").querySelector(`.g[data-i="${i}"] .ledit`);
+  lyrEdit = -1;
+  if (!g || !box) return true;
+  const lines = [];
+  box.querySelectorAll("input[data-k]").forEach(inp => {
+    const l = lyrLines[+inp.dataset.k], text = inp.value.trim();
+    if (!text) return;
+    const n = {...l, text};
+    if (text !== l.text) delete n.auto;  // a hand-written line is no '자동' line
+    lines.push(n);
+  });
+  if (!lines.length) {
+    if (lyrNew) { lyrNew = false; lyrRemove(i); return "gone"; }
+    lyrEdit = i; uiAlert("빈 행입니다 — 글자를 적거나 삭제를 눌러 주세요."); return false;
+  }
+  if (!lines.some(l => l.role === "o")) lines[0] = {...lines[0], role: "o"};  // no 원문: the first line takes its place (like the page parser)
+  g.lines = lines; g.orig = lines.filter(l => l.role === "o").map(l => l.text).join(" ");
+  lyrNew = false;
+  return true;
+}
+function lyrBack() {
+  const i = lyrEdit;
+  lyrEdit = -1;
+  if (lyrNew) { lyrNew = false; lyrRemove(i); }
+  rerenderKeepScroll();
+}
+function lyrClick(e, i) {
+  const b = e.target.closest("button[data-l]"); if (!b || b.disabled) return;
+  const a = b.dataset.l;
+  if (a === "ok") { if (lyrApply()) rerenderKeepScroll(); return; }
+  if (a === "back") return lyrBack();
+  if (lyrEdit >= 0) {  // another row is open: take it as it is first
+    const was = lyrEdit, r = lyrApply();
+    if (!r) return;
+    if (r === "gone") { if (was === i) return rerenderKeepScroll(); if (was < i) i--; }
+  }
+  if (a === "up" || a === "down") {
+    const at = a === "up" ? i : i + 1;
+    song.groups.splice(at, 0, {lines: [], orig: "", vc: parting ? parting.plain : []});
+    editTimes.splice(at, 0, null); editOk.splice(at, 0, false);
+    if (cursor >= at) cursor++;
+    lyrEdit = at; lyrNew = true;
+  } else if (a === "edit") { lyrEdit = i; lyrNew = false; }
+  else if (a === "del") {
+    if (song.groups.length < 2) return uiAlert("마지막 행은 지울 수 없습니다.");
+    lyrRemove(i);
+  }
+  rerenderKeepScroll();
+  const inp = lyrEdit >= 0 && $("lyrics").querySelector(".ledit input");
+  if (inp) inp.focus({preventScroll: false});
+}
+$("lyrics").addEventListener("keydown", e => {
+  if (!e.target.closest(".ledit") || e.isComposing) return;
+  if (e.key === "Enter") { e.preventDefault(); if (lyrApply()) rerenderKeepScroll(); }
+  else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); lyrBack(); }
+});
 /* sending state of a button that posts to the server (user request 2026-11-17: 신고 전송 · 싱크 저장) */
 function sendingBtn(b, on) {
   if (on) { b.dataset.label = b.textContent; b.innerHTML = '<span class="sendspin" aria-hidden="true"></span>서버에 전송중...'; }

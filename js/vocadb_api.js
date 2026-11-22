@@ -78,6 +78,8 @@ class VSong {
 }
 const vcol = (s, name) => s.r[VDB.col[name]];
 const vours = s => s.r[VDB.col.ours] || NONE_OBJ;
+// one of our songs: lyrics or a sync of ours — not a song that only has a 싱크 실패 state (2026-11-22)
+const vmine = r => { const o = r[VDB.col.ours]; return !!(o && (o.lyrics || o.vsync)); };
 const vsingers = s => String(vcol(s, "singer") || "").split(",").map(x => x.trim()).filter(Boolean);
 const VSONG_GET = {
   site() { return "stream"; },
@@ -111,14 +113,19 @@ const VSONG_GET = {
   sync() { return vours(this).sync === "ok" ? "ok" : undefined; },
   method() { return vours(this).sync === "ok" ? vours(this).method || "" : undefined; },
   score() { const o = vours(this); return o.sync === "ok" ? o.score ?? null : null; },
-  stale() { return vours(this).sync === "stale" ? 1 : undefined; },  // lyrics changed after the sync — list badge (2026-11-18)
+  // the final lyrics · sync state the server sends (table_export._state, user request 2026-11-22) — badges and filters
+  // show these as they are. No cell: ly from VocaDB's lyrics column, sync none
+  ly() { const o = vours(this); return o.ly || (vcol(this, "lyrics") === "Y" ? "vocadb" : "none"); },
+  st() { const s = vours(this).sync; return s === "ok" || s === "fail" || s === "stale" || s === "resync" ? s : "none"; },
+  sync_fail() { return vours(this).fail || undefined; },  // the auto sync's reason (tooltip of 싱크 실패)
   vsync() { return vours(this).vsync ? 1 : undefined; },  // sync made on VocaDB's lyrics (export/db/vsync/<id>.json, 2026-11-17)
+  parts() { return vours(this).parts ? 1 : undefined; },  // lyrics name the vocal of some groups — list badge 파트분리 (2026-11-21)
   files() { const f = vcol(this, "files"); return Array.isArray(f) && f.length ? f : undefined; },  // 파일 포맷 태그 [[종류, 주소, 설명], …]
   flags() {  // 곡 상태 (song_filter.js FLAGS)
     const ko = vcol(this, "title_ko");
     return flagSet(songFlags(this, vcol(this, "lyrics") === "Y", !!(ko && ko !== vcol(this, "title_ja") && ko !== this.def)));
   },
-  api() { return !vcol(this, "ours") && !this.k ? true : undefined; },  // not one of our songs (badges: no 가사·싱크·노래방)
+  api() { return !vmine(this.r) && !this.k ? true : undefined; },  // not one of our songs (badges: no 가사·싱크·노래방)
   video() { return this.sources[0] || ""; },  // Niconico first — sources are in that order
   videos() { const yt = this.sources.find(u => /youtu/.test(u)); return yt ? [yt] : NONE_ARR; },
   // 보컬이 VOCAL_SHOW 명 넘으면 앞 VOCAL_SHOW 명 + ' [+N]' (user request 2026-11-16) — 화면의 제목 옆은 artistBase + '+N' 칩
@@ -238,8 +245,8 @@ const VDB = {
     this.master = {vocal: [], producer: [], artist: [], tag: [], title: []};
     for (const r of m ? tableRows(m) : []) (this.master[r.kind] || (this.master[r.kind] = [])).push({id: +r.id, name: r.ko || r.name, src: r.name, cat: r.cat});
     // our songs = with lyrics / sync of ours (ours) or on a karaoke list (+ karaoke songs without a data row yet)
-    const ours = this.col.ours, cur = [];
-    for (const [id, r] of this.rowById) if (r[ours] || this.kara.has(id)) cur.push(this.itemById(id));
+    const cur = [];
+    for (const [id, r] of this.rowById) if (vmine(r) || this.kara.has(id)) cur.push(this.itemById(id));
     this.done = true;  // from here a karaoke song without a row is made from its karaoke row
     for (const id of this.kara.keys()) if (!this.rowById.has(id)) cur.push(this.itemById(id));
     this.curated = cur;

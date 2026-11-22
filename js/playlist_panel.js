@@ -285,22 +285,16 @@ window.addEventListener("resize", () => renderRows(true));
 /* badges: our lyrics / sync state (songs of ours) · 'VocaDB' for songs found only on VocaDB */
 function badgesHtml(it) {
   // two lines (user request 2026-11-18): lyrics state on top, sync state (+ %) under it
-  const bs = [], ss = [], vdbLyr = (it.flags || []).includes("VocaDB 가사 있음");
-  if (it.site === "stream" && it.api) bs.push('<span class="b src" title="VocaDB 에서 찾은 곡 — 가사는 VocaDB 가사 (있으면)">voca</span>');
-  else if (it.site === "local") { if (!it.lyrics) bs.push('<span class="b warn" title="같은 이름의 가사·싱크 json 이 없음">가사X</span>'); }
-  else if (it.lyrics === "namu") bs.push('<span class="b src" title="나무위키에서 받은 가사">namu</span>');
-  else if (it.lyrics === "vocaro") bs.push('<span class="b src" title="보카로 가사 위키(VL)에서 받은 가사">wiki</span>');
-  else if (it.lyrics === "own") bs.push('<span class="b src" title="직접 넣은 가사">직접 가사</span>');
-  else if (it.lyrics) bs.push('<span class="b src" title="연결된 문서에서 받은 가사">연결 가사</span>');
-  else if (vdbLyr) bs.push('<span class="b src" title="우리 가사가 없어 VocaDB 가사를 보여 줌">voca</span>');
-  else bs.push('<span class="b warn" title="가사가 없음">가사X</span>');
-  // sync: every state of our songs except 직접 싱크 (user request 2026-11-18); the % (노래방 모드: the number) sits here too
-  if (it.sync === "ok" && it.method === "manual") {}
-  else if (it.sync_fail) ss.push(`<span class="b err" title="자동 싱크 실패: ${esc(it.sync_fail)}">싱크 실패</span>`);
-  else if (it.stale) ss.push('<span class="b warn" title="싱크를 맞춘 뒤 가사가 바뀜 — 싱크를 다시 맞춰야 함">싱크 어긋남</span>');
-  else if (it.sync === "ok" && syncPct(it) == null) ss.push('<span class="b ok" title="자동으로 맞춘 싱크">자동 싱크</span>');
-  else if (it.sync !== "ok" && !it.api && (it.lyrics || it.vsync || vdbLyr)) ss.push('<span class="b" title="가사는 있지만 싱크가 없음">싱크X</span>');
-  if (typeof admSyncWaits === "function" && admSyncWaits(it)) ss.push('<span class="b warn" title="플레이어에서 고친 싱크가 반영을 기다림 (관리자: 우클릭 › 선택 모드로 반영)">수정 대기</span>');
+  // user request 2026-11-22, the same rule for every song: gray 가사X · 싱크X (no lyrics = both) · colored 파트분리 · the %
+  // (노래방 모드: the number) · 가사다름 (stale) · 재싱크 필요 (resync) · 싱크 실패 (red); plain lyrics and 직접 싱크 show nothing
+  // the state as the server sent it, the same values the filters read (song_filter.js songLy · songSyncState)
+  const bs = [], ss = [], st = songSyncState(it);
+  if (songLy(it) === "parts") bs.push('<span class="b src" title="보컬별로 파트가 나뉜 가사">파트분리</span>');
+  else if (!songHasLyr(it)) bs.push('<span class="b" title="가사가 없음">가사X</span>');
+  if (st === "stale") ss.push('<span class="b err" title="싱크를 맞춘 뒤 가사가 바뀜 — 싱크를 다시 맞춰야 함">가사다름</span>');
+  else if (st === "resync") ss.push('<span class="b warn" title="바뀐 가사에 지난 싱크를 일부만 옮김 — 다시 맞춰야 함 (지난 싱크로 표시)">재싱크 필요</span>');
+  else if (st === "fail") ss.push(`<span class="b err" title="자동 싱크 실패${it.sync_fail ? `: ${esc(it.sync_fail)}` : ""}">싱크 실패</span>`);  // red (user request 2026-11-22)
+  else if (st === "none") ss.push('<span class="b" title="싱크가 없음">싱크X</span>');
   ss.push(pctHtml(it));
   return `<div class="bl">${bs.join("")}</div><div class="bl">${ss.join("")}</div>`;
 }

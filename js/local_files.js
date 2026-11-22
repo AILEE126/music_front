@@ -65,7 +65,7 @@ const notFound = path => Object.assign(new Error(`${path} 이 없습니다.`), {
 const idb = idbKV("music-offline");  // shared_screen_helpers.js
 
 const LOCAL = {
-  dir: null, gh: null, base: "", items: new Map(), synced: new Map(), chains: new Map(),
+  dir: null, gh: null, base: "", items: new Map(), chains: new Map(),
   get ready() { return !!(this.dir || this.gh); },
 
   /* ---- 깃허브에서 열기: 저장소(아이디/이름)·토큰 → 그 저장소의 Server/data 를 읽고 씀 (기억: 이 브라우저에만) ---- */
@@ -224,6 +224,21 @@ const LOCAL = {
     const w = await (await this.file(path, this.dir, true)).createWritable();
     await w.write(bytes); await w.close();
   },
+  async removeFile(path, asWho = "") {  // no file → nothing to do (an admin's sync save removes the waiting edit it replaces)
+    try {
+      if (this.gh) {
+        const sha = (await (await this.ghFetch(path)).json()).sha, who = asWho || await this.ghWho();
+        await this.ghFetch(path, {method: "DELETE", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({message: `${who}: 서버 없이 지움 — ${path.split("/").pop()}`, sha, branch: this.gh.ref,
+                                author: {name: who, email: "music-player@users.noreply.github.com"}})});
+        return;
+      }
+      const parts = path.split("/").filter(Boolean);
+      let d = this.dir;
+      for (const p of parts.slice(0, -1)) d = await d.getDirectoryHandle(p);
+      await d.removeEntry(parts[parts.length - 1]);
+    } catch (e) { if (e.name !== "NotFoundError") throw e; }
+  },
   async ghPut(path, b64, asWho) {  // 깃허브: 지금 파일의 sha 를 받아 그 위에 커밋 (새 파일이면 sha 없이)
     const who = asWho || await this.ghWho();
     let sha;
@@ -280,6 +295,8 @@ const LOCAL = {
     if (!post && u.pathname === "/api/stream/views") return this.streamViews(q.name);
     if (post && u.pathname === "/api/report") return this.saveReport(body);
     if (post && u.pathname === "/api/sync/save") return body.times == null ? this.saveOffset(body) : this.saveTimes(body);
+    if (post && u.pathname === "/api/parts/save") return this.saveParts(body);
+    if (post && u.pathname === "/api/lyrics/save") return this.saveLyrics(body);
     if (["/api/now", "/api/ovset", "/api/ovprograms", "/api/frame"].includes(u.pathname)) return this.overlay(u.pathname, post, body);
     throw new Error("플레이어에서 할 수 없는 일입니다 (싱크 만들기·가사 받기 등은 서버 PC 의 음원 관리에서).");
   },
@@ -422,39 +439,143 @@ const LOCAL = {
     const d = await this.readJson(`${this.out}/db/lyrics/${it.vocadb}.json`, null);
     return {sj: d && d.sync ? {...d.sync} : null, pend: null};
   },
-  /* 관리자 토큰 (user request 2026-11-20): no 확인 대기, no server needed. A song with lyrics of ours and no waiting edit
-     gets the sync written straight into its player file (export/db/lyrics/<id>.json on the data branch) — no report.
-     Either way a request sync_apply/admin_<VocaDB id>.json (one per song, overwritten by the next nudge) lets the server
-     put it into its table when it runs (error_reports.apply_player_requests; also at server start, before the export
-     that would otherwise write the table's old sync back). Other songs (VocaDB lyrics / an edit already waiting) keep
-     the pending file — every player reads that one — with the request naming its report. */
+  /* 관리자 토큰 (user request 2026-11-20): no 확인 대기, no report, no server needed — whatever the song's state (also with
+     someone's edit waiting, user 2026-11-20). The sync goes straight into the song's player file on the data branch
+     (export/db/lyrics/<id>.json, or vsync/<id>.json for VocaDB's lyrics) and the list row changes at once. A waiting edit
+     it replaces is removed. The request sync_apply/admin_<VocaDB id>.json (one per song, overwritten by the next nudge)
+     lets the server put the sync into its table when it runs and mark the song's 싱크 수정 reports up to then handled
+     (error_reports.apply_player_requests; also at server start, before the export that would write the old sync back). */
   async savePending(it, sj, what) {
     const path = this.pendingPath(it);
     const admin = typeof isAdmin === "function" && isAdmin();
     await this.locked(path, async () => {
       const old = await this.readJson(path, null);
-      const who = admin ? (this.gh ? await this.ghWho() : String(store.get("reportWho", "") || "").trim()) : "";
-      const req = x => this.writeText(`${this.data}sync_apply/admin_${it.vocadb}.json`, JSON.stringify({at: nowText(), who, ...x,
-        songs: [{vocadb: String(it.vocadb), title: it.title || it.name || ""}]}, null, 1) + "\n", who);
-      const lpath = `${this.out}/db/lyrics/${it.vocadb}.json`;
-      const doc = admin && it.lyrics && !(old && Array.isArray(old.times)) ? await this.readJson(lpath, null) : null;
-      if (doc) {
+      if (admin) {
+        const who = this.gh ? await this.ghWho() : String(store.get("reportWho", "") || "").trim();
         const s = {...sj}; delete s.pending; delete s.lyrics;
-        doc.sync = s; doc.sync_state = "ok";
-        await this.writeText(lpath, JSON.stringify(doc), who);  // the server rewrites it in its own form once it applies the request
-        await req({syncs: [{vocadb: String(it.vocadb), sync: s}]});
+        const lpath = `${this.out}/db/lyrics/${it.vocadb}.json`;
+        const doc = it.lyrics ? await this.readJson(lpath, null) : null;
+        if (doc) {
+          doc.sync = s; doc.sync_state = "ok";
+          await this.writeText(lpath, JSON.stringify(doc), who);  // the server rewrites it in its own form once it applies the request
+        } else await this.writeText(this.vsyncPath(it), JSON.stringify(s), who);  // the player showed VocaDB's lyrics
+        await this.writeText(`${this.data}sync_apply/admin_${it.vocadb}.json`, JSON.stringify({at: nowText(), who,
+          syncs: [{vocadb: String(it.vocadb), sync: s}], songs: [{vocadb: String(it.vocadb), title: it.title || it.name || ""}]}, null, 1) + "\n", who);
+        if (old) await this.removeFile(path, who);
+        await this.oursCell(it, o => {  // the list state the server will write (table_export._ours · _state)
+          const c = {...(o || {})};
+          delete c.fail; delete c.score;
+          Object.assign(c, {sync: "ok", method: s.method || ""});
+          if (doc) Object.assign(c, {score: s.score ?? null, ly: c.parts ? "parts" : "ours"}); else Object.assign(c, {vsync: 1, ly: "vocadb"});
+          return c;
+        }, who);
+        admSynced(it, s);
         return;
       }
       let rid = old && old.pending && old.pending.report;
       if (!rid) {  // first edit since the last confirm → one report for it
-        rid = (await this.saveReport({kind: "싱크 수정", text: admin ? `관리자가 플레이어에서 싱크를 고쳤습니다 (${what}). 바로 반영됩니다.`
-            : `플레이어에서 싱크를 고쳤습니다 (${what}). 음원 관리에서 반영하거나 버리세요.`,
+        rid = (await this.saveReport({kind: "싱크 수정", text: `플레이어에서 싱크를 고쳤습니다 (${what}). 음원 관리에서 반영하거나 버리세요.`,
           song: {site: it.site, name: it.name, title: it.title, artist: it.artist || "", vocadb: String(it.vocadb)},
           sync: {vocadb: it.vocadb, pending: `sync_pending/vocadb/${it.vocadb}.json`}})).id;
       }
-      sj.pending = {report: rid, at: nowText(), what, ...(admin ? {admin: true} : {})};
+      sj.pending = {report: rid, at: nowText(), what};
       await this.writeText(path, pyJson(sj));
-      if (admin) await req({ids: [String(rid)]});
+    });
+  },
+  /* 파트분리 (user request 2026-11-21, 관리자 토큰 only): which vocal sings each lyrics group. Like an admin's sync edit it goes
+     straight into the song's player file, and sync_apply/admin_part_<id>.json lets the server keep it in its table
+     (vocadb/lyrics_parts.py — kept while the lyrics are the same). d.parts[i] = {name, color, colors?, own?} or null (own: an admin-made part — 파트 추가, its colors kept), d.vc[i] = its colors */
+  async saveParts(d) {
+    if (!(typeof isAdmin === "function" && isAdmin())) throw new Error("관리자 토큰만 파트를 나눌 수 있습니다.");
+    const it = this.item(d.site, d.name), lpath = `${this.out}/db/lyrics/${it.vocadb}.json`;
+    let has = false;
+    await this.locked(lpath, async () => {
+      const doc = it.lyrics && it.vocadb ? await this.readJson(lpath, null) : null;
+      if (!doc || !Array.isArray(d.parts) || doc.groups.length !== d.parts.length)
+        throw new Error("우리 가사가 있는 곡만 파트를 나눌 수 있습니다 (가사가 바뀌었으면 곡을 다시 열어 주세요).");
+      doc.groups.forEach((g, i) => {
+        if (g.cols) return;  // groups sung at once keep their columns
+        const p = d.parts[i];
+        if (p) g.part = {name: p.name, color: p.color || "", ...(p.colors ? {colors: p.colors} : {}), ...(p.own ? {own: 1} : {})}; else delete g.part;
+        if (Array.isArray(d.vc[i])) g.vc = d.vc[i];
+      });
+      has = doc.groups.some(g => g.part || g.cols);
+      const who = this.gh ? await this.ghWho() : String(store.get("reportWho", "") || "").trim();
+      await this.writeText(lpath, JSON.stringify(doc), who);
+      await this.writeText(`${this.data}sync_apply/admin_part_${it.vocadb}.json`, JSON.stringify({at: nowText(), who,
+        parts: [{vocadb: String(it.vocadb), hash: await lyricsHash(doc.groups), parts: doc.groups.map(g => !g.cols && g.part ? {name: g.part.name, color: g.part.color || "", ...(g.part.own ? {colors: g.part.colors, own: 1} : {})} : null)}],
+        songs: [{vocadb: String(it.vocadb), title: it.title || it.name || ""}]}, null, 1) + "\n", who);
+      await this.oursCell(it, o => {  // list badge 파트분리 — the server's cell (2026-11-22)
+        const c = {...(o || {})};
+        if (has) c.parts = 1; else delete c.parts;
+        c.ly = has ? "parts" : "ours";
+        return c;
+      }, who);
+    });
+    return this.lyrics(d.site, d.name);
+  },
+  /* 가사편집 (user request 2026-11-22, 관리자 토큰 only): rows added · edited · deleted in the player. Like 파트분리 it goes
+     straight into the song's player file, and sync_apply/admin_lyrics_<id>.json lets the server keep it in its table
+     (vocadb/lyrics_edit.py — used while the page's lyrics are the ones the edit began on: base). d.from = hash of the groups the
+     edit began on, d.groups = the new groups. New lyrics drop the old sync (the player saves the times right after) */
+  async saveLyrics(d) {
+    if (!(typeof isAdmin === "function" && isAdmin())) throw new Error("관리자 토큰만 가사를 고칠 수 있습니다.");
+    const it = this.item(d.site, d.name), lpath = `${this.out}/db/lyrics/${it.vocadb}.json`;
+    await this.locked(lpath, async () => {
+      const doc = it.lyrics && it.vocadb ? await this.readJson(lpath, null) : null;
+      const groups = (Array.isArray(d.groups) ? d.groups : []).map(cleanGroup).filter(Boolean);
+      if (!doc || !groups.length) throw new Error("우리 가사가 있는 곡만 가사를 고칠 수 있습니다.");
+      const was = await lyricsHash(doc.groups), now = await lyricsHash(groups);
+      if (was !== d.from && was !== now) throw new Error("그 사이 가사가 바뀌었습니다 — 곡을 다시 열어 주세요.");
+      const who = this.gh ? await this.ghWho() : String(store.get("reportWho", "") || "").trim();
+      const base = (doc.edited && doc.edited.base) || was;  // the page's lyrics hash, kept across later edits
+      doc.groups = groups; doc.edited = {base, who, at: nowText()};
+      if (was !== now) { doc.sync = null; doc.sync_state = ""; }
+      await this.writeText(lpath, JSON.stringify(doc), who);
+      await this.writeText(`${this.data}sync_apply/admin_lyrics_${it.vocadb}.json`, JSON.stringify({at: nowText(), who,
+        lyrics: [{vocadb: String(it.vocadb), base, groups: groups.map(({vc, ...g}) => g)}],
+        songs: [{vocadb: String(it.vocadb), title: it.title || it.name || ""}]}, null, 1) + "\n", who);
+      const parted = groups.some(g => g.part || g.cols);
+      await this.oursCell(it, o => {  // list badges — the server's cell (2026-11-22): new lyrics drop the sync
+        const c = {...(o || {})};
+        if (parted) c.parts = 1; else delete c.parts;
+        c.ly = parted ? "parts" : "ours";
+        if (was !== now) { delete c.method; delete c.score; c.sync = c.sync === "fail" ? "fail" : "none"; }
+        return c;
+      }, who);
+    });
+    return this.lyrics(d.site, d.name);
+  },
+  /* 관리자 저장 → the song's list state (user request 2026-11-22: the list and filters show only what the server sends).
+     The same `ours` cell the server writes (music_backend table_export._state — ly · sync · fail · parts · method · score)
+     goes into songs/patch.json.gz + index.json, the server's own '바뀐 곡' file: this player shows it now, the others on their
+     next load, and the server writes the same when it runs the request. fn(old cell or null) → new cell */
+  async oursCell(it, fn, who) {
+    const d = `${this.out}/db/songs/`, vid = String(it.vocadb || "");
+    if (!vid || typeof VDB === "undefined" || !VDB.col) return;
+    await this.locked(d + "patch.json.gz", async () => {
+      const itext = await this.readText(d + "index.json"), idx = JSON.parse(itext.replace(/^﻿/, ""));
+      const oc = idx.cols.indexOf("ours"), ic = idx.cols.indexOf("vocadb_id");
+      const unzip = gz => new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).json();
+      const doc = idx.patch ? await unzip(await this.readBytes(d + idx.patch.f)) : {rows: [], del: []};
+      if ((doc.del || []).map(String).includes(vid)) return;
+      let row = doc.rows.find(r => String(r[ic]) === vid);
+      if (!row) { const got = (await VDB.rowsOf([vid]))[0]; if (!got) return; doc.rows.push(row = [...got]); }
+      const cell = fn(row[oc] || null) || 0;
+      if (JSON.stringify(cell) !== JSON.stringify(row[oc])) {
+        row[oc] = cell;
+        doc.rows.sort((a, b) => a[ic] - b[ic]);
+        const dels = (doc.del || []).map(String).sort((a, b) => a - b);
+        const text = '{"rows":[\n' + doc.rows.map(r => JSON.stringify(r)).join(",\n") + '\n],"del":' + JSON.stringify(dels) + "}\n";  // table_export._patch_text
+        const gz = await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
+        const h = [...new Uint8Array(await crypto.subtle.digest("SHA-1", new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+        await this.writeBytes(d + "patch.json.gz", gz, who);
+        idx.patch = {f: "patch.json.gz", h, n: doc.rows.length, del: dels.length};
+        await this.writeText(d + "index.json", JSON.stringify(idx) + (itext.includes(CRLF) ? CRLF : LF), who);
+      }
+      const r = VDB.rowById.get(vid) || (it.r !== undefined ? it.r : null);
+      if (r) r[VDB.col.ours] = cell;  // this player: the row the song's fields read
+      if (it.r && it.r !== r) it.r[VDB.col.ours] = cell;
     });
   },
   /* 싱크 밀기(±초)만: 지금 싱크(기다리는 수정이 있으면 그것)의 offset 만 바꿔 기다리는 파일로 */
@@ -485,9 +606,9 @@ const LOCAL = {
     if (ok.every(Boolean)) cur.method = "manual"; else if (cur.method == null || cur.method === "manual") cur.method = "auto";
     if (cur.method == null) cur.method = "manual";
     Object.assign(cur, {version: 2, synced_at: now});
+    // the list row is not touched here (user request 2026-11-22: it shows only the server's data — an admin's save writes
+    // that data itself, oursCell; anyone else's edit waits for the manage screen)
     await this.savePending(it, cur, `직접 맞추기 — 찍은 묶음 ${ok.filter(Boolean).length}/${ok.length}`);
-    this.synced.set(it.site + "/" + it.name, {sync: "ok", method: cur.method});  // 재생목록 표시 (화면용 데이터는 반영 뒤 서버가 다시 씀)
-    Object.assign(it, this.synced.get(it.site + "/" + it.name));
     return this.lyrics(d.site, d.name);
   },
 };
@@ -505,6 +626,14 @@ function pyJson(obj, eol = /Windows/.test(navigator.userAgent) ? CRLF : LF) {
 }
 /* 가사 묶음 확인값: 서버 lyrics_hash 와 같음 (원문 줄들을 줄바꿈으로 이은 글의 SHA-1 앞 16자리) */
 const lyricsHash = groups => sha16(groups.map(g => g.orig).join("\n"));
+/* one lyrics group from 가사편집 → as the server keeps it (vocadb/lyrics_edit.py _clean — same orig rule: 원문 lines joined) */
+function cleanGroup(g) {
+  const lines = (g && Array.isArray(g.lines) ? g.lines : []).map(l => ({...l, text: String(l.text || "").trim().slice(0, 500),
+    role: ["o", "r", "t", "x"].includes(l.role) ? l.role : "t"})).filter(l => l.text);
+  if (!lines.length) return null;
+  if (!lines.some(l => l.role === "o")) lines[0].role = "o";
+  return {...g, lines, orig: lines.filter(l => l.role === "o").map(l => l.text).join(" ")};
+}
 /* first 16 hex of SHA-1 (the server's lyrics_hash · reading h) */
 async function sha16(text) {
   const buf = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(text));
