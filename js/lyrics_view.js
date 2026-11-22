@@ -168,7 +168,7 @@ document.addEventListener("click", e => {
   play(VDB.itemById(b.dataset.orig));
 });
 /* 곡 태그 칩 묶음 순서 when filter.json has none (= server filter_settings.CHIP_GROUPS) */
-const CHIP_ORDER = ["producer", "vocal", "kara", "gone", "list", "tag", "file"];
+const CHIP_ORDER = ["producer", "vocal", "support", "kara", "gone", "list", "tag", "file"];
 function renderMeta(it) {
   const tags = it.tags || [], notes = it.notes || [], box = $("songMeta");
   const kara = tags.filter(t => KARAOKE_TAG[t]).map(t => [KARAOKE_TAG[t], t]);
@@ -186,6 +186,8 @@ function renderMeta(it) {
   const groups = {
     producer: String(it.composer || "").split(", ").filter(Boolean).map(prodChip),
     vocal: [...vocals.slice(0, VOCAL_SHOW).map(vocalChip), ...(vocals.length > VOCAL_SHOW ? [vocalMoreChip(vocals.length - VOCAL_SHOW, vocals.length)] : [])],
+    // VocaDB 보조 보컬 (user request 2026-11-22): a plain chip — no color, no card, not a vocal anywhere else
+    support: String(it.support || "").split(", ").filter(Boolean).map(n => `<span class="b" title="보컬(보조 보컬)">${esc(n)}</span>`),
     kara: kara.map(([t, b]) => `<span class="b kara" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b]}" title="${esc(karaOnlyTip(it, b, "노래방 수록"))}">${esc(t)}${karaOnlyMark(it, b)}</span>`),
     gone: Object.keys(it.gone || {}).map(b => `<span class="b kara gone" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b] || "#888"}" title="노래방에서 내려간 곡입니다 (${esc(b)} ${esc(it.gone[b])})">${esc(KARAOKE_TAG[b] || b)}</span>`),
     list: lists.map(tagChip),

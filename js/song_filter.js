@@ -18,13 +18,12 @@ function initialOf(title) {
 const people = s => (s || "").split(/\s*(?:,|，|、|&|＆|\/)\s*/).map(x => x.trim()).filter(Boolean);
 /* 보컬 인원수 (user request 2026-11-14): 보컬 칸의 사람 수 그대로 — 태그가 아님. 5명부터는 '5+' 하나 (보컬이 없는 곡은 값 없음) */
 const VCOUNT_MAX = 5;
-/* 인원수 · 솔로에서 빼는 보컬 (user request 2026-11-20): VocaDB 보조 보컬 (songs col vocal_support '<보컬 수>:<위치>|…', 보컬 수가
-   보컬 칸과 다르면 안 씀) · 코러스로만 참여하는 프로듀서 (피노키오피) — 같은 규칙: 서버 library/vocal_colors.py main_singers */
+/* 인원수 · 솔로에서 빼는 보컬 (user request 2026-11-20): 코러스로만 참여하는 프로듀서 (피노키오피) — 같은 규칙: 서버
+   library/vocal_colors.py main_singers. VocaDB 보조 보컬은 보컬 칸에 아예 없음 (songs col support, 2026-11-22) */
 const CHORUS_ONLY = new Set(["피노키오피", "ピノキオピー", "pinocchiop"]);
 function mainSingers(it) {
-  const names = String(it.singer || "").split(", "), [n, pos] = String(it.vsup || "").split(":");
-  const drop = pos && +n === names.length ? new Set(pos.split("|").map(Number)) : null;
-  const keep = names.filter((x, k) => !(drop && drop.has(k)) && !CHORUS_ONLY.has(x.replace(/[\s\-_·]/g, "").toLowerCase()));
+  const names = String(it.singer || "").split(", ");
+  const keep = names.filter(x => !CHORUS_ONLY.has(x.replace(/[\s\-_·]/g, "").toLowerCase()));
   return keep.some(Boolean) ? people(keep.join(", ")) : people(it.singer);
 }
 const vcountOf = it => { const n = (it._vsingers || it._singers || []).length; return !n ? "" : n >= VCOUNT_MAX ? VCOUNT_MAX + "+" : String(n); };

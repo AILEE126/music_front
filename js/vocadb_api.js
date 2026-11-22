@@ -96,7 +96,8 @@ const VSONG_GET = {
   alt() { return vcol(this, "alt_names") || ""; },
   singer() { return vcol(this, "singer") || ""; },
   composer() { return vcol(this, "composer") || ""; },
-  vsup() { return vcol(this, "vocal_support") || undefined; },  // VocaDB 보조 보컬 positions — song_filter.js mainSingers (2026-11-20)
+  // VocaDB 보조 보컬 names (user request 2026-11-22): not in singer — only plain '보컬(보조 보컬)' chips in the song info
+  support() { return vcol(this, "support") || undefined; },
   vocals() { return vsingers(this).map(vocalPair); },
   date() { const d = String(vcol(this, "upload_date") || ""); return d.length === 8 ? istr(`${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`) : ""; },
   thumb() { return unUrl(vcol(this, "thumb"), vcol(this, "video_url")); },
@@ -135,7 +136,7 @@ const VSONG_GET = {
   // song_filter.js prepItem's fields
   _ini() { return initialOf(this.title); },
   _singers() { return people(this.singer); },
-  _vsingers() { return mainSingers(this); },  // 보컬 인원수 · 솔로 (보조 보컬 · 피노키오피 빼고)
+  _vsingers() { return mainSingers(this); },  // 보컬 인원수 · 솔로 (피노키오피 빼고)
   _composers() { return people(this.composer); },
   _year() { const d = this.date; return /^\d{4}/.test(d) ? d.slice(0, 4) : ""; },
   // 같은 곡 묶음 · 공식 여부 from the server (fam · own · ver columns) — none (older data): song_filter.js works them out
