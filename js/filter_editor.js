@@ -5,7 +5,7 @@
 
    필터 = 그룹 [{x: 제외 그룹, m: 그룹으로 남김, c: [{k: 종류, v: 값 | [값, …]}]}] — 그룹 안 조건은 모두 맞아야(교집합),
    포함 그룹끼리는 하나라도 맞으면 보임(합집합), 제외 그룹의 조건에 모두 맞는 곡은 빠짐. cur: 새 조건이 들어갈 그룹.
-   곡 종류는 그룹마다 꼭 하나 (user request 2026-11-14) · 새 그룹은 원곡만 조건(F_ORIG_DEF)으로 시작.
+   곡 종류는 꼭 고르지 않아도 됨 (user request 2026-11-23 — 예전엔 그룹마다 꼭 하나) · 새 필터는 원곡만 조건(F_ORIG_DEF)으로 시작.
    필터에는 정렬 · 몇 번째부터 · 몇 곡도 같이 들어감 (user request 2026-11-22): {groups, sort, from, n} — 예전에 저장한 것은 그룹만 (배열).
 
    화면 (user request 2026-11-21 — 강력하지만 복잡하고, 카테고리가 뭐가 있는지 한눈에 안 보여 잘 안 쓰게 됨):
@@ -15,7 +15,8 @@
    · 값이 F_TAG_MIN 개도 안 되는 태그 분류는 고급에서만 보임. */
 var DD_CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
 /* 원곡만 = 그 곡의 가장 원조인 보카로 버전 (user request 2026-11-16 · 2026-11-18). 음원 관리에서 고치던 예전 기본값 필터는 없앰
-   (user request 2026-11-22: 원곡만 스위치가 생겨 필요 없음) — 이 값 하나로 고정. 곡 종류는 새 그룹이 시작하는 값 */
+   (user request 2026-11-22: 원곡만 스위치가 생겨 필요 없음) — 이 값 하나로 고정. 곡 종류도 원곡만과 같이 들고 남
+   (user request 2026-11-23: 모든곡인데 곡 종류가 남아 있었음) — 직접 고른 곡 종류는 그대로 */
 const F_ORIG_DEF = [{x: false, c: [{k: "type", v: ["오리지널", "커버", "리믹스", "리마스터"]}, {k: "vkind", v: ["엔진", "섞임"]},
   {k: "same_sort", v: ["재생 가능", "긴 버전 먼저", "원작자 먼저", "먼저 나온 순", "인기순"]}, {k: "same_cut", v: "1"}]}];
 const F_ONE_COND = ["type", "same_sort", "same_cut"];  // 그룹에 하나뿐인 조건 — 다시 고르면 값만 바뀜
@@ -71,9 +72,8 @@ function makeFilterEditor(H) {
   /* ---------- 그룹 ---------- */
   E.def = () => copy(F_ORIG_DEF).map(g => ({...g, m: true}));
   E.base = () => { const d = E.def(); return (d.find(g => !g.x) || d[0]).c; };
-  E.withType = g => g.c.some(c => c.k === "type") ? g : {...g, c: [E.base().find(c => c.k === "type") || {k: "type", v: "오리지널"}, ...g.c]};
-  /* 곡 종류와 원곡만 조건만 든 그룹은 첫 그룹이 아니면 아직 빈 그룹 — 다른 조건을 고를 때까지 거르지 않음 ('＋ 그룹'만 눌러도 결과가 바뀌지 않게) */
-  const baseCond = c => c.k === "type" || E.base().some(b => b.k === c.k && same(b.v, c.v));
+  /* 원곡만 조건만 든 그룹은 첫 그룹이 아니면 아직 빈 그룹 — 다른 조건을 고를 때까지 거르지 않음 ('＋ 그룹'만 눌러도 결과가 바뀌지 않게) */
+  const baseCond = c => E.base().some(b => b.k === c.k && same(b.v, c.v));
   E.real = (g, i) => i === 0 || g.c.some(c => !baseCond(c));
   E.live = () => E.groups.filter(E.real);
   E.picked = () => E.groups.reduce((n, g) => n + g.c.filter(c => !baseCond(c)).length, 0);  // 원곡만 조건 말고 고른 조건 수
@@ -82,7 +82,7 @@ function makeFilterEditor(H) {
   E.sort = "RatingScore"; E.from = 0; E.n = F_N_DEF;
   E.set = x => {
     const f = x ? filterOf(x) : null;
-    E.groups = f && f.groups.length ? copy(f.groups).map(g => E.withType({...g, m: true})) : E.def(); E.cur = 0;
+    E.groups = f && f.groups.length ? copy(f.groups).map(g => ({...g, m: true})) : E.def(); E.cur = 0;
     if (!f) { E.sort = "RatingScore"; E.from = 0; E.n = F_N_DEF; }
     else if (f.sort) { E.sort = f.sort; E.from = f.from; E.n = f.n; }
     else if (!H.keepSort) { E.sort = "RatingScore"; E.from = 0; E.n = 0; }
@@ -118,11 +118,11 @@ function makeFilterEditor(H) {
     return n;
   }
   /* 조건 끌어 옮기기 (user request 2026-11-17): a condition (or the folded 원곡만 chip — all of them) dragged onto another group moves
-     there. 곡 종류 never moves (one per group). A one-per-group condition replaces the one already there */
+     there. A one-per-group condition replaces the one already there */
   function moveConds(from, ci, to) {
     const src = E.groups[from], dst = E.groups[to];
     if (!src || !dst || from === to) return false;
-    const moved = (ci < 0 ? E.defIdx(src) || [] : [ci]).map(j => src.c[j]).filter(c => c && c.k !== "type");
+    const moved = (ci < 0 ? E.defIdx(src) || [] : [ci]).map(j => src.c[j]).filter(Boolean);
     if (!moved.length) return false;
     src.c = src.c.filter(c => !moved.includes(c));
     for (const c of moved) {
@@ -138,7 +138,7 @@ function makeFilterEditor(H) {
     if (Array.isArray(v) && v.length === 1) v = v[0];
     if (!E.groups[E.cur] || !E.groups[E.cur].m) {  // 그룹으로 남긴 게 선택돼 있지 않음 → 이 조건 하나만
       E.groups = E.groups.filter(g => g.m);
-      E.groups.push(E.withType({x: false, m: false, c: [{k, v}]})); E.cur = E.groups.length - 1;
+      E.groups.push({x: false, m: false, c: [{k, v}]}); E.cur = E.groups.length - 1;
       return E.changed();
     }
     const g = E.groups[E.cur], t = g.c.find(c => c.k === k && F_ONE_COND.includes(k));
@@ -150,6 +150,7 @@ function makeFilterEditor(H) {
 
   /* ---------- 원곡만 스위치 (user request 2026-11-21) ----------
      F_ORIG_DEF 의 곡 종류 말고 나머지 조건 (보컬 종류 · 같은 곡 정렬 · 자르기 …) 이 포함 그룹마다 다 들어 있으면 켜짐.
+     켜면 곡 종류가 없는 그룹엔 F_ORIG_DEF 의 곡 종류도 · 끄면 그 값 그대로인 곡 종류도 뺌 (직접 고른 곡 종류는 남음).
      곡만 모은 그룹 ('현재 필터에 추가') 과 제외 그룹은 세지 않음. → 1 켜짐 · 0 꺼짐 · -1 일부만 들어 있음 (고급으로 보임) */
   const baseExtra = () => E.base().filter(b => b.k !== "type");
   const hasCond = (g, b) => g.c.some(c => c.k === b.k && same(c.v, b.v));
@@ -161,13 +162,17 @@ function makeFilterEditor(H) {
     if (gs.every(g => ex.every(b => hasCond(g, b)))) return 1;
     return gs.some(g => ex.some(b => hasCond(g, b))) ? -1 : 0;
   }
-  function setOrig(on) {
+  function setOrig(on, quiet) {  // quiet: no redraw · search (the caller does it)
     E.ensure();
-    const ex = baseExtra();
-    for (const g of origGroups()) { if (on) putConds(g, ex); else g.c = g.c.filter(c => !ex.some(b => b.k === c.k && same(b.v, c.v))); }
+    const ex = baseExtra(), bt = E.base().filter(b => b.k === "type");
+    for (const g of origGroups()) {
+      if (on) putConds(g, g.c.some(c => c.k === "type") ? ex : [...bt, ...ex]);
+      else g.c = g.c.filter(c => !E.base().some(b => b.k === c.k && same(b.v, c.v)));
+    }
     E.groups.forEach(g => { g.m = true; });
-    E.changed();
+    if (!quiet) E.changed();
   }
+  E.setOrig = setOrig;
   const showOrig = () => (!H.showOrig || H.showOrig()) && baseExtra().length > 0;
   /* 고급: 단추로 켠 때 · 그룹이 여럿이거나 제외 그룹이 있는 필터 (안 그러면 안 보이는 조건이 생김) */
   const complex = () => E.live().length > 1 || E.groups.some(g => g.x) || (showOrig() && origState() < 0);
@@ -177,21 +182,19 @@ function makeFilterEditor(H) {
   /* 곡 조건 (user request 2026-11-18): several songs → a small scrolling list, one song per line */
   E.chipVal = c => c.k === "song" && Array.isArray(c.v) && c.v.length > 1
     ? `<span class="v slist">${c.v.map(v => `<span>${esc(H.oneLabel(c.k, v))}</span>`).join("")}</span>` : `<span class="v">${esc(H.chipLabel(c))}</span>`;
-  const defTitle = () => "원곡만: " + esc(baseExtra().map(H.chipLabel).join(" · "));
+  const defTitle = () => "원곡만: " + esc(E.base().map(H.chipLabel).join(" · "));
   function chipHtml(g, c, cls, ed, drag) {
     const j = g.c.indexOf(c), on = j === ed ? " edit" : "";
-    // 곡 종류: 그룹마다 꼭 하나 — 지우기 없이 고르는 칸 모양 (▾), 옮기지 않음 · 다른 조건: 누르면 고치기, × 빼기, 끌어서 다른 그룹으로
-    return c.k === "type"
-      ? `<span class="fchip req${cls}${on}" data-c="${j}" title="곡 종류 — 그룹마다 꼭 하나 · 누르면 바꾸기"><span class="k">${esc(H.chipKind(c))}</span><span class="v">${esc(H.chipLabel(c))}</span>${DD_CHEV}</span>`
-      : `<span class="fchip${cls}${on}" data-c="${j}"${drag ? ' draggable="true"' : ""} title="누르면 이 조건 고치기${drag ? " · 끌어서 다른 그룹으로" : ""}"><span class="k">${esc(H.chipKind(c))}</span>${E.chipVal(c)}<button title="빼기">×</button></span>`;
+    // 누르면 고치기, × 빼기, 끌어서 다른 그룹으로
+    return `<span class="fchip${cls}${on}" data-c="${j}"${drag ? ' draggable="true"' : ""} title="누르면 이 조건 고치기${drag ? " · 끌어서 다른 그룹으로" : ""}"><span class="k">${esc(H.chipKind(c))}</span>${E.chipVal(c)}<button title="빼기">×</button></span>`;
   }
   function renderChips() {
     const a = advOn(), ed = i => dd && dd.edit && dd.edit.g === i ? dd.edit.c : -1;
     H.chips.classList.toggle("simple", !a);
-    if (!a) {  // 그룹 하나: 상자 없이 고른 조건만 — 원곡만 스위치가 대신하는 조건 · 처음 값 그대로인 곡 종류는 안 보임
+    if (!a) {  // 그룹 하나: 상자 없이 고른 조건만 — 원곡만 스위치가 대신하는 조건 (처음 값 그대로인 곡 종류도) 은 안 보임
       if (!E.groups[E.cur]) E.cur = 0;
-      const ex = origState() > 0 ? baseExtra() : [], bt = E.base().find(b => b.k === "type");
-      const hid = c => c.k === "type" ? !!bt && same(bt.v, c.v) : ex.some(b => b.k === c.k && same(b.v, c.v));
+      const ex = origState() > 0 ? E.base() : [];
+      const hid = c => ex.some(b => b.k === c.k && same(b.v, c.v));
       H.chips.innerHTML = E.groups.map((g, i) => {
         const cs = g.c.filter(c => known(c) && !hid(c));
         return cs.length ? `<div class="fgroup plain" data-g="${i}">${cs.map(c => chipHtml(g, c, "", ed(i), false)).join("")}</div>` : "";
@@ -301,7 +304,7 @@ function makeFilterEditor(H) {
     const g = e && E.groups[e.g], c = g && g.c[e.c];
     if (c) {
       vs = vs.filter(Boolean);
-      if (!vs.length) { if (c.k !== "type") g.c.splice(e.c, 1); }  // 다 풀면 조건을 뺌 (곡 종류는 꼭 하나라 그대로)
+      if (!vs.length) g.c.splice(e.c, 1);  // 다 풀면 조건을 뺌
       else {
         c.v = c.k === "same_cut" ? vs[vs.length - 1] : vs.length === 1 && c.k !== "song" ? vs[0] : vs;
         if (c.k === "singer" || c.k === "solo") c.k = E.solo ? "solo" : "singer";
@@ -310,11 +313,11 @@ function makeFilterEditor(H) {
     E.changed();
   }
   const addValues = (cat, vs) => E.addChip(cat.k === "singer" && E.solo ? "solo" : cat.k, vs.filter(Boolean));
-  /* '추가' 단추: 고치는 중이면 '바꾸기' (다 풀면 '조건 빼기' — 곡 종류는 하나는 남겨야 함) */
+  /* '추가' 단추: 고치는 중이면 '바꾸기' (다 풀면 '조건 빼기') */
   function addBtn() {
     const b = pop() && pop().querySelector(".fdd-add"); if (!b) return;
     const ec = editCond(), n = dd.sel.size;
-    b.disabled = ec ? !n && ec.k === "type" : !n;
+    b.disabled = !ec && !n;
     b.textContent = ec ? (n ? `바꾸기 ${n}` : "조건 빼기") : n ? `추가 ${n}` : "추가";
     b.title = ec ? "체크한 값으로 이 조건을 바꿈" : "체크한 값들을 조건 하나로 (그중 하나라도 맞으면)";
   }

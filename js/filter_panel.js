@@ -39,7 +39,7 @@ const FE = makeFilterEditor({
 const fDefault = FE.def, fReal = FE.real, renderFilterOptions = FE.render, closeDD = FE.closeDD, placePop = filterPlacePop;
 samePlayable = it => canPlay(it);  // 같은 곡 정렬 '재생 가능' = 재생목록에 넣을 수 있는 곡
 /* 곡 조건 (user request 2026-11-14: 검색 결과의 '현재 필터에 추가'): 지금 결과에 이 곡'도' 더함 — 곡만 모은 포함 그룹 하나
-   (곡 종류 + 곡 조건, 그룹끼리는 또는)에 VocaDB 번호를 모음. 선택된 그룹에 넣으면 결과가 그 곡으로 좁혀져 목록이 줄어들기 때문
+   (곡 조건 — 예전에 저장한 것은 곡 종류도, 그룹끼리는 또는)에 VocaDB 번호를 모음. 선택된 그룹에 넣으면 결과가 그 곡으로 좁혀져 목록이 줄어들기 때문
    (user report: 누르니 목록이 맨 위로). 그 곡의 종류가 그룹의 곡 종류에 없으면 더함. 이미 든 곡은 다시 누르면 뺌 (다 빠지면 그룹도) */
 function songGroup() { return FE.groups.find(g => !g.x && g.c.some(c => c.k === "song") && g.c.every(c => c.k === "song" || c.k === "type")); }
 function songId(it) { return String(it.vocadb || it.name); }
@@ -49,7 +49,7 @@ function toggleSongCond(it) {
   FE.ensure();
   const id = songId(it), ty = VDB_TYPE_KO[it.type] || it.type;
   let g = songGroup();
-  if (!g) { g = {x: false, m: true, c: [ty ? {k: "type", v: ty} : FE.base().find(c => c.k === "type")]}; FE.groups.push(g); }
+  if (!g) { g = {x: false, m: true, c: []}; FE.groups.push(g); }  // 곡 종류 없이 (user request 2026-11-23)
   FE.groups.forEach(x => { x.m = true; });  // 버튼 없이 고른 조건도 그룹으로 남김 (다음 조건을 골라도 지워지지 않게)
   let c = g.c.find(c => c.k === "song");
   if (c && [].concat(c.v).includes(id)) {
