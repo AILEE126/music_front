@@ -47,6 +47,7 @@ var APP = (() => {
     try { return dirHandle(await M.pickFolder()); }
     catch (e) { const x = new Error("폴더를 고르지 않았습니다."); if (e.code === "cancel") x.name = "AbortError"; throw x; }
   };
+  A.dirFrom = d => dirHandle(d);  // a folder from 이전에 연결한 mp3 폴더 (offline_folder.js keeps its {tree, uri, name})
   A.savedDir = async () => { const d = await M.savedFolder(); return d && d.uri ? dirHandle(d) : null; };
 
   /* ---- lyrics overlay: answers what local_files.js would ask the PC overlay (127.0.0.1:47613) ---- */

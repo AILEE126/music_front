@@ -1,4 +1,8 @@
 /* 플레이어 오프라인 모드: 고른 mp3 폴더의 mp3 를 그대로 틂
+   · 폴더 전체 (user request 2026-11-22): mp3 in every subfolder too — song name = path inside the folder ('sub/x.mp3')
+   · 이전에 연결한 mp3 폴더 (user request 2026-11-22): every folder connected is kept in this browser (IndexedDB mp3-dirs:
+     handle · name · path · mp3 count · time, newest first) → 곡 추가 window lists them with 폴더 연결. A browser never tells
+     the real path — only the folder name; the phone app's folder address gives the path
    · 폴더는 열 때마다 고름 (브라우저 폴더 권한). '이전 폴더 연결하기'를 누르면 지난번에 고른 폴더를 다시 (누를 때만 권한을 물을 수 있음)
    · 곡 정보: mp3 태그 (제목·아티스트·프로듀서·보컬·투고일·원제·원제 발음·받은 영상·썸네일)
    · 가사·싱크: mp3 와 같은 이름의 <이름>.json 이 있는 곡만 (음원 관리 'mp3 다운로드'가 같이 씀 — 화면용 가사 json 과 같은 모양).
@@ -63,6 +67,29 @@ var OFFDIR = (() => {
       await this.use(dir);
       try { await idb("put", "mp3-dir", dir); } catch (e) {}
     },
+    /* 이전에 연결한 mp3 폴더 */
+    async recent() { try { return (await idb("get", "mp3-dirs")) || []; } catch (e) { return []; } },
+    async remember(dir, n) {
+      const app = dir._app ? {tree: dir._app.tree, uri: dir._app.uri, name: dir._app.name} : null;
+      const path = app ? (decodeURIComponent(app.uri).split(":").pop() || app.name) : dir.name;
+      const old = [];
+      for (const x of await this.recent()) {
+        const same = app ? x.app && x.app.uri === app.uri : x.h && await x.h.isSameEntry(dir).catch(() => false);
+        if (!same) old.push(x);
+      }
+      try { await idb("put", "mp3-dirs", [{name: dir.name, path, n, at: nowText(), ...(app ? {app} : {h: dir})}, ...old].slice(0, 20)); } catch (e) {}
+    },
+    async forget(i) { const L = await this.recent(); L.splice(i, 1); try { await idb("put", "mp3-dirs", L); } catch (e) {} },
+    async connectRecent(i) {  // 폴더 연결 — asks the browser's permission again (only works on a click)
+      const x = (await this.recent())[i];
+      if (!x) throw new Error("기록에 없는 폴더입니다.");
+      const dir = x.app ? APP.dirFrom(x.app) : x.h;
+      let st = await dir.queryPermission({mode: "readwrite"});
+      if (st !== "granted") st = await dir.requestPermission({mode: "readwrite"});
+      if (st !== "granted") throw new Error("폴더를 읽을 권한이 없습니다.");
+      await this.use(dir);
+      if (!x.app) try { await idb("put", "mp3-dir", dir); } catch (e) {}
+    },
     async reconnect() {  // '이전 폴더 연결하기' (누를 때만 — 브라우저가 그때만 권한을 물어봄)
       const dir = await this.saved();
       if (!dir) throw new Error("이전에 연결한 폴더가 없습니다. 폴더를 고르세요.");
@@ -71,28 +98,31 @@ var OFFDIR = (() => {
       if (st !== "granted") throw new Error("폴더를 읽을 권한이 없습니다.");
       await this.use(dir);
     },
-    /* 폴더의 mp3 · 같은 이름의 json → 곡 목록 */
+    /* 폴더 (하위 폴더 전체)의 mp3 · 같은 폴더의 같은 이름 json → 곡 목록 */
     async use(dir) {
       const mp3s = [], jsons = new Map();
-      for await (const [n, h] of dir.entries()) {
-        if (h.kind !== "file") continue;
-        if (/\.mp3$/i.test(n)) mp3s.push(h); else if (/\.json$/i.test(n)) jsons.set(n.replace(/\.json$/i, "").toLowerCase(), h);
-      }
-      if (!mp3s.length) throw new Error(`'${dir.name}' 폴더에 mp3 가 없습니다.`);
+      const walk = async (d, pre) => {
+        for await (const [n, h] of d.entries()) {
+          if (h.kind === "directory") { if (!n.startsWith(".")) await walk(h, pre + n + "/"); continue; }
+          if (/\.mp3$/i.test(n)) mp3s.push([pre + n, h]); else if (/\.json$/i.test(n)) jsons.set((pre + n).replace(/\.json$/i, "").toLowerCase(), h);
+        }
+      };
+      await walk(dir, "");
+      if (!mp3s.length) throw new Error(`'${dir.name}' 폴더에 mp3 가 없습니다 (하위 폴더 포함).`);
       this.urls.forEach(u => URL.revokeObjectURL(u)); this.urls = [];
       const items = [];
       let k = 0;
-      const one = async h => {
-        const file = await h.getFile(), stem = h.name.replace(/\.mp3$/i, "");
+      const one = async ([rel, h]) => {
+        const file = await h.getFile(), stem = h.name.replace(/\.mp3$/i, ""), relStem = rel.replace(/\.mp3$/i, "");
         let t = {tags: {}, cover: null};
         try { t = await readTags(file); } catch (e) {}
-        const g = x => t.tags[x] || "", side = jsons.get(stem.toLowerCase());
+        const g = x => t.tags[x] || "", side = jsons.get(relStem.toLowerCase());
         let sj = null;
         if (side) { try { sj = JSON.parse((await (await side.getFile()).text()).replace(/^﻿/, "")); } catch (e) {} }
         const url = file._src || URL.createObjectURL(file), cover = t.cover ? URL.createObjectURL(t.cover) : "";
         this.urls.push(url); if (cover) this.urls.push(cover);
         const date = g("TDRC").slice(0, 10), sync = sj && sj.groups && sj.groups.length ? (sj.sync && sj.sync.times ? sj.sync_state || "ok" : "") : "";
-        items.push({site: "local", name: h.name, title: g("TIT2") || stem, artist: g("TPE1"), composer: g("TCOM"), singer: g("TXXX:SINGER"),
+        items.push({site: "local", name: rel, title: g("TIT2") || stem, artist: g("TPE1"), composer: g("TCOM"), singer: g("TXXX:SINGER"),
           date: /^\d{4}/.test(date) ? date : "", orig: g("TXXX:TITLE_ORIG"), reading: g("TXXX:TITLE_READING"),
           video: g("TXXX:VIDEO") || g("TXXX:SOURCE"), videos: [], nico: "", tags: [], nums: {}, ord: {local: 0},
           cover: cover ? 1 : 0, _url: url, _cover: cover, _side: side || null,
@@ -105,6 +135,7 @@ var OFFDIR = (() => {
       await Promise.all(Array.from({length: 6}, run));
       items.sort((a, b) => a.name.localeCompare(b.name, "ko"));
       items.forEach((it, i) => { it.ord = {local: i}; });
+      await this.remember(dir, items.length);
       this.dir = dir; this.items = items; this.byName = new Map(items.map(it => [it.name, it]));
       this.subs.forEach(f => { try { f(); } catch (e) { this.subs.delete(f); } });
     },

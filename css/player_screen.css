@@ -866,8 +866,35 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
 /* 재생목록 (user request 2026-11-14): ✕ to take a song out, drag to reorder */
 .item.dropto{box-shadow:inset 0 2px 0 var(--accent)}
 #list .empty button{margin-top:10px}
+/* 곡 추가 창 (user request 2026-11-22): same size as 곡 검색 — source picks + 추천 재생목록 cards */
+#addDlg{width:min(980px,96vw);height:min(86vh,900px);padding:0}
+#addDlg[open]{display:flex;flex-direction:column}
+#addDlg .dlg-head{display:flex;align-items:center;gap:8px}
+#addDlg .grow{flex:1}
+#addDlg .dlg-body{display:flex;flex-direction:column;gap:12px;flex:1;min-height:0;text-align:left;overflow-y:auto}
+#addDlg .offnote{margin:0}
+#addDlg .rech{font-weight:700;margin-bottom:8px}
+#addDlg .rech .muted{font-weight:400;font-size:12px;color:var(--muted)}
+.recgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.recgrid .empty{grid-column:1/-1;padding:16px;text-align:center;color:var(--muted)}
+.reccard{display:flex;flex-direction:column;gap:6px;padding:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--card);text-align:left;cursor:pointer}
+.reccard.on{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok)}
+.reccard .rthumb{position:relative;display:flex;align-items:center;justify-content:center;aspect-ratio:16/9;background:var(--chip);font-size:28px;color:var(--muted)}
+.reccard .rthumb img{width:100%;height:100%;object-fit:cover}
+.reccard .rthumb i{position:absolute;right:0;bottom:0;padding:2px 6px;font-size:11px;font-style:normal;color:#fff;background:rgba(0,0,0,.7)}
+#dirList{display:flex;flex-direction:column;gap:6px}
+#dirList .empty{padding:16px;text-align:center;color:var(--muted)}
+.dirrow{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+.dirrow.on{border-color:var(--ok)}
+.dirrow .dp{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.dirrow .dm{flex:none;font-size:12px;color:var(--muted)}
+.offnote .row .muted{align-self:center;font-size:12px;color:var(--muted)}
+.reccard .rdel{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;background:rgba(0,0,0,.6)}
+.reccard .rdel:hover{background:rgba(0,0,0,.85)}
+.reccard .rat{padding:0 8px 8px;margin-top:-4px;font-size:11px;color:var(--muted)}
+.reccard .rt{padding:0 8px 8px;font-size:13px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 /* 곡 검색 창 */
-#searchDlg{width:min(980px,96vw);height:min(86vh,900px);padding:0}
+#searchDlg{width:min(980px,96vw);height:min(calc(86vh + 100px),1000px,calc(100vh - 16px));max-height:calc(100vh - 16px);padding:0}  /* +100px taller (user request 2026-11-22) */
 #searchDlg[open]{display:flex;flex-direction:column}
 #searchDlg .dlg-head{display:flex;align-items:center;gap:8px}
 #searchDlg .dlg-body{display:flex;flex-direction:column;gap:8px;flex:1;min-height:0;text-align:left}
@@ -1117,10 +1144,10 @@ body.m .mnav{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;heig
 body.m .side>.side-head>.filters{display:none}  /* 곡 검색 · 같이듣기 · 노래방 are in the bottom menu */
 body.m .side-head .top{gap:6px}
 body.m .side-head .top .onoff{align-self:center}
-body.m #searchDlg,body.m #karaDlg,body.m #listenDlg,body.m #mSetDlg{position:fixed;inset:0 0 auto 0;z-index:25;width:100%;height:calc(100dvh / var(--ui-zoom) - var(--mbottom));max-width:none;max-height:none;margin:0;border:0;border-radius:0}  /* pages above the list, ending at the bottom menu (not modal — mobile_view.js) */
+body.m #searchDlg,body.m #addDlg,body.m #karaDlg,body.m #listenDlg,body.m #mSetDlg{position:fixed;inset:0 0 auto 0;z-index:25;width:100%;height:calc(100dvh / var(--ui-zoom) - var(--mbottom));max-width:none;max-height:none;margin:0;border:0;border-radius:0}  /* pages above the list, ending at the bottom menu (not modal — mobile_view.js) */
 /* 좌우로 밀어 메뉴 옮기기 (user request 2026-11-16, mobile_view.js): sideways moves are ours (the list still scrolls up/down);
    the page coming in sits over the one leaving */
-body.m .side,body.m #searchDlg,body.m #karaDlg,body.m #listenDlg,body.m #mSetDlg{touch-action:pan-y}
+body.m .side,body.m #searchDlg,body.m #addDlg,body.m #karaDlg,body.m #listenDlg,body.m #mSetDlg{touch-action:pan-y}
 body.m .mswtop{z-index:26}
 body.m #karaDlg[open]{display:flex;flex-direction:column}
 body.m #karaDlg .dlg-body{flex:1;min-height:0;display:flex;flex-direction:column;padding:10px 12px}

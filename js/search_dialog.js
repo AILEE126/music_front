@@ -48,9 +48,9 @@ function openSearch() {
   $("searchDlg").showModal();
   $("sQ").focus();
   // the same preparation as the background one (warmSearch, shared — the first open used to do it a second time alongside)
-  withBusy($("searchDlg"), async () => { renderSortOptions(); renderFilterOptions(); runSearch(); }, warmSearch);  // categories: counted after (catsLater)
+  withBusy($("searchDlg"), async () => { renderFilterOptions(); runSearch(); }, warmSearch);  // categories: counted in warmSearch too
 }
-$("btnSearch").onclick = openSearch;
+$("btnSearch").onclick = () => ONLINE ? openSearch() : openAddSongs();  // LOCAL: 곡 추가 (playlist_panel.js)
 $("sClose").onclick = () => $("searchDlg").close();
 $("searchDlg").addEventListener("click", e => { if (e.target === $("searchDlg")) $("searchDlg").close(); });  // outside the box
 $("sGo").onclick = () => runSearch();

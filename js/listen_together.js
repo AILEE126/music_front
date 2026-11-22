@@ -62,7 +62,8 @@ const LT_CH_COOL = 2;  // songs that must start before the same person can reque
    filter.json channel2; not set → the 1× list). Both channels exist while OPEN CHANNEL is on. k: its saved list ("" · "2") */
 const ltChOk = c => c && (c.groups || []).length ? c : null;
 function ltChSrc(fast) {
-  const f = typeof ONLINE !== "undefined" && ONLINE && VDB.filter;
+  // not tied to SERVER / LOCAL (user request 2026-11-22: the channel and its wave stay in LOCAL too — it plays by link)
+  const f = VDB.filter;
   if (!f || !ltChOk(f.channel)) return null;
   return fast && ltChOk(f.channel2) ? {conf: f.channel2, k: "2"} : {conf: f.channel, k: ""};
 }

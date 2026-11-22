@@ -153,8 +153,9 @@
   const nav = $("mNav");
   /* 곡 검색 · 노래방 번호 추천 · 같이듣기 · 설정 open as pages on the phone (user request 2026-11-15): not modal, so the bottom
      menu stays usable under them (CSS: fixed, above the list, ending at the menu); a wide screen keeps the popups */
-  const NAV_PAGE = {search: "searchDlg", kara: "karaDlg", listen: "listenDlg", set: "mSetDlg"};
-  const PAGES = Object.values(NAV_PAGE);
+  // LOCAL mode: the 검색 item opens 곡 추가 (user request 2026-11-22)
+  const NAV_PAGE = {get search() { return ONLINE ? "searchDlg" : "addDlg"; }, kara: "karaDlg", listen: "listenDlg", set: "mSetDlg"};
+  const PAGES = ["searchDlg", "addDlg", "karaDlg", "listenDlg", "mSetDlg"];
   for (const id of PAGES) {
     const d = $(id), modal = d.showModal.bind(d);
     d.showModal = () => { if (!body.classList.contains("m")) return modal(); if (!d.open) d.show(); };

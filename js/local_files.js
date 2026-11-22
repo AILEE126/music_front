@@ -424,6 +424,21 @@ const LOCAL = {
     await this.writeText(`${this.data}reports/${id}.json`, JSON.stringify(r, null, 1));
     return {ok: true, id};
   },
+  /* 유저가 불러온 유튜브 재생목록 (user request 2026-11-22): one file per playlist, Server/data/user_playlists/<list>.json
+     {list, url, title, n, thumb, users: {nick: last time}, first, last} → Manage › 추천 재생목록 lists them.
+     Only where this player may write (folder · write token); nothing new (same nick, same day) → no commit */
+  async saveUserPlaylist(p) {
+    if (!this.canWrite) return;
+    const who = String(store.get("reportWho", "") || "").trim().slice(0, 40) || "이름 없음", at = nowText();
+    const path = `${this.data}user_playlists/${p.list}.json`;
+    await this.locked(path, async () => {
+      const old = await this.readJson(path, null) || {};
+      if (old.users && String(old.users[who] || "").slice(0, 10) === at.slice(0, 10) && old.n === p.n) return;
+      const d = {list: p.list, url: p.url, title: p.title, n: p.n, thumb: p.thumb || old.thumb || "",
+                 users: {...(old.users || {}), [who]: at}, first: old.first || at, last: at};
+      await this.writeText(path, JSON.stringify(d, null, 1) + "\n", who);
+    });
+  },
   /* Sync edits (user request): the player never replaces a sync. The edited sync waits in
      Server/data/sync_pending/vocadb/<VocaDB id>.json (keyed by the VocaDB song since 2026-11-14 — no old file paths) and one
      '싱크 수정' report goes to the manage screen. Until it is confirmed or thrown away the player plays the pending one. */

@@ -133,13 +133,27 @@ async function loadWait(p) {
 }
 /* run when the browser has nothing else to do (no idle callback — Safari: soon after) */
 const idle = fn => window.requestIdleCallback ? requestIdleCallback(() => fn(), {timeout: 3000}) : setTimeout(fn, 300);  // timeout: a busy or hidden page never gets an idle turn
-/* 온라인 / 오프라인 (기본 온라인 · 기억). 온라인: 재생목록 · 오프라인: 고른 mp3 폴더의 mp3 그대로 (offline_folder.js) */
+/* 온라인 / 오프라인 (기본 온라인 · 기억). 온라인: 재생목록 · 오프라인: 고른 mp3 폴더의 mp3 그대로 (offline_folder.js).
+   Shown as SERVER | LOCAL (user request 2026-11-22); in LOCAL the 검색 button (and the phone menu's) is 곡 추가 */
 var ONLINE = store.get("online", true);
-function renderOnOff() { $("onOff").classList.toggle("on", ONLINE); $("onOff").setAttribute("aria-pressed", ONLINE); renderOffBar(); }
+const ICO_SEARCH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+const ICO_ADD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>';
+function renderSearchBtn() {
+  const b = $("btnSearch"), m = document.querySelector('#mNav [data-nav="search"]'), lbl = ONLINE ? "검색" : "곡 추가";
+  b.querySelector(".ico").innerHTML = ONLINE ? ICO_SEARCH : ICO_ADD;
+  b.querySelector(".tl").textContent = lbl;
+  b.title = ONLINE ? "곡 검색 창 열기 (전체 곡 · 노래방 곡 · 가사·싱크 있는 곡 — 우리 DB) — 찾은 곡을 바로 틀거나 재생목록에 넣음"
+    : "곡 추가 창 열기 — mp3 폴더 · 유튜브 재생목록 · 추천 재생목록";
+  if (m) m.innerHTML = (ONLINE ? ICO_SEARCH : ICO_ADD) + lbl;
+}
+renderSearchBtn();  // before the library is in
+function renderOnOff() { $("onOff").classList.toggle("on", ONLINE); $("onOff").setAttribute("aria-pressed", ONLINE); renderOffBar(); renderSearchBtn(); }
 $("onOff").addEventListener("click", async () => {
   ONLINE = !ONLINE; store.set("online", ONLINE);
+  for (const d of ["searchDlg", "addDlg"]) if ($(d).open) $(d).close();  // the 검색 / 곡 추가 window of the other mode
   if (ONLINE && SHELL.queue.some(it => it.site !== "stream" || it.offyt)) { SHELL.setQueue(await PL.restore()); SHELL.plan(SHELL.now); }  // back from the mp3 folder's list
   renderOnOff(); renderList();
+  if (typeof ltRender === "function") ltRender();  // 같이듣기 button / wave as before the switch
 });
 /* songs this player knows (our songs · searched · playlist) — listen together · report search look here */
 const allItems = () => ONLINE ? [...LOCAL.items.values()] : offItems();
@@ -184,6 +198,10 @@ async function loadYtList(input) {
       await Promise.all(vids.slice(i, i + 6).map(async v => { const o = await ytOembed(`https://www.youtube.com/watch?v=${v.id}`); if (o) { v.title = o.title; v.author = o.author_name; } }));
     Object.assign(OFFYT, {url: String(input).trim(), list, title: info && info.title || "유튜브 재생목록", vids, items: vids.map(ytItem)});
     store.set("offyt", {url: OFFYT.url, list, title: OFFYT.title, vids});
+    const thumb = info && info.thumbnail_url || (vids[0] ? `https://i.ytimg.com/vi/${vids[0].id}/mqdefault.jpg` : "");
+    histAdd({list, url: `https://www.youtube.com/playlist?list=${list}`, title: OFFYT.title, n: vids.length, thumb});
+    // the server sees which playlists users load (Manage › 추천 재생목록, user request 2026-11-22) — never blocks playing
+    LOCAL.saveUserPlaylist({list, url: `https://www.youtube.com/playlist?list=${list}`, title: OFFYT.title, n: vids.length, thumb}).catch(() => {});
   } catch (e) { uiAlert(e.message); }
   finally { OFFYT.busy = false; renderOffBar(); renderList(); }
 }
@@ -198,8 +216,77 @@ async function connectOffDir(pickNew) {
     else await OFFDIR.pick();
   } catch (e) { if (e.name !== "AbortError") uiAlert(e.message); return; }
   OFFDIR.items.forEach(prepItem);
-  renderOffBar(); renderList();
+  renderOffBar(); renderList(); renderDirHist();
 }
+/* 이전에 연결한 mp3 폴더 (user request 2026-11-22): path (a browser gives only the folder name) · mp3 count · time,
+   폴더 연결 on the right, ✕ takes it out — kept in this browser only (offline_folder.js recent) */
+async function renderDirHist() {
+  const L = await OFFDIR.recent();
+  $("dirInfo").textContent = L.length ? `${L.length}개` : "";
+  $("dirList").innerHTML = L.length ? L.map((x, i) => `<div class="dirrow${OFFDIR.dir && OFFDIR.dir.name === x.name ? " on" : ""}" data-i="${i}">`
+    + `<span class="dp" title="${esc(x.path || x.name)}">📁 ${esc(x.path || x.name)}</span><span class="dm">mp3 ${x.n ?? "?"}곡 · ${esc(String(x.at || "").slice(0, 16))}</span>`
+    + `<button class="primary" data-a="go">폴더 연결</button><button class="ib" data-a="del" title="기록에서 빼기">✕</button></div>`).join("")
+    : '<div class="empty">아직 연결한 폴더가 없습니다.</div>';
+}
+$("dirList").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-a]"); if (!b) return;
+  const i = +b.closest(".dirrow").dataset.i;
+  if (b.dataset.a === "del") { await OFFDIR.forget(i); return renderDirHist(); }
+  try { await OFFDIR.connectRecent(i); } catch (err) { if (err.name !== "AbortError") uiAlert(err.message); return; }
+  if (OFFSRC !== "dir") { OFFSRC = "dir"; store.set("off.src", "dir"); }
+  OFFDIR.items.forEach(prepItem);
+  renderOffBar(); renderList(); renderDirHist();
+  $("addDlg").close();
+});
+/* 곡 추가 창 (user request 2026-11-22): the source picks below + 추천 재생목록 — YouTube playlists registered in
+   Manage › 추천 재생목록 (Server/data/rec_playlists.json {lists: [{list, url, title, thumb}]}); a card loads that playlist */
+const REC = {lists: null};
+async function loadRec() {
+  try { const d = LOCAL.ready ? await LOCAL.readJson(`${LOCAL.data}rec_playlists.json`, null) : null; REC.lists = (d && d.lists) || []; }
+  catch (e) { REC.lists = []; }
+  renderRec();
+}
+/* 이전에 추가한 재생목록 (user request 2026-11-22): the playlists this browser loaded, newest first — browser storage only
+   (store key offyt.hist, never sent anywhere); ✕ takes one out */
+const HIST_MAX = 30;
+const histGet = () => store.get("offyt.hist", []) || [];
+function histAdd(r) {
+  store.set("offyt.hist", [{...r, at: nowText()}, ...histGet().filter(x => x.list !== r.list)].slice(0, HIST_MAX));
+}
+const recCard = (r, i, del) => `<button type="button" class="reccard${OFFSRC === "yt" && OFFYT.list === r.list ? " on" : ""}" data-i="${i}" title="이 재생목록 불러오기">`
+  + `<span class="rthumb">${r.thumb ? `<img src="${esc(r.thumb)}" loading="lazy" alt="">` : "▶"}<i>${r.n ? `영상 ${r.n}개` : "▶ 재생목록"}</i>`
+  + (del ? '<b class="rdel" data-del="1" title="기록에서 빼기">✕</b>' : "") + `</span>`
+  + `<span class="rt">${esc(r.title || r.list)}</span>${del && r.at ? `<span class="rat">${esc(r.at.slice(0, 16))}</span>` : ""}</button>`;
+function renderRec() {
+  const L = REC.lists, H = histGet();
+  $("recInfo").textContent = L && L.length ? `${L.length}개` : "";
+  $("recList").innerHTML = !L ? '<div class="empty">불러오는 중…</div>' : !L.length ? '<div class="empty">아직 추천 재생목록이 없습니다.</div>'
+    : L.map((r, i) => recCard(r, i, false)).join("");
+  $("histInfo").textContent = H.length ? `${H.length}개` : "";
+  $("histList").innerHTML = H.length ? H.map((r, i) => recCard(r, i, true)).join("") : '<div class="empty">아직 불러온 재생목록이 없습니다.</div>';
+}
+async function recPick(e, lists) {
+  const c = e.target.closest(".reccard"); if (!c) return;
+  const r = lists[+c.dataset.i];
+  if (e.target.closest("[data-del]")) {
+    store.set("offyt.hist", histGet().filter(x => x.list !== r.list));
+    return renderRec();
+  }
+  if (OFFSRC !== "yt") { OFFSRC = "yt"; store.set("off.src", "yt"); }
+  await loadYtList(r.url || `https://www.youtube.com/playlist?list=${r.list}`);
+  if (OFFYT.list === r.list) $("addDlg").close();
+}
+$("recList").addEventListener("click", e => recPick(e, REC.lists));
+$("histList").addEventListener("click", e => recPick(e, histGet()));
+function openAddSongs() {
+  renderOffBar();
+  $("addDlg").showModal();
+  if (!REC.lists) renderRec();
+  renderDirHist();
+  loadRec();  // every open — a list registered meanwhile shows up
+}
+$("addClose").onclick = () => $("addDlg").close();
+$("addDlg").addEventListener("click", e => { if (e.target === $("addDlg")) $("addDlg").close(); });  // outside the box
 /* 오프라인 줄 (user request 2026-11-15): 곡 출처 [📁 mp3 폴더 | ▶ 유튜브 재생목록] + 그 출처 (폴더 이름 · 다른 폴더 / 재생목록 주소 · 불러오기) */
 function renderOffBar() {
   const bar = $("offBar");
@@ -208,12 +295,13 @@ function renderOffBar() {
   const tab = (src, label) => `<button data-src="${src}" class="${OFFSRC === src ? "on" : ""}">${label}</button>`;
   bar.innerHTML = `<div class="offnote"><div class="row offsrc">${tab("dir", "📁 mp3 폴더")}${tab("yt", "▶ 유튜브 재생목록")}</div>`
     + (OFFSRC === "dir"
-      ? (OFFDIR.dir ? `<div>📁 <b>${esc(OFFDIR.name)}</b> · mp3 ${OFFDIR.items.length}곡 (같은 이름의 json 이 있는 곡만 가사·싱크)</div>
-          <div class="row"><button id="offDirPick">다른 폴더 고르기</button></div>` : "")
+      ? (OFFDIR.dir ? `<div>📁 <b>${esc(OFFDIR.name)}</b> · mp3 ${OFFDIR.items.length}곡 (같은 이름의 json 이 있는 곡만 가사·싱크)</div>` : "")
+        + `<div class="row"><button class="primary" id="offDirPick">📁 폴더 추가</button><span class="muted">고른 폴더의 mp3 전체 (하위 폴더 포함)</span></div>`
       : `<div class="row offyt"><input type="text" id="offYtUrl" placeholder="유튜브 재생목록 주소 (…list=…)" value="${esc(OFFYT.url)}" autocomplete="off" spellcheck="false">`
         + `<button class="primary" id="offYtGo"${OFFYT.busy ? " disabled" : ""}>${OFFYT.busy ? "불러오는 중…" : "불러오기"}</button></div>`
         + (OFFYT.list ? `<div>▶ <b>${esc(OFFYT.title)}</b> · 영상 ${OFFYT.items.length}개 (소리는 인터넷으로 — 가사·싱크는 없음)</div>` : ""))
     + `</div>`;
+  if (REC.lists) renderRec();  // the card of the playlist now loaded
   bar.querySelectorAll("[data-src]").forEach(b => b.onclick = () => setOffSrc(b.dataset.src));
   if ($("offDirPick")) $("offDirPick").onclick = () => connectOffDir(true);
   if ($("offYtGo")) {
@@ -252,10 +340,9 @@ var ROW_H = 0, vlFrom = -1, vlTo = -1, VL_STEP = 20;
 function renderRows(force) {
   const L = $("list");
   if (guestPl && !view.length) { L.innerHTML = `<div class="empty">방장의 재생목록이 비어 있습니다.</div>`; vlFrom = vlTo = -1; return; }
-  if (!guestPl && !ONLINE && !offReady()) {  // offline, nothing picked yet: the folder button · or the playlist box above
-    L.innerHTML = OFFSRC === "dir" ? `<div class="empty"><button class="primary" id="offConnect">폴더를 연결해 주세요</button></div>`
-      : `<div class="empty">위 칸에 유튜브 재생목록 주소를 넣고 불러오기를 누르세요.</div>`;
-    if ($("offConnect")) $("offConnect").onclick = () => connectOffDir(false);
+  if (!guestPl && !ONLINE && !offReady()) {  // offline, nothing picked yet: 곡 추가 (the picks live in its window since 2026-11-22)
+    L.innerHTML = `<div class="empty">mp3 폴더나 유튜브 재생목록을 골라 주세요.<br><button class="primary" id="offConnect">곡 추가</button></div>`;
+    $("offConnect").onclick = openAddSongs;
     vlFrom = vlTo = -1; return;
   }
   const loading = ONLINE && !guestPl && !PL.restored;  // the saved list isn't all here yet
