@@ -265,6 +265,7 @@ const SET_KEYS = {
   m: ["m.report", "m.overlay", "m.zoom", "m.ear.connectPlay", "m.ear.unplugPause", "m.ear.ask"],
   play: ["play.fadein", "play.fadeout"],  // ⚙ › 재생 (2026-11-19)
   addon: ["addon.get"],  // ⚙ › 추가기능 (2026-11-19, PC only)
+  app: ["app.apk"],  // ⚙ › 앱 설치 (2026-11-22, web only — PC and phone)
 };
 /* ⚙ › 추가기능 (user request 2026-11-19): the PC add-ons (overlay + extension, play_engine.js openSetupGuide) — not on phones */
 const addonOk = () => typeof openSetupGuide === "function" && !APP.on && !BILI_TOUCH();
@@ -278,6 +279,7 @@ function setKeys(all = false) {
     // 페이드 is an extension feature → shown in 추가기능 where that part exists (user request 2026-11-19)
     play: all || !addonOk() ? SET_KEYS.play : [],
     addon: all ? SET_KEYS.addon : addonOk() ? [...SET_KEYS.addon, ...SET_KEYS.play] : [],
+    app: all || !APP.on ? SET_KEYS.app : [],
   };
 }
 const setNew = sec => { const seen = new Set(store.get("set.seen", [])); return (sec ? setKeys()[sec] || [] : Object.values(setKeys()).flat()).filter(k => !seen.has(k)); };
@@ -289,7 +291,7 @@ function setSeen(keys) {
 /* the badges: ⚙ (PC toolbar) · the phone menu's 설정 and its '가사 · 오버레이 설정' button */
 function setBadge() {
   const put = (el, n) => { if (el) { el.hidden = !n; el.textContent = n; } };
-  const win = setNew("ov").length + setNew("font").length + setNew("play").length + setNew("addon").length;
+  const win = setNew("ov").length + setNew("font").length + setNew("play").length + setNew("addon").length + setNew("app").length;
   put(document.getElementById("setBadge"), win);
   put(document.getElementById("mSetBadge"), win + setNew("m").length);
   put(document.getElementById("mOvBadge"), win);
@@ -339,7 +341,7 @@ async function openPlayerSettings(want = "") {  // want: the part to show (e.g. 
   const lead = typeof SHELL !== "undefined" && SHELL.setLead;  // 플레이어 화면에서만
   const fonts = typeof fontSettingsHtml === "function" ? await fontSettingsHtml() : "";  // 글꼴 (font_setting.js, player only)
   const addon = lead && addonOk();
-  const secs = [fonts && ["font", "글꼴"], lead && !addon && ["play", "재생"], ["ov", "오버레이"], addon && ["addon", '추가기능<small class="setsub">확장프로그램 필요</small>']].filter(Boolean);  // 추가기능: last (2026-11-19)  // 재생: 페이드 (2026-11-19, player only)  // 가사 먼저 보이기 moved into 오버레이 (user request 2026-11-18) · 글꼴 first (2026-11-19; named 가사 for a while)
+  const secs = [fonts && ["font", "글꼴"], lead && !addon && ["play", "재생"], ["ov", "오버레이"], addon && ["addon", '추가기능<small class="setsub">확장프로그램 필요</small>'], !APP.on && ["app", "앱 설치"]].filter(Boolean);  // 앱 설치: its own part so phones see it too (user request 2026-11-22)  // 추가기능: last (2026-11-19)  // 재생: 페이드 (2026-11-19, player only)  // 가사 먼저 보이기 moved into 오버레이 (user request 2026-11-18) · 글꼴 first (2026-11-19; named 가사 for a while)
   if (fonts) SETNEW.fonts = FONT.list || [];  // just read fresh by fontSettingsHtml
   const fresh = Object.fromEntries(secs.map(([k]) => [k, setNew(k)]));  // new items, as they were when the window opened
   const nb = k => `<b class="setnb"${fresh[k].length ? "" : " hidden"}>${fresh[k].length}</b>`;
@@ -372,9 +374,12 @@ async function openPlayerSettings(want = "") {  // want: the part to show (e.g. 
     <div class="row"><button class="primary" data-act="addon">추가기능 내려받기 · 넣기</button></div>
     <p class="muted">한 번 넣으면 새 버전은 둘 다 저절로 받아요. 예전에 넣은 것이면 위에 '새 버전이 있어요'가 뜨고, 단추를 누르면 바꾸는 법이 나와요.</p>
     <div class="setsubhd">확장 프로그램 기능</div>${fadeHtml}
-    <p class="muted">배속 · 키 변경은 재생 막대의 버튼에서.</p>`) : ""}</div></div>`;
+    <p class="muted">배속 · 키 변경은 재생 막대의 버튼에서.</p>`) : ""}${APP.on ? "" : sec("app", `
+    <p class="muted">안드로이드 폰에 까는 앱이에요. 늘 가장 새 버전이 받아져요.</p>
+    <div class="row"><button class="primary" data-act="apk">앱 설치 파일 받기 (apk)</button></div>
+    <p class="muted">폰에서 받은 파일을 열면 설치되고, 예전 앱이 있으면 그 위에 덮어 설치돼요 (설정 · 재생목록은 그대로). 처음 한 번은 '출처를 알 수 없는 앱' 허용을 물어볼 수 있어요.</p>`)}</div></div>`;
   // new rows: marked '새로' while this window is open (a new font: its pick and the option)
-  const rowOf = {"play.fadein": "[data-fade=fadeIn]", "play.fadeout": "[data-fade=fadeOut]", "ov.lead": "[data-lead-r]", "ov.reset": "[data-act=reset]", "ov.align": ".ovalign", "font.ja": "select[data-font=ja]", "font.etc": "select[data-font=etc]", "font.bold_ja": "[data-fbold=ja]", "font.bold_etc": "[data-fbold=etc]", "addon.get": "[data-act=addon]"};
+  const rowOf = {"play.fadein": "[data-fade=fadeIn]", "play.fadeout": "[data-fade=fadeOut]", "ov.lead": "[data-lead-r]", "ov.reset": "[data-act=reset]", "ov.align": ".ovalign", "font.ja": "select[data-font=ja]", "font.etc": "select[data-font=etc]", "font.bold_ja": "[data-fbold=ja]", "font.bold_etc": "[data-fbold=etc]", "addon.get": "[data-act=addon]", "app.apk": "[data-act=apk]"};
   for (const k of Object.values(fresh).flat()) {
     if (k.startsWith("font:")) {
       const o = d.querySelector(`select[data-font] option[value="${CSS.escape(k.slice(5))}"]`);
@@ -446,6 +451,8 @@ async function openPlayerSettings(want = "") {  // want: the part to show (e.g. 
       openSetupGuide("추가기능", () => { if (SHELL.audio.biliGuide) SHELL.audio.recheckBili(); });  // a Bilibili song waiting: try again
       return setupDlg.addEventListener("close", addonState, {once: true});
     }
+    // 앱 apk (user request 2026-11-22): always the newest — music_app's build overwrites this one public file (VC_APK)
+    if (b.dataset.act === "apk") return void (location.href = VC_APK);
     if (b.dataset.act === "reset") save({x: -1, y: -1}); else d.close();
   });
   // 구역 표시 (user request 2026-11-20): while this window is open the PC overlay draws a blue dashed line round its window
