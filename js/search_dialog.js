@@ -214,15 +214,15 @@ function renderSearch(info) {
   const inPl = new Set(SHELL.queue.map(keyOf)), show = S.items.slice(0, 300), inF = new Set(fSongIds());
   $("sList").innerHTML = show.map((it, i) => {
     // no karaoke numbers in the results (user request 2026-11-15: 노래방 모드 shows them)
-    // 우리 곡 표시 · 곡 종류 — 하위 태그 색이 있으면 그 색 (보컬 인원수 칩은 2026-11-22 뺌, user request)
-    const own = it.api ? "" : it.sync === "ok" ? tagChipHtml("flag", "싱크 있음", "싱크", "src", "우리 데이터가 있는 곡")
-      : it.lyrics ? tagChipHtml("flag", "우리 가사 있음", "가사", "src", "우리 데이터가 있는 곡") : `<span class="b src" title="우리 데이터가 있는 곡">노래방</span>`;
+    // 곡 종류 — 하위 태그 색이 있으면 그 색 (보컬 인원수 칩은 2026-11-22 뺌, user request)
+    // 가사 · 싱크 상태: the playlist's badges on the right, left of ✓ and ⋮ (user request 2026-11-22: 재생목록에 넣었을 때처럼)
     // 공식 여부: 맨 앞 칩 (verChipHtml)
     const tk = it.type ? VDB_TYPE_KO[it.type] || it.type : "";
     return `<div class="sitem${canPlay(it) ? "" : " gone"}" data-i="${i}">${coverHtml(it, "thumb")}
       <div class="meta"><div class="t">${titleHtml(it)}</div>
         <div class="a">${artistVocHtml(it)}</div>
-        <div class="tags">${verChipHtml(it)}${own}${tk ? tagChipHtml("type", tk, tk, "", "곡 종류") : ""}${it.date ? `<span class="d">${esc(it.date)}</span>` : ""}</div></div>
+        <div class="tags">${verChipHtml(it)}${tk ? tagChipHtml("type", tk, tk, "", "곡 종류") : ""}${it.date ? `<span class="d">${esc(it.date)}</span>` : ""}</div></div>
+      <div class="badges">${badgesHtml(it)}</div>
       <div class="sacts">${inPl.has(keyOf(it)) ? `<span class="sin" title="재생목록에 있는 곡">✓</span>` : ""}${inF.has(songId(it)) ? `<span class="sin f" title="필터에 넣은 곡">${FILT_SVG}</span>` : ""}`
         + `<button class="ib smore" data-a="more" title="곡 옵션" aria-label="곡 옵션">${MORE_SVG}</button></div></div>`;
   }).join("") + (S.items.length > show.length ? `<div class="hint">… ${(S.items.length - show.length).toLocaleString()}곡 더 ('재생목록 만들기' 는 이 곡들까지 넣음)</div>` : "")

@@ -105,7 +105,7 @@ body:not(.m) .side-head .top .onoff .lb{min-width:40px;padding:1px 6px 0;font-si
 .item .no{--bc:var(--muted);flex:none;min-width:30px;font-size:12px;font-variant-numeric:tabular-nums;text-align:center;padding:0 5px;border-radius:999px;
   color:color-mix(in srgb,var(--bc) 78%,#fff);background:color-mix(in srgb,var(--bc) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--bc) 55%,transparent)}
 body.simple .item .thumb{display:none}  /* 간단 표시: 목록 썸네일 숨김 (player_screen.js applySimple) */
-body.simple .item .badges{filter:brightness(.7) saturate(.6)}  /* 간단: lyrics / sync state badges a little dimmer (user request 2026-11-19: 밝기 70% · 채도 60%) */
+body.simple :is(.item,.sitem) .badges{filter:brightness(.7) saturate(.6)}  /* 간단: lyrics / sync state badges a little dimmer (user request 2026-11-19: 밝기 70% · 채도 60%) */
 .thumb{flex:none;width:48px;height:27px;border-radius:4px;object-fit:cover;background:var(--chip);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted)}
 .item .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .item .a{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -924,6 +924,8 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
 .b.tc,.songmeta .b.tc,.songmeta .b.inner.tc{color:var(--tc);background:none;box-shadow:inset 0 0 0 1px var(--tc)}
 /* ⋯ song options (user request 2026-11-15, like Spotify): web = shows on hover (and while its menu is open) · phone = always */
 .sitem .sacts{display:flex;gap:6px;flex:none;align-items:center}
+/* the lyrics / sync badges take the same width on every row, so the text stops at one line (user request 2026-11-22) */
+.sitem .badges{width:80px;overflow:hidden}
 .sitem .sin{color:var(--ok);font-weight:700;font-size:14px}  /* in the playlist / in the filter */
 .sitem .sin.f{display:inline-flex}.sitem .sin.f svg{width:15px;height:15px}
 .sitem .smore{width:32px;height:32px;padding:0;border:0;background:none;color:var(--muted);opacity:0}
