@@ -302,7 +302,7 @@ function itemHtml(it, i) {
   const pl = ONLINE && !guestPl;
   const hl = SHELL.qView && SHELL.qView() ? SHELL.qView().now : cur;  // OPEN CHANNEL: the mark stays on my song from before
   return `<div class="item${hl && keyOf(hl) === keyOf(it) ? " cur" : ""}${typeof admRowCls === "function" ? admRowCls(it) : ""}" data-i="${i}"${pl ? ' draggable="true"' : ""}>
-    ${coverHtml(it, "thumb")}<div class="meta"><div class="t">${titleHtml(it)}</div><div class="a">${esc(shortName(it.artist || it.name))}</div></div>
+    ${coverHtml(it, "thumb")}<div class="meta"><div class="t">${titleHtml(it)}</div><div class="a">${artistVocHtml(it)}</div></div>
     <div class="badges">${badgesHtml(it)}</div></div>`;  // no ✕ — removing is in the right-click menu (user request 2026-11-18)
 }
 /* mp3 안의 썸네일 (오프라인 곡) · 원곡 영상의 썸네일 주소 (온라인 곡) — 못 받은 그림은 ♪ */

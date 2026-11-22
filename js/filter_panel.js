@@ -209,8 +209,8 @@ const catIconOf = x => { const f = fltCat(x.id); return f && f.icon ? f.icon + "
 /* 하위 태그 색 (user request 2026-11-15 — 음원 관리 › 필터 › 하위 태그 색, filter.json tags {cat_id: {value: color}}) — none: built-in look */
 const tagColor = (cat, v) => VDB.filter && VDB.filter.tags && (VDB.filter.tags[cat] || {})[v] || "";
 /* a chip in the tag's color (the karaoke-number look) · no color → plain chip (cls: its built-in class) */
-const tagChipHtml = (cat, v, text, cls = "", title = "") => { const c = tagColor(cat, v);
-  return `<span class="b${cls ? " " + cls : ""}${c ? " tc" : ""}"${c ? ` style="--tc:${esc(c)}"` : ""}${title ? ` title="${esc(title)}"` : ""}>${esc(text)}</span>`; };
+const tagChipHtml = (cat, v, text, cls = "", title = "", attrs = "") => { const c = tagColor(cat, v);  // attrs: 정보 카드 (artist_card.js cardAttrs)
+  return `<span class="b${cls ? " " + cls : ""}${c ? " tc" : ""}${attrs ? " icard" : ""}"${c ? ` style="--tc:${esc(c)}"` : ""}${title ? ` title="${esc(title)}"` : ""}${attrs}>${esc(text)}</span>`; };
 /* 태그 → 분류 (song_filter.js tagGroupOf): master tag rows keep VocaDB's category — remade when master is read again */
 let tagCats = {of: null, map: new Map()};
 /* 곡 조건의 값(VocaDB 번호) → 제목 (song_filter.js songTitleOf) */

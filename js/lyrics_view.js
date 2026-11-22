@@ -73,13 +73,15 @@ const karaOnlyMark = (it, b) => it.only && it.only[b] ? `<small>${esc(it.only[b]
 const karaOnlyTip = (it, b, base) => it.only && it.only[b] ? `${base} — 특정 기기에서만 선곡 가능: ${it.only[b]}` : base;
 /* 보컬이 너무 많은 곡 (user request 2026-11-16): 앞 VOCAL_SHOW 명만 칩 · 나머지는 '+N' 칩 (곡 상태 태그 MANY_VOCALS 의 색) →
    누르면 전체 보컬을 스크롤되는 작은 팝업으로 (펼치면 세로 화면에서 영상·가사가 밀려나서). 제목 옆 보컬 줄도 같음 */
-const vocalChip = ([n, c]) => `<span class="b vocal" style="--vc:${esc(c)}" title="보컬">${esc(n)}</span>`;
+// 정보 카드 (artist_card.js): a chip with a card has no '보컬' / '프로듀서' tooltip — it covered the card (user request 2026-11-22)
+const vocalChip = ([n, c]) => { const a = cardAttrs("singer", n);
+  return `<span class="b vocal${a ? " icard" : ""}" style="--vc:${esc(c)}"${a || ' title="보컬"'}>${esc(n)}</span>`; };
 const vocalMoreChip = (n, all) => { const c = tagColor("flag", MANY_VOCALS);
   return `<button type="button" class="b vmore${c ? " tc" : ""}"${c ? ` style="--tc:${esc(c)}"` : ""} data-vmore title="보컬 ${all}명 — 눌러서 모두 보기">+${n}</button>`; };
 const vocalsOf = it => it.vocals && it.vocals.length ? it.vocals : String(it.singer || "").split(",").map(x => x.trim()).filter(Boolean).map(n => [n, vocalColor(n)]);
 function showArtist(it) {
-  if (!it.vocalMore) { $("nowArtist").textContent = shortName(it.artist || it.name); return; }
-  $("nowArtist").innerHTML = `${esc(shortName(it.artistBase))} ${vocalMoreChip(it.vocalMore, it.vocalMore + VOCAL_SHOW)}`;
+  if (!it.vocalMore) { $("nowArtist").innerHTML = artistHtml(it); return; }
+  $("nowArtist").innerHTML = `${artistHtml(it, it.artistBase)} ${vocalMoreChip(it.vocalMore, it.vocalMore + VOCAL_SHOW)}`;
 }
 function vocalPopClose() { document.querySelectorAll(".vpop").forEach(p => p.remove()); }
 function vocalPop(btn) {
@@ -165,12 +167,15 @@ function renderMeta(it) {
   const lists = tags.filter(t => t === "한국" || t === "일본");
   const inner = [...lists, ...tags.filter(t => !KARA_RE.test(t) && !lists.includes(t) && tagGroupOf(t) !== "음성 합성 엔진").slice(0, 8)];
   const tagChip = t => lists.includes(t) ? tagChipHtml("kara", t, t, `inner${t === "한국" ? " ko" : " ja"}`, "노래방 목록 (한국·일본)")
-    : tagChipHtml("tag:" + tagGroupOf(t), t, t, "", tagGroupOf(t) || "태그");
+    : tagChipHtml("tag:" + tagGroupOf(t), t, t, "", tagGroupOf(t) || "태그", cardAttrs("tags", t));
   // user request 2026-11-15: only colored chips are shown; the plain ones fold behind a "+N" chip (open state remembered)
   const isPlain = t => !lists.includes(t) && !tagColor("tag:" + tagGroupOf(t), t);
   const vocals = it.vocals || [];
   // 곡 태그 표시 순서 (user request 2026-11-18: Manage › 필터 › 곡 태그 표시 순서 → filter.json chips; built-in: 파일 포맷 last)
+  // 프로듀서 칩 (user request 2026-11-22): one shared light gray, card · search like the name in the artist line
+  const prodChip = n => { const a = cardAttrs("composer", n); return `<span class="b prodchip${a ? " icard" : ""}"${a || ' title="프로듀서"'}>${esc(shortName(n))}</span>`; };
   const groups = {
+    producer: String(it.composer || "").split(", ").filter(Boolean).map(prodChip),
     vocal: [...vocals.slice(0, VOCAL_SHOW).map(vocalChip), ...(vocals.length > VOCAL_SHOW ? [vocalMoreChip(vocals.length - VOCAL_SHOW, vocals.length)] : [])],
     kara: kara.map(([t, b]) => `<span class="b kara" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b]}" title="${esc(karaOnlyTip(it, b, "노래방 수록"))}">${esc(t)}${karaOnlyMark(it, b)}</span>`),
     gone: Object.keys(it.gone || {}).map(b => `<span class="b kara gone" style="--bc:${tagColor("kara", b) || BRAND_COLOR[b] || "#888"}" title="노래방에서 내려간 곡입니다 (${esc(b)} ${esc(it.gone[b])})">${esc(KARAOKE_TAG[b] || b)}</span>`),
