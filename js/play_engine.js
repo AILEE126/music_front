@@ -996,6 +996,7 @@ function makePlayer(el) {
   const overlayOn = () => APP.on || LOCAL.ovOn;  // nobody to tell otherwise (the PC overlay was never used here)
   function sendNow(beat = false) {
     if (!LOCAL.ready || APP.screenOff || !overlayOn()) return;  // 폰 화면이 꺼짐: 가사 위치를 안 봄 (켜지면 appscreen 에서 바로 보냄)
+    if (!APP.on && !ovMine()) return;  // another page's [오버레이] holds the PC overlay (shared_screen_helpers.js OVWIN)
     const it = P.now, L = P.lyr, i = P.lyrIndex(), g = L && L.times && i >= 0 ? L.groups[i] : null, plain = store.get("simple", false);
     // other-language lines (VocaDB): only the language picked in the player's 다른 언어 select (none by default)
     const keep = ls => (ls || []).filter(l => l.role !== "x" || (l.lang && l.lang === store.get("xLang", ""))).map(l => ({role: l.role, text: l.text}));

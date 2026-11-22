@@ -320,7 +320,7 @@ const LOCAL = {
     if (!this.ovOn || (path !== "/api/ovset" && path !== "/api/ovprograms" && Date.now() - this.ovFailAt < 10000)) return local();
     try {
       const r = await fetch("http://127.0.0.1:47613/" + path.slice(5),
-        post ? {method: "POST", body: JSON.stringify(path === "/api/now" ? {...body, at: Date.now()} : body)} : {});
+        post ? {method: "POST", body: JSON.stringify(path === "/api/now" ? {...body, at: Date.now(), win: OVWIN.id} : body)} : {});  // win: the overlay shows only its owner page's
       if (!r.ok) throw new Error(r.status);
       this.ovFailAt = 0;
       return await r.json();

@@ -468,10 +468,27 @@ async function openPlayerSettings(want = "") {  // want: the part to show (e.g. 
    추가기능 안내 (user request 2026-11-19, play_engine.js openSetupGuide — player only): the overlay never ran in this
    browser → the guide at once (the zip with the overlay + extension, run the bat …); the link failed → the guide too;
    the running overlay is older than this player's tools/ files → the guide once per page (download again, overwrite) */
+/* 창 번호 (user request 2026-11-22): with several player pages open (GitHub Pages · file:// · two tabs) every page that ever
+   used the overlay told it its lyrics and the overlay flickered between them — now only the page whose [오버레이] was turned
+   on last (owner in the overlay's settings) is shown; the others stop sending. Kept across reloads of this tab
+   (sessionStorage); a duplicated tab copies it, so a new page asks the open ones first and takes a new number if it's taken */
+const OVWIN = {id: "", owner: ""};
+{
+  const mk = () => Math.random().toString(36).slice(2, 10);
+  const keep = id => { OVWIN.id = id; try { sessionStorage.setItem("ovWin", id); } catch (e) {} };
+  try { keep(sessionStorage.getItem("ovWin") || mk()); } catch (e) { keep(mk()); }
+  try {
+    const ch = new BroadcastChannel("ovWin");
+    let fresh = true; setTimeout(() => { fresh = false; }, 3000);
+    ch.onmessage = e => { const m = e.data || {}; if (m.ask === OVWIN.id) ch.postMessage({dup: m.ask}); else if (fresh && m.dup === OVWIN.id) keep(mk()); };
+    ch.postMessage({ask: OVWIN.id});
+  } catch (e) {}
+}
+const ovMine = () => !OVWIN.owner || OVWIN.owner === OVWIN.id;  // no owner yet (older overlay): every page, as before
 function bindOverlayPower(btn, label) {  // label: fixed text, on/off by color only (toolbar)
   let alive = false, enabled = true, starting = 0, ver = 0, oldShown = false;
   const guide = () => typeof openSetupGuide === "function" && OV_PC();
-  const on = () => alive && enabled;
+  const on = () => alive && enabled && ovMine();  // another page holds it → off here (pressing takes it over)
   const show = () => {
     btn.textContent = starting ? "오버레이 켜는 중…" : label || (on() ? "오버레이 끄기" : "오버레이 켜기");
     btn.classList.toggle("on", on()); btn.setAttribute("aria-pressed", on());
@@ -481,7 +498,7 @@ function bindOverlayPower(btn, label) {  // label: fixed text, on/off by color o
     const was = alive;
     try {
       const [r, c] = await Promise.all([api("/api/ovprograms"), api("/api/ovset")]);
-      alive = !!r.running; enabled = c.enabled !== false; ver = +r.ver || 0;
+      alive = !!r.running; enabled = c.enabled !== false; ver = +r.ver || 0; OVWIN.owner = String(c.owner || "");
       if (alive) store.set("ovSeen", true);
     } catch (e) { alive = false; }
     if (alive && !was && typeof fontToOverlay === "function") fontToOverlay();  // overlay (re)started: give it the picked fonts
@@ -496,9 +513,11 @@ function bindOverlayPower(btn, label) {  // label: fixed text, on/off by color o
     if (guide() && alive && !oldShown && await ovNeed() === "old") { oldShown = true; openSetupGuide("오버레이"); }  // the guide's own test (8+ updates itself) — else it opened saying '모두 최신'
     if (guide() && !alive && !store.get("ovSeen", false)) return openSetupGuide("오버레이");  // never ran here: nothing to start yet
     if (first && on()) return show();  // first press while the bat-started overlay already shows: keep it on
-    try { await post("/api/ovset", {enabled: !on()}); } catch (e) { return uiAlert(e.message); }
+    // 켜기 = this page becomes the one shown (owner); 끄기 only from the page that holds it
+    try { await post("/api/ovset", on() ? {enabled: false} : {enabled: true, owner: OVWIN.id}); } catch (e) { return uiAlert(e.message); }
     if (on()) { enabled = false; return show(); }  // 끄기 = 숨기기 (프로그램은 뒤에서 계속 — 다시 켜면 바로)
-    enabled = true;
+    enabled = true; OVWIN.owner = OVWIN.id;
+    if (typeof SHELL !== "undefined" && SHELL.notify) SHELL.notify();  // this page's lyrics at once
     if (alive) return show();
     // 오버레이 프로그램이 꺼져 있음 → 'musicoverlay:' 링크로 띄우기 (오버레이가 켤 때마다 이 링크를 이 PC 에 등록함)
     const a = Object.assign(document.createElement("a"), {href: "musicoverlay:start"});

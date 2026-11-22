@@ -41,7 +41,7 @@ $WS_EX_TRANSPARENT = 0x20; $WS_EX_TOOLWINDOW = 0x80; $WS_EX_LAYERED = 0x80000; $
 
 # 오버레이 버전 (user request 2026-11-19): the player compares it (/ovprograms ver) with this file in its own tools/ folder
 # and asks for the new zip when the running one is older — bump it with every change of this file
-$OV_VER = 8   # 3: a newer bat replaces a running older overlay by itself · 4: parts (names, side by side) · 5: no terminal window (conhost --headless) · 6: negative x kept (no jump back to the middle) · width grows both sides · 7: place = centre, fitted to its monitor (4K · wide · dual) · 가로 폭 in % of the monitor · 정렬 · /frame (구역 표시) · 8: updates itself from music_front main (start · hourly)
+$OV_VER = 9   # 3: a newer bat replaces a running older overlay by itself · 4: parts (names, side by side) · 5: no terminal window (conhost --headless) · 6: negative x kept (no jump back to the middle) · width grows both sides · 7: place = centre, fitted to its monitor (4K · wide · dual) · 가로 폭 in % of the monitor · 정렬 · /frame (구역 표시) · 8: updates itself from music_front main (start · hourly) · 9: owner — only the page that turned it on is shown
 # data folder overlay\: next to tools\ in the player repo; next to this file elsewhere (가사 오버레이 켜기.bat puts it in
 # %USERPROFILE%\MusicPlayerOverlay — play_engine.js ovBat), so a new version of this file keeps the settings
 $script:Root = if ((Split-Path -Leaf $PSScriptRoot) -eq 'tools') { Split-Path -Parent $PSScriptRoot } else { $PSScriptRoot }
@@ -54,7 +54,7 @@ $EDIT_MS = 8000     # 설정 창이 3초마다 '열려 있음'을 알려 줌 →
 $UTF8 = New-Object Text.UTF8Encoding $false
 
 # ---- 설정 (⚙ 설정 창에서 바꿈 · 위치는 끌어 옮길 때 이 창이 씀) — 서버 web_api\lyrics_overlay_files.py 와 같은 기본값 ----
-$DEFAULTS = @{ x = -1; y = -1; cx = $null; width = 1100; width_pct = $null; align = 'center'; size = 22; info_size = 12; outline = 2; opacity = 100; clickthrough = $false; target = 'ffxiv_dx11'; info = $true; editing_at = 0; quit_at = 0; enabled = $true; font_bold_ja = $false; font_bold_etc = $false; font_ja = ''; font_etc = '' }
+$DEFAULTS = @{ x = -1; y = -1; cx = $null; width = 1100; width_pct = $null; align = 'center'; size = 22; info_size = 12; outline = 2; opacity = 100; clickthrough = $false; target = 'ffxiv_dx11'; info = $true; editing_at = 0; quit_at = 0; enabled = $true; font_bold_ja = $false; font_bold_etc = $false; font_ja = ''; font_etc = ''; owner = '' }
 $script:cfg = $DEFAULTS.Clone()
 $script:cfgWrite = [datetime]::MinValue
 function Read-Json($path) { [IO.File]::ReadAllText($path, [Text.Encoding]::UTF8).TrimStart([char]0xFEFF) | ConvertFrom-Json }
@@ -435,7 +435,13 @@ function Invoke-Http($r) {
     $post = $r.method -eq 'POST'
     switch ($r.path) {
         '/now' {
-            if ($post) { [IO.File]::WriteAllText($script:NowFile, $r.body, $UTF8) }
+            # owner (user request 2026-11-22): several player pages open → only the one whose [오버레이] turned it on last
+            # (its win number); a page without win (older player) still counts
+            if ($post) {
+                $win = ''; try { $win = [string](($r.body | ConvertFrom-Json).win) } catch {}
+                $own = [string](Get-CfgJson).owner
+                if (-not $own -or -not $win -or $win -eq $own) { [IO.File]::WriteAllText($script:NowFile, $r.body, $UTF8) }
+            }
             return '{"ok":true}'
         }
         '/ovset' {
