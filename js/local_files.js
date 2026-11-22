@@ -128,7 +128,7 @@ const LOCAL = {
   async userSync() {
     const name = String(store.get("reportWho", "") || "").trim();
     if (!name || !this.canWrite) return;
-    const filters = (store.get("f.saved", []) || []).map(({name, groups}) => ({name, groups}));
+    const filters = (store.get("f.saved", []) || []).map(({name, groups, sort, from, n}) => ({name, groups, ...(sort ? {sort, from, n} : {})}));  // + 정렬 · 범위 (2026-11-22)
     const old = await this.readJson(this.userPath(name), null);
     if (old && old.name === name && JSON.stringify(old.filters || []) === JSON.stringify(filters)) return;  // nothing new — no commit
     await this.writeText(this.userPath(name), JSON.stringify({name, at: new Date().toISOString(), filters}, null, 1) + "\n", name);

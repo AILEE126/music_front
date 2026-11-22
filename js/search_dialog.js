@@ -6,12 +6,13 @@
 const S = {items: [], q: ""};
 const S_SCOPES = ["all", "kara", "ours"];
 if (!S_SCOPES.includes(store.get("sScope", "all"))) store.set("sScope", "all");  // was 'vocadb' (VocaDB 전체)
-for (const id of ["sScope", "sSort"]) { $(id).value = store.get(id, $(id).value); $(id).onchange = () => { store.set(id, $(id).value); if (id === "sScope") { renderSortOptions(); renderFilterOptions(); } runSearch(); }; }
+$("sScope").value = store.get("sScope", $("sScope").value);
+$("sScope").onchange = () => { store.set("sScope", $("sScope").value); renderFilterOptions(); runSearch(); };  // the sort: part of the filter (filter_editor.js)
 /* the window first, the slow part after (user request 2026-11-15: building the song list took a while with nothing on
    screen) — a spinner over the window meanwhile, also while the song list is still being read (VDB.full) */
 /* 준비 진행 (user request 2026-11-19: the spinner said '초기 한번만 불러와요' but it ran at every page load, with no sign of how
    far): one percent over the steps — song blocks (VDB.prog) half, then the search steps (warmStep) — shown under the spinner */
-const WARM_STEPS = {items: [0, 10], long: [10, 15], family: [15, 20], rank: [20, 55], sort: [55, 65], filter: [65, 100]};
+const WARM_STEPS = {items: [0, 10], long: [10, 15], family: [15, 30], rank: [30, 60], sort: [60, 68], filter: [68, 100]};
 let warmAt = 0;
 function warmStep(step, n = 0, total = 1) {
   const [a, b] = WARM_STEPS[step] || [100, 100];
@@ -31,14 +32,14 @@ function withBusy(dlg, work, ready = searchBase) {
     try { await ready(); await work(); } finally { dlg.classList.remove("busy"); }
   }, 40);
 }
-/* the window opens fresh every time (user request 2026-11-18): no search text · 전체 곡 · 인기순 · 기본 필터 from the server
+/* the window opens fresh every time (user request 2026-11-18): no search text · 전체 곡 · 인기순 0번부터 1000곡 · 원곡만
    (노래방 모드: its preset) · filter panel open. A filter to keep goes in 저장된 필터 */
 function searchReset() {
   closeDD(); closeFSet();
   $("sQ").value = "";
-  for (const [id, v] of [["sScope", "all"], ["sSort", "RatingScore"]]) { store.set(id, v); $(id).value = v; }
-  store.set("f.kind", "singer");
-  FG = KARA.mode ? JSON.parse(JSON.stringify(KARA.presetGroups())).map(g => withType({...g, m: true})) : fDefault(); fCur = 0;
+  store.set("sScope", "all"); $("sScope").value = "all";
+  FE.set(null);  // 원곡만 · 인기순 0번부터 1000곡 (filter_editor.js)
+  if (KARA.mode) FE.set(KARA.presetGroups());
   $("fPanel").hidden = false; store.set("sfOpen", true);
   S.items = []; $("sList").innerHTML = ""; $("sInfo").textContent = "";  // the last results don't show while the new search runs
 }
@@ -140,9 +141,9 @@ async function sortAsync(a, cmp, tick) {
 /* the sorted scope — shared work (the background warm-up and a search wanting the same order wait for one sort, never two;
    a newer search doesn't throw it away). The caller's tick only checks for staleness afterwards */
 async function sortedScope(tick) {
-  const its = scopeItems(), key = $("sSort").value, m = sortMemo.get(its);
+  const its = scopeItems(), key = FE.sort, m = sortMemo.get(its);
   if (!m || m.key !== key) {
-    const p = (async () => await numSorted(its, key, bgTick()) || sortAsync(its, ourCmp(), bgTick()))();  // numSorted: filter_panel.js
+    const p = (async () => await numSorted(its, key, bgTick()) || sortAsync(its, ourCmp(key), bgTick()))();  // numSorted: filter_panel.js
     sortMemo.set(its, {key, p});
     p.catch(() => sortMemo.delete(its));
   }
@@ -151,17 +152,22 @@ async function sortedScope(tick) {
   return out;
 }
 /* 필터 결과 재사용 (user request 2026-11-19, sized for 1M songs: every keystroke ran the whole filter again — ~2 s over 44만 곡,
-   ~5 s at 1M — and every open ran the 기본 필터 again): per sorted scope, the last few filter results by their groups; typing
-   only filters that result by the text. Made by the warm-up for the 기본 필터, so the window opens on it at once */
-const filtMemo = new WeakMap(), FILT_KEEP = 4;
+   ~5 s at 1M — and every open ran the opening filter again): per sorted scope, the last few filter results by their groups; typing
+   only filters that result by the text. Made by the warm-up for the opening filter, so the window opens on it at once */
+/* 정렬만 바꿀 때 (user request 2026-11-22: changing the sort took long — the whole scope sorted, then filtered again): the kept
+   result of the same filter is sorted instead — the same songs, usually far fewer, and the same order (every sort ends on the
+   title place) */
+const filtMemo = new WeakMap(), FILT_KEEP = 4;  // scope songs → Map(filter → {sort, out})
 async function filteredScope(gs, tick) {
-  const its = await sortedScope(tick), key = JSON.stringify(gs);
-  let m = filtMemo.get(its);
-  if (!m) filtMemo.set(its, m = new Map());
-  if (m.has(key)) { const out = m.get(key); m.delete(key); m.set(key, out); return out; }  // newest last
-  const out = await filterGroupsAsync(its, gs, tick);
+  const scope = scopeItems(), key = JSON.stringify(gs), sort = FE.sort;
+  let m = filtMemo.get(scope);
+  if (!m) filtMemo.set(scope, m = new Map());
+  const had = m.get(key);
+  if (had && had.sort === sort) { m.delete(key); m.set(key, had); return had.out; }  // newest last
+  const out = had ? await numSorted(had.out, sort, tick) || await sortAsync(had.out, ourCmp(sort), tick)
+    : await filterGroupsAsync(await sortedScope(tick), gs, tick);
   if (key.includes('"k":"report"')) return out;  // 오류 신고 changes while the scope stays (admin_tools.js) — not kept
-  m.set(key, out);
+  m.delete(key); m.set(key, {sort, out});
   if (m.size > FILT_KEEP) m.delete(m.keys().next().value);
   return out;
 }
@@ -188,13 +194,16 @@ async function runSearch(keep) {
   const q = $("sQ").value.trim(), v = fold(q);
   S.q = q;
   try {
-    let its = await filteredScope(FG.filter(fReal), tick);
+    let its = await filteredScope(FE.live(), tick);
     if (v) { await searchText(); await tick(); its = await chunkFilter(its, it => FKIND.text[1](it, v), tick); }  // searchText: filter_panel.js
+    // 범위 (user request 2026-11-22: the filter's 'n번부터 n곡' — part of the filter, so the result itself is that range)
+    const total = its.length, cut = FE.from > 0 || FE.n > 0;
+    if (cut) its = its.slice(FE.from, FE.n > 0 ? FE.from + FE.n : undefined);
     const nPlay = await playableCount(its, tick);
     S.items = its;
     if (!keep) $("sList").scrollTop = 0;
     // 검색결과 N곡 · 재생 가능 M곡 (user request 2026-11-15: songs without a video are found but can't go in the playlist)
-    renderSearch(`검색결과 ${its.length.toLocaleString()}곡 · 재생 가능 ${nPlay.toLocaleString()}곡${q ? ` — "${q}"` : ""}`);
+    renderSearch(`검색결과 ${its.length.toLocaleString()}곡${cut ? ` (맞는 곡 ${total.toLocaleString()}곡 중 ${filterRange(FE.filter())})` : ""} · 재생 가능 ${nPlay.toLocaleString()}곡${q ? ` — "${q}"` : ""}`);
   } catch (e) { if (e !== STALE) throw e; }
   finally { if (gen === searchGen) listBusy(false); }
 }

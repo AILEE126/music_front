@@ -207,27 +207,11 @@
       <button id="btnPreset" title="추천하는 필터를 골라 바로 적용 (지금 필터는 바뀜)">★ 필터 프리셋 추천</button><!-- user request 2026-11-14: emphasized -->
     </div>
     <div class="fchips" id="fChips"></div>
-    <div class="fpanel" id="fPanel" hidden>
-      <div class="fhead" id="fNew">
-        <button data-new="inc" title="새 그룹 — 그룹끼리는 하나라도 맞으면 보임">＋ 그룹</button>
-        <button data-new="exc" title="새 제외 그룹 — 이 그룹 조건에 모두 맞는 곡은 빠짐">− 제외</button>
-        <button data-defadd="1" title="선택한 그룹에 기본 필터 조건을 넣음 (그룹에 없는 것만)">＋ 기본 필터</button><!-- user request 2026-11-17 -->
-        <span class="grow"></span>
-        <span class="fhelp" title="• 조건은 선택된 그룹(밝은 상자)에 들어갑니다&#10;• 한 그룹 안 조건은 모두 맞아야 보입니다 (그리고)&#10;• 그룹끼리는 하나라도 맞으면 보입니다 (또는)&#10;• 빨간 − 그룹에 맞는 곡은 빠집니다&#10;• 그룹을 누르면 선택, 동그라미(＋/−)를 누르면 포함↔제외&#10;• 조건을 끌어 다른 그룹에 놓으면 그 그룹으로 옮겨집니다&#10;• '기본 필터' 칩을 누르면 펼치기·접기">?</span>
-        <button class="ib" id="fReset" title="필터 모두 지우기">↺</button>
-        <button class="ib" id="fFold" title="접기">▴</button>
-      </div>
-      <div class="fgrid">
-        <select id="fKind" title="카테고리 — 고르면 오른쪽 칸에 그 카테고리의 값 목록 (보컬 · 프로듀서 · 노래방 · 시리즈 · 투고년도 …)"></select>
-        <select id="fVal" title="값 — 고르면 조건으로 더함"></select>
-        <label class="solo" title="보컬 카테고리에서 값을 고를 때: 이 보컬 혼자 부른 곡만"><input type="checkbox" id="fSolo"> 솔로곡만</label>
-      </div>
-    </div>
+    <div class="fpanel" id="fPanel" hidden></div><!-- 원곡만 · 카테고리 단추 · 고급 — drawn by filter_editor.js (same code as 음원 관리 › 필터, 2026-11-21) -->
     <div class="sinfo"><span id="sInfo">찾을 곡을 넣고 Enter</span><span class="grow"></span>
-      <span class="topn" title="찾은 곡의 위에서부터 (목록에 안 보이는 곡까지) 이 수만큼으로 재생목록을 새로 만듦 — 지금 재생목록은 바뀜"><!-- user request 2026-11-14: replaces '결과 모두 재생목록에' -->
-        상위 <input type="number" id="sTopN" min="1" step="1" value="1000"> 곡
-        <button id="sMakePl" disabled>재생목록 만들기</button></span>
-      <select id="sSort" title="정렬"><option value="RatingScore">인기순</option></select></div><!-- user request 2026-11-14: sort at the far right, after 재생목록 만들기 -->
+      <!-- 정렬 · 몇 번째부터 · 몇 곡 — part of the filter, drawn by filter_editor.js (user request 2026-11-22: was 상위 N곡 + 정렬) -->
+      <span id="sSortBox"></span>
+      <button id="sMakePl" disabled title="지금 결과의 재생할 수 있는 곡으로 재생목록을 새로 만듦 — 지금 재생목록은 바뀜">재생목록 만들기</button></div><!-- user request 2026-11-14: replaces '결과 모두 재생목록에' -->
     <div class="slistw"><div class="slist" id="sList"></div><div class="sbusy" id="sBusy" hidden></div></div><!-- sBusy: 검색 중 도는 표시 (2026-11-16) -->
   </div>
 </dialog>

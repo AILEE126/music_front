@@ -481,18 +481,35 @@ body:not(.simple) .khn{color:color-mix(in srgb,var(--bc) var(--tint-k),var(--tin
 .fhead .ib{font-size:14px;padding:2px 5px}
 .fhead [data-new="exc"]{color:var(--err)}
 .fhelp{cursor:help;width:20px;height:20px;border-radius:50%;border:1px solid var(--line);color:var(--muted);font-size:11px;display:inline-flex;align-items:center;justify-content:center}
-.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
-.fgrid select{width:100%;font-size:12.5px;padding:4px 6px}
-/* 필터 목록 칸 (보컬·프로듀서·태그 등): 누르면 펼쳐지는 목록 맨 위에 검색창 — 엑셀 필터처럼 글자를 치면 그 글자가 든 항목만.
-   원래 select 는 숨겨 두고 항목 원본으로만 씀 */
-.fgrid select.fdd-src{display:none}
-.fdd{min-width:0}
-.fdd[hidden]{display:none}
-.fdd-btn{width:100%;display:flex;align-items:center;gap:4px;font-size:12.5px;padding:4px 6px;text-align:left}
-.fdd-btn span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fdd-btn svg{flex:none;width:12px;height:12px;opacity:.6;transition:transform .15s}
-.fdd.open .fdd-btn{border-color:var(--accent)}
-.fdd.open .fdd-btn svg{transform:rotate(180deg)}
+/* 필터 편집기 (filter_editor.js — 플레이어 곡 검색 창 · 음원 관리 › 필터가 같이 씀, 2026-11-21): 원곡만 스위치 · 고급 · 카테고리 단추.
+   카테고리를 누르면 펼쳐지는 목록(.fddpop) 맨 위에 검색창 — 엑셀 필터처럼 글자를 치면 그 글자가 든 항목만 */
+.fbar{display:flex;align-items:center;gap:4px;margin-bottom:8px}
+.fbar .grow{flex:1}
+.fbar button{flex:none;padding:2px 8px;font-size:12px}
+.fbar .ib{font-size:14px;padding:2px 5px}
+.fbar .onoff.forig{flex:none;padding:2px;align-self:center;min-height:26px}
+.fbar .onoff.forig .lb{min-width:50px;padding:1px 8px 0;font-size:11.5px}
+.fbar .onoff.forig.part::before{display:none}  /* only some groups keep the default: neither side lit */
+.fbar .onoff.forig.part .lb.off{color:var(--muted)}
+.forignote{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11.5px}
+.fadv{display:inline-flex;align-items:center;gap:3px}
+.fadv svg{width:11px;height:11px;opacity:.6;transition:transform .15s}
+.fadv.on{border-color:var(--accent);color:var(--accent)}
+.fadv.on svg{transform:rotate(180deg)}
+.fcats{display:flex;flex-wrap:wrap;gap:5px}
+.fcat{padding:3px 10px;font-size:12.5px;border-radius:999px;white-space:nowrap}
+.fcat.open{border-color:var(--accent);background:var(--accent-soft)}
+.fcat.wait{border-color:var(--accent);opacity:.65;cursor:progress}  /* pressed before its values were counted */
+.fcat.more{display:inline-flex;align-items:center;gap:3px;color:var(--muted)}
+.fcat.more svg{width:11px;height:11px}
+/* categories worked out by our own code (filter_editor.js F_OWN_CATS, user request 2026-11-22) */
+.fcat.own,.fdd-opt.own{--own:#a78bfa}
+html[data-theme=light] :is(.fcat.own,.fdd-opt.own){--own:#7c3aed}
+.fcat.own{color:var(--own);border-color:color-mix(in srgb,var(--own) 45%,transparent)}
+.fdd-opt.own{color:var(--own)}
+.fcatnote{font-size:12px;color:var(--muted)}
+.fdd-solo{display:flex;align-items:center;gap:5px;margin:0 8px 6px;font-size:12px;color:var(--muted);cursor:pointer}
+.fgroup.plain{border:0;padding:0;background:none;cursor:default}  /* 고급이 아닐 때: 상자 없이 고른 조건만 */
 .fddpop{position:fixed;z-index:60;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:var(--card);
   box-shadow:0 8px 24px rgba(0,0,0,.35);overflow:hidden}
 .ghform{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0}
@@ -531,8 +548,6 @@ body:not(.simple) .khn{color:color-mix(in srgb,var(--bc) var(--tint-k),var(--tin
 #libInfo .cnt{white-space:nowrap}
 #libInfo .tot{font-size:12px;color:var(--muted)}  /* all our songs + '/', not highlighted */
 .libinfo:has(#libInfo .lbl){align-items:flex-end}  /* buttons line up with the count line */
-.fgrid .solo{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);white-space:nowrap;cursor:pointer}
-.fgrid .solo.off{opacity:.45;cursor:default}
 /* 필터 그룹 (위 목록): 그룹 = 한 줄 상자. 상자 안 조건은 모두 맞아야(교집합), 상자끼리는 하나라도(합집합), 빨간 상자(−)는 빼기.
    선택된 상자(밝은 테두리)에 새 조건이 들어감 */
 .fchips{display:flex;flex-direction:column;gap:3px;margin-top:8px}
@@ -972,12 +987,15 @@ html[data-theme=black]{--bg:#000;--card:rgb(12 12 12);--text:rgb(208 208 208);--
 .fset .fx{position:absolute;top:50%;right:4px;transform:translateY(-50%);border:0;background:none;padding:2px 5px;color:var(--muted)}
 .fset .fx:hover{color:var(--err)}
 .fdd-top .fsave{flex:1;font-size:12.5px;padding:5px 8px}
-/* 상위 N 곡 재생목록 만들기 (결과 모두 재생목록에 대신) */
-#searchDlg .topn{display:inline-flex;align-items:center;gap:5px;color:var(--text)}
-#sTopN{width:72px;padding:4px 6px;font-size:12.5px;text-align:right;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
-#searchDlg .grow{flex:1}  /* 정렬 셀렉트박스 · 저장된 필터 · 프리셋 추천을 줄 오른쪽 끝으로 */
+/* 정렬 · 몇 번째부터 · 몇 곡 (filter_editor.js — part of the filter, user request 2026-11-22) · read-only filters: the same as one line */
+.fsort{display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:12.5px}
+.fsort label{display:inline-flex;align-items:center;gap:4px;color:var(--muted);white-space:nowrap}
+.fsort input{width:68px;padding:4px 6px;font-size:12.5px;text-align:right;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text)}
+.fsort select{font-size:12.5px}
+.fpanel > .fsort{display:flex;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.frange{flex-basis:100%;font-size:11.5px;color:var(--muted);padding:1px 2px}
+#searchDlg .grow{flex:1}  /* 저장된 필터 · 프리셋 추천을 줄 오른쪽 끝으로 */
 #searchDlg .sinfo{flex-wrap:wrap}
-#sSort{margin-left:auto}
 /* 그룹 안 조건: 누르면 고치기 (user request 2026-11-14) — 고치는 조건은 강조 · 곡 종류는 지우기 없는 고르는 칸 모양 (▾) */
 .fchip{cursor:pointer}
 .fchip:hover{box-shadow:inset 0 0 0 1px var(--accent)}

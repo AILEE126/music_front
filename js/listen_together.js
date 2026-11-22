@@ -85,10 +85,14 @@ function ltChPrefetch() {
     .then(gz => new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).json()).catch(() => null);
 }
 const ltChFileOk = (d, groups) => d && Array.isArray(d.ids) && d.sig === JSON.stringify(groups);
-/* 인기순 상위 N곡만 (user request 2026-11-20, Manage › 필터 › OPEN CHANNEL conf.top; 0 = all): cut after the filter, so the
-   saved list keeps every passing song and the manage screen can show any N from it */
-const ltChTop = (conf, list) => conf.top > 0
-  ? [...list].sort((a, b) => (b.rating || 0) - (a.rating || 0) || (+a.vocadb || 0) - (+b.vocadb || 0)).slice(0, conf.top) : list;
+/* 정렬해서 n번부터 n곡만 (user request 2026-11-22 — the filter's sort and range; before: 인기순 상위 N곡, conf.top 2026-11-20):
+   cut after the filter, so the saved list keeps every passing song and the manage screen can show any range from it.
+   No range → every song, as it is (the channel shuffles anyway) */
+const ltChTop = (conf, list) => {
+  const f = filterOf(conf);
+  if (!(f.n > 0 || f.from > 0)) return list;
+  return [...list].sort(ourCmp(f.sort || "RatingScore", true)).slice(f.from, f.n > 0 ? f.from + f.n : undefined);
+};
 async function ltChSongs(fast) {
   const {conf, k} = ltChSrc(fast), groups = conf.groups, d = ltChFileP[k] && await ltChFileP[k];
   if (ltChFileOk(d, groups)) {  // the list made before — a day old song list is fine for a shuffle
@@ -194,7 +198,7 @@ async function ltChStart(took) {
    Older than 1 min = the channel was gone: a fresh shuffle. */
 const LT_CH_SNAP = "lt.chSnap", LT_CH_KEEP = 60 * 1000;  // 1 min (user request 2026-11-17, was 5)
 const ltChSnapKey = () => LT_CH_SNAP + (LT.chFast ? ".2x" : "");  // one per channel
-const ltChSig = conf => JSON.stringify(conf.groups || []) + (conf.top > 0 ? "#" + conf.top : "");
+const ltChSig = conf => { const f = filterOf(conf); return JSON.stringify(f.groups) + (f.n > 0 || f.from > 0 ? `#${f.sort},${f.from},${f.n}` : ""); };
 function ltChSnapSave() {
   const conf = ltChConf();
   if (!ltChHost() || !conf || !SHELL.now) return;
@@ -1228,7 +1232,7 @@ function ltRender() {
   // user request 2026-11-15: no filter → just '필터 없음' · a filter → the header with a thin 필터 저장하기 at its right end
   // channel (user request 2026-11-17): its filter stays private — only an 'OPEN CHANNEL' tag, nothing to save
   $("ltPlf").innerHTML = LT.chOn ? `<div class="ltplfhead"><span>현재 재생중인 목록의 필터</span></div>${ltChTag()}`
-    : plf && plf.length
+    : plf && filterOf(plf).groups.length
     ? `<div class="ltplfhead"><span>현재 재생중인 목록의 필터</span><button type="button" class="ltsmall ltplfsave" title="이 필터를 저장된 필터에 넣음 (곡 검색 › 저장된 필터)">필터 저장하기</button></div>` + plfHtml(plf)
     : '<div class="ltplfnone">필터 없음</div>';
   $("ltLeave").textContent = LT.role === "host" && !LT.chOn ? "방 닫기" : "나가기";
@@ -1448,11 +1452,12 @@ $("ltPwNo").onclick = () => { LT.ask = ""; $("ltPwIn").value = ""; LT.status = "
 $("ltPlf").addEventListener("click", async e => {
   if (!e.target.closest(".ltplfsave") || LT.chOn) return;  // the channel's filter can't be saved
   const plf = LT.role === "host" ? PLF : LT.hostPlf;
-  const groups = (plf || []).filter(g => g.c && g.c.length).map(({x, c}) => ({x, c}));
+  const pf = filterOf(plf), groups = pf.groups.filter(g => g.c && g.c.length).map(({x, c}) => ({x, c}));
   if (!groups.length) return;
   const name = await uiPrompt("저장할 필터 이름", fSummary(groups).slice(0, 40), "필터 이름");
   if (!name) return;
-  store.set("f.saved", [...store.get("f.saved", []).filter(f => f.name !== name), {name, groups}]);  // 같은 이름이면 덮어씀
+  // with the room filter's sort and range when it has them (user request 2026-11-22)
+  store.set("f.saved", [...store.get("f.saved", []).filter(f => f.name !== name), {name, groups, ...(pf.sort ? {sort: pf.sort, from: pf.from, n: pf.n} : {})}]);  // 같은 이름이면 덮어씀
   LT.status = `필터 '${name}' 을(를) 저장했습니다.`; ltRender();
 });
 function ltLeaveBtn(keepSong) { const code = LT.role === "host" && !(LT.chOn && LT.conns.size) ? LT.code : ""; $("ltName").value = store.get("reportWho", ""); ltLeave(false, keepSong); ltRescan(code, 800); }  // back to the last name used

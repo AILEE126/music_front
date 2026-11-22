@@ -123,16 +123,16 @@ const KARA = {
   /* 노래방 모드 on (user request 2026-11-16, web · phone): the search filter and the playlist's filter become the 노래방
      preset (필터 › 프리셋 — the one named 노래방, else the built-in one); the playlist's filter before is kept until it goes off.
      The search window opens on this preset while the mode is on (searchReset) */
-  presetGroups() { return (fPresets().find(f => /노래방/.test(f.name)) || F_PRESETS_DEF[0]).groups; },
+  presetGroups() { return fPresets().find(f => /노래방/.test(f.name)) || F_PRESETS_DEF[0]; },  // the preset itself: groups + its sort and range
   presetF() {
     if (!store.get("kara.prevF", null)) store.set("kara.prevF", {plf: PLF});
     applyFilter(this.presetGroups());
-    setPlFilter(FG.filter(fReal));
+    setPlFilter(FE.filter());
   },
   /* 일반 again: the search window back to its fresh state · the playlist's filter as it was */
   restoreF() {
     const prev = store.get("kara.prevF", null); if (!prev) return;
-    if ($("searchDlg").open) { searchReset(); renderSortOptions(); renderFilterOptions(); runSearch(); }
+    if ($("searchDlg").open) { searchReset(); renderFilterOptions(); runSearch(); }
     setPlFilter(prev.plf);
     store.set("kara.prevF", null);
   },
