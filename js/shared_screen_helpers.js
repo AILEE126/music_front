@@ -140,14 +140,20 @@ const shortName = s => String(s ?? "").replace(/(.)\1{9,}/gu, (m, c) => `${c}×$
 /* text that NFKC leaves as it is (ASCII · Hangul syllables · kana without compat / combining marks · common CJK · 、。「」『』)
    skips the normalize call (2026-11-19, sized for 1M songs — same result, checked on 430만 search parts) */
 const FOLD_SAFE = /^[\u0000-\u007f\uac00-\ud7a3\u3041-\u3096\u30a1-\u30fa\u30fc\u4e00-\u9fff\u3001-\u3002\u300c-\u300f]*$/;
-const fold = s => { s = String(s ?? ""); return (FOLD_SAFE.test(s) ? s : s.normalize("NFKC")).toLowerCase().replace(/\s+/g, ""); };
+// User request 2026-11-22: symbols are ignored too ("bad end night" finds "Bad∞End∞Night"), every search box;
+// a text that is only symbols keeps them (so "★" still finds "★")
+const fold = s => {
+  s = String(s ?? ""); s = (FOLD_SAFE.test(s) ? s : s.normalize("NFKC")).toLowerCase();
+  return s.replace(/[^\p{L}\p{N}\p{M}]+/gu, "") || s.replace(/\s+/g, "");
+};
 /* 곡 제목 표시 (user request 2026-11-17, 모든 곡 제목): 앞 이름을 굵게, 옆에 다른 이름을 흐리게 ' · ' 로 — 같은 이름은 한 번.
    앞 이름: VocaDB 기본 이름이 일본어면 한글 제목(번역명, 우리가 가진 것만 — 자동 번역명이 생기면 그건 앞에 두지 않음),
    없으면 기본 이름 / 기본 이름이 영어 등 일본어가 아니면 기본 이름.
    뒤: 기본 이름 > 일본어 이름 > 한글 발음 > 한글 제목 > 영어 이름 > VocaDB 다른 이름. 우리 DB 밖의 곡 (오프라인 mp3) 은 제목 · 원제 · 발음 */
+const mainTitle = it => (it.def && !it.defJa ? it.def : it.title) || "";  // also the 제목 sort (filter_panel.js sortTitle)
 function titleNames(it) {
   if (!it) return [""];
-  const main = (it.def && !it.defJa ? it.def : it.title) || "", seen = new Set([fold(main)]);
+  const main = mainTitle(it), seen = new Set([fold(main)]);
   const subs = [it.def || it.orig, it.ja, it.reading, it.title, it.en, ...String(it.alt || "").split(",")]
     .map(x => String(x || "").trim()).filter(x => x && !seen.has(fold(x)) && seen.add(fold(x)));
   return [main, ...subs];

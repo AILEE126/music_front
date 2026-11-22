@@ -568,8 +568,11 @@ const KO_CMP = new Intl.Collator("ko").compare;  // same order as localeCompare(
    (_tr, a stable sort of the whole list) and the sorts compare that number.
    That sort itself is slow (~15 s at 1M), so its result is kept in this browser (VocaDB ids in title order) and the next
    open takes the places from it before sorting; songs new since then fall back to comparing titles */
-const titleCmp = (a, b) => titleGroup(a.title) - titleGroup(b.title) || KO_CMP(a.title, b.title);
-const TR_KEY = () => `${LOCAL.name}|title_rank`;
+/* the name sorted by = the bold name the list shows (user request 2026-11-22: some songs show their English name first, and
+   ' 태양소녀 ' — a space in front — came first) */
+const sortTitle = it => mainTitle(it).trim();
+const titleCmp = (a, b) => { const x = sortTitle(a), y = sortTitle(b); return titleGroup(x) - titleGroup(y) || KO_CMP(x, y); };
+const TR_KEY = () => `${LOCAL.name}|title_rank2`;  // 2: sorted by sortTitle
 /* 정렬 일꾼 (user request 2026-11-19, sized for 1M songs): a worker thread that sorts with the browser's own sort, so the
    screen does none of it — the title order (titles + their group, Korean collator like KO_CMP, ~3 s at 1M instead of ~11 s
    here) and number keys (numSorted). Made from this text (a page opened as a file can't load a worker file); no worker → the
@@ -601,7 +604,7 @@ async function titleRanks(all, tick) {
   let by;
   try {
     const titles = new Array(all.length), groups = new Int8Array(all.length);
-    for (let i = 0; i < all.length; i++) { titles[i] = all[i].title; groups[i] = titleGroup(titles[i]); if (!(i & 16383)) await tick(); }
+    for (let i = 0; i < all.length; i++) { titles[i] = sortTitle(all[i]); groups[i] = titleGroup(titles[i]); if (!(i & 16383)) await tick(); }
     const {order} = await sortWork({titles, groups}, [groups.buffer]);
     by = Array.from(order, i => all[i]);
   } catch (e) { by = await sortAsync(all, titleCmp, tick); }  // no worker: here, in steps
