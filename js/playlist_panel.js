@@ -161,9 +161,26 @@ const allItems = () => ONLINE ? [...LOCAL.items.values()] : offItems();
    OFFSRC "dir" | "yt" (remembered) · OFFYT {url, list, title, vids}: the list's video numbers + titles, kept in this browser
    so it opens at once next time (불러오기 again to refresh) */
 var OFFSRC = store.get("off.src", "dir") === "yt" ? "yt" : "dir";
-const ytItem = v => liveItem({site: "stream", name: "yt:" + v.id, offyt: true, title: v.title || v.id, artist: v.author || "",
+/* 추천 재생목록 options (user request 2026-11-23, set in Manage › 추천 재생목록): cut = title regex — the match (group 1 if
+   any) is the shown title, no match = the whole title · skipA / skipB = seconds skipped at each video's start / end */
+function ytCut(title, cut) {
+  if (!cut) return title;
+  try { const m = String(title).match(new RegExp(cut)); return m && (m[1] ?? m[0]).trim() || title; } catch (e) { return title; }
+}
+/* 예외 (user request 2026-11-23): opt.ex [{n: "3, 5-7", cut, skip_a, skip_b}] — those video numbers (1 = first) use the
+   row's values; an empty one keeps the default. The first row that names the number wins */
+const exHas = (n, no) => String(n || "").split(",").some(p => { const [a, b = a] = p.split("-").map(x => +x.trim()); return no >= a && no <= b; });
+function ytOptAt(no) {
+  const o = OFFYT.opt, e = (o.ex || []).find(x => exHas(x.n, no)) || {}, pick = (k, d) => e[k] == null || e[k] === "" ? d : e[k];
+  return {cut: pick("cut", o.cut), skipA: +pick("skip_a", o.skip_a) || 0, skipB: +pick("skip_b", o.skip_b) || 0};
+}
+const ytItem = (v, i = 0) => ytItemAt(v, ytOptAt(i + 1));
+const ytItemAt = (v, o) => liveItem({site: "stream", name: "yt:" + v.id, offyt: true, title: ytCut(v.title || v.id, o.cut), artist: v.author || "",
+  skipA: o.skipA, skipB: o.skipB,
   video: `https://www.youtube.com/watch?v=${v.id}`, video_link: `https://www.youtube.com/watch?v=${v.id}`, thumb: `https://i.ytimg.com/vi/${v.id}/mqdefault.jpg`});
-const OFFYT = (() => { const s = store.get("offyt", null) || {}; return {url: s.url || "", list: s.list || "", title: s.title || "", vids: s.vids || [], items: [], busy: false}; })();
+const OFFYT = (() => { const s = store.get("offyt", null) || {}; return {url: s.url || "", list: s.list || "", title: s.title || "", vids: s.vids || [], opt: s.opt || {}, items: [], busy: false}; })();
+const ytOpt = r => r ? {cut: r.cut || "", skip_a: +r.skip_a || 0, skip_b: +r.skip_b || 0, ex: r.ex || []} : {};
+const saveOffyt = () => store.set("offyt", {url: OFFYT.url, list: OFFYT.list, title: OFFYT.title, vids: OFFYT.vids, opt: OFFYT.opt});
 var offItems = () => OFFSRC === "yt" ? OFFYT.items : OFFDIR.items;
 const offReady = () => OFFSRC === "yt" ? !!OFFYT.list : !!OFFDIR.dir;
 /* the playlist's video numbers: the stream bridge page asks YouTube's own player (getPlaylist — up to 200; a page opened here
@@ -192,16 +209,20 @@ async function loadYtList(input) {
   OFFYT.busy = true; renderOffBar();
   try {
     const list = m[1], ids = [...new Set(await ytListIds(list))];
+    if (!REC.lists) await loadRec();
+    const rec = REC.lists.find(r => r.list === list);
     const info = await ytOembed(`https://www.youtube.com/playlist?list=${list}`);
     const vids = ids.map(id => ({id}));
     for (let i = 0; i < vids.length; i += 6)
       await Promise.all(vids.slice(i, i + 6).map(async v => { const o = await ytOembed(`https://www.youtube.com/watch?v=${v.id}`); if (o) { v.title = o.title; v.author = o.author_name; } }));
-    Object.assign(OFFYT, {url: String(input).trim(), list, title: info && info.title || "유튜브 재생목록", vids, items: vids.map(ytItem)});
-    store.set("offyt", {url: OFFYT.url, list, title: OFFYT.title, vids});
+    Object.assign(OFFYT, {url: String(input).trim(), list, title: info && info.title || "유튜브 재생목록", vids, opt: ytOpt(rec)});
+    OFFYT.items = vids.map(ytItem);
+    saveOffyt();
     const thumb = info && info.thumbnail_url || (vids[0] ? `https://i.ytimg.com/vi/${vids[0].id}/mqdefault.jpg` : "");
     histAdd({list, url: `https://www.youtube.com/playlist?list=${list}`, title: OFFYT.title, n: vids.length, thumb});
-    // the server sees which playlists users load (Manage › 추천 재생목록, user request 2026-11-22) — never blocks playing
-    LOCAL.saveUserPlaylist({list, url: `https://www.youtube.com/playlist?list=${list}`, title: OFFYT.title, n: vids.length, thumb}).catch(() => {});
+    // the server sees which playlists users load (Manage › 추천 재생목록, user request 2026-11-22) — never blocks playing;
+    // a recommended one isn't recorded (user request 2026-11-23)
+    if (!rec) LOCAL.saveUserPlaylist({list, url: `https://www.youtube.com/playlist?list=${list}`, title: OFFYT.title, n: vids.length, thumb}).catch(() => {});
   } catch (e) { uiAlert(e.message); }
   finally { OFFYT.busy = false; renderOffBar(); renderList(); }
 }
@@ -244,6 +265,12 @@ const REC = {lists: null};
 async function loadRec() {
   try { const d = LOCAL.ready ? await LOCAL.readJson(`${LOCAL.data}rec_playlists.json`, null) : null; REC.lists = (d && d.lists) || []; }
   catch (e) { REC.lists = []; }
+  // options changed in Manage meanwhile → the loaded recommended playlist takes them at once
+  const r = OFFYT.list && REC.lists.find(x => x.list === OFFYT.list);
+  if (r && JSON.stringify(ytOpt(r)) !== JSON.stringify(OFFYT.opt)) {
+    OFFYT.opt = ytOpt(r); saveOffyt();
+    if (OFFYT.items.length) { OFFYT.items = OFFYT.vids.map(ytItem); if (!ONLINE && OFFSRC === "yt") renderList(); }
+  }
   renderRec();
 }
 /* 이전에 추가한 재생목록 (user request 2026-11-22): the playlists this browser loaded, newest first — browser storage only

@@ -833,6 +833,8 @@ function addonFromHash() {
 }
 
 /* ---------- 재생기 ---------- */
+/* 추천 재생목록 skip seconds (it.skipA / skipB) unless the LOCAL SKIP tab is off (user request 2026-11-23) */
+const skipOf = (it, k) => it && it[k] && store.get("offSkip", true) ? it[k] : 0;
 function makePlayer(el) {
   const keyOf = it => it.site + "/" + it.name;
   // 중계 플레이어 칸: 이 문서에 하나 — 영상 칸(placeVideo)이 있으면 그 위에 겹쳐 보이고, 없으면 1px 로 접음 (소리는 계속)
@@ -885,7 +887,7 @@ function makePlayer(el) {
         return;
       }
       this.queueOnLoad(it, how);  // 지난 곡·다음 곡 순서 (play_queue.js)
-      const start = resumeSeek && resumeSeek.it === it ? resumeSeek.t : 0; resumeSeek = null;  // resume after a reload (P.resumeAt)
+      const start = resumeSeek && resumeSeek.it === it ? resumeSeek.t : skipOf(it, "skipA"); resumeSeek = null;  // resume after a reload (P.resumeAt) · 앞 스킵 (추천 재생목록)
       this.now = it; this.autoplay = autoplay; store.set("last", keyOf(it));
       store.set("lastItem", Object.fromEntries(Object.entries(typeof plainSong === "function" ? plainSong(it) : it).filter(([k]) => !k.startsWith("_"))));  // 새로고침해도 (음원 관리 화면이어도) 띄움
       if (it.site === "local") {
@@ -1056,7 +1058,7 @@ function makePlayer(el) {
     if (P.editing) return;  // 플레이어에서 싱크를 직접 맞추는 중이면 넘어가지 않음
     if (P.holdEnd && P.holdEnd()) return;  // update waiting for this song's end (version_check.js): it reloads instead
     if (P.follow) return;  // 같이듣기 손님: 방장이 다음 곡으로 넘김 (listen_together.js)
-    if (P.repeat === "one") { audio.currentTime = 0; audio.play(); } else P.next(true);
+    if (P.repeat === "one") { audio.currentTime = skipOf(P.now, "skipA"); audio.play(); } else P.next(true);
   };
   let sendingN = 0;
   P.sending = async fn => {
@@ -1064,9 +1066,19 @@ function makePlayer(el) {
     try { return await fn(); }
     finally { if (!--sendingN && endedWhileSending) { endedWhileSending = false; onEnd(); } }
   };
-  audio.addEventListener("ended", () => {
+  const ended = () => {
     if (sendingN) { endedWhileSending = true; return; }
     onEnd();
+  };
+  audio.addEventListener("ended", ended);
+  /* 뒤 스킵 (추천 재생목록 option, user request 2026-11-23): the last skipB seconds of a video count as its end */
+  let tailHit = false;
+  audio.addEventListener("timeupdate", () => {
+    const b = skipOf(P.now, "skipB"), d = audio.duration;
+    if (!b || !(d > b)) return;
+    if (audio.currentTime < d - b) { tailHit = false; return; }
+    if (tailHit || audio.paused) return;
+    tailHit = true; ended();
   });
   /* 온라인 곡을 못 틀면 (원곡 영상 삭제·비공개·퍼가기 금지 등) 화면 가운데 창에 남기고 다음 곡으로 — 멈추지 않고 계속 재생.
      창은 확인을 누를 때까지 떠 있고, 그사이 또 못 튼 곡은 같은 창 목록에 쌓임. 틀려던 곡이면 넘어감 (곡을 골랐거나 ▶ 를 누름 —
