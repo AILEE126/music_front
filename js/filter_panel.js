@@ -42,8 +42,32 @@ const FE = makeFilterEditor({
     $("btnFilter").classList.toggle("on", !!n);
     $("btnFilter").classList.toggle("open", !$("fPanel").hidden);
     $("btnFilter").querySelector(".cnt").textContent = n || "";
+    fPlayBtn();
   },
 });
+/* 재생가능 | 재생불가능 (user request 2026-11-23, admin token only): right of the 원곡만 switch — narrows the results to the
+   songs that can / can't be played (e.g. 노래방 712곡 · 재생 가능 708곡 → the 4 others). Neither side lit = every song (the
+   default, each window open). Click a side = only those · the lit side again = all. Not part of the filter (not saved) */
+S.play = "";
+function fPlayBtn() {
+  const bar = document.querySelector("#fPanel .fbar");
+  if (!bar) return;
+  bar.querySelector(".fplay")?.remove();
+  if (!(typeof isAdmin === "function" && isAdmin())) { S.play = ""; return; }
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "onoff forig fplay" + (S.play === "no" ? " on" : S.play === "ok" ? "" : " part");
+  b.title = "관리자: 재생 가능한 곡만 / 재생 못 하는 곡만 (다시 누르면 모두)";
+  b.innerHTML = `<span class="lb off" data-p="ok">재생가능</span><span class="lb on" data-p="no">재생불가능</span>`;
+  b.onclick = e => {
+    const p = e.target.closest("[data-p]")?.dataset.p;
+    if (!p) return;
+    S.play = S.play === p ? "" : p;
+    fPlayBtn(); runSearch();
+  };
+  const orig = bar.querySelector(".forig:not(.fplay)");
+  orig ? orig.after(b) : bar.prepend(b);
+}
 const fDefault = FE.def, fReal = FE.real, renderFilterOptions = FE.render, closeDD = FE.closeDD, placePop = filterPlacePop;
 samePlayable = it => canPlay(it);  // 같은 곡 정렬 '재생 가능' = 재생목록에 넣을 수 있는 곡
 /* 곡 조건 (user request 2026-11-14: 검색 결과의 '현재 필터에 추가'): 지금 결과에 이 곡'도' 더함 — 곡만 모은 포함 그룹 하나

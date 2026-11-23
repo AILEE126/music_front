@@ -38,6 +38,7 @@ function searchReset() {
   closeDD(); closeFSet();
   $("sQ").value = "";
   store.set("sScope", "all"); $("sScope").value = "all";
+  S.play = "";  // 재생가능 | 재생불가능 (admin): every song again — before FE.set draws the bar
   FE.set(null);  // 원곡만 · 인기순 0번부터 1000곡 (filter_editor.js)
   if (KARA.mode) FE.set(KARA.presetGroups());
   $("fPanel").hidden = false; store.set("sfOpen", true);
@@ -203,10 +204,14 @@ async function runSearch(keep) {
     const total = its.length, cut = FE.from > 0 || FE.n > 0;
     if (cut) its = its.slice(FE.from, FE.n > 0 ? FE.from + FE.n : undefined);
     const nPlay = await playableCount(its, tick);
+    // 재생가능 | 재생불가능 (admin, filter_panel.js fPlayBtn): of the result above, only those
+    const all = its.length;
+    if (S.play) its = await chunkFilter(its, it => playableFast(it) === (S.play === "ok"), tick);
     S.items = its;
     if (!keep) $("sList").scrollTop = 0;
     // 검색결과 N곡 · 재생 가능 M곡 (user request 2026-11-15: songs without a video are found but can't go in the playlist)
-    renderSearch(`검색결과 ${its.length.toLocaleString()}곡${cut ? ` (맞는 곡 ${total.toLocaleString()}곡 중 ${filterRange(FE.filter())})` : ""} · 재생 가능 ${nPlay.toLocaleString()}곡${q ? ` — "${q}"` : ""}`);
+    renderSearch(`검색결과 ${all.toLocaleString()}곡${cut ? ` (맞는 곡 ${total.toLocaleString()}곡 중 ${filterRange(FE.filter())})` : ""} · 재생 가능 ${nPlay.toLocaleString()}곡`
+      + (S.play ? ` · ${S.play === "ok" ? "재생 가능" : "재생 불가능"}만 보기 ${its.length.toLocaleString()}곡` : "") + (q ? ` — "${q}"` : ""));
   } catch (e) { if (e !== STALE) throw e; }
   finally { if (gen === searchGen) listBusy(false); }
 }
