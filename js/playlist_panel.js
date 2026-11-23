@@ -178,7 +178,13 @@ const allItems = () => ONLINE ? [...LOCAL.items.values()] : offItems();
 /* 오프라인 모드의 곡 (user request 2026-11-15): 고른 mp3 폴더 (mp3 만) 또는 유튜브 재생목록 (그 재생목록의 영상 — 소리는 인터넷으로).
    OFFSRC "dir" | "yt" (remembered) · OFFYT {url, list, title, vids}: the list's video numbers + titles, kept in this browser
    so it opens at once next time (불러오기 again to refresh) */
-var OFFSRC = store.get("off.src", "dir") === "yt" ? "yt" : "dir";
+var OFFSRC = store.get("off.src", "yt") === "dir" ? "dir" : "yt";  // 유튜브 재생목록 first (user request 2026-11-23)
+/* 같이듣기 방장 (user request 2026-11-23): no mp3 folder while hosting — guests can't play those files. true = blocked (told) */
+function mp3Blocked() {
+  if (typeof LT === "undefined" || LT.role !== "host" || LT.chOn) return false;
+  uiAlert("같이듣기 방장일 때는 mp3 폴더 곡을 틀 수 없습니다 (방에 들어온 사람은 들을 수 없음).");
+  return true;
+}
 /* 추천 재생목록 options (user request 2026-11-23, set in Manage › 추천 재생목록): cut = title regex — the match (group 1 if
    any) is the shown title, no match = the whole title · skipA / skipB = seconds skipped at each video's start / end */
 function ytCut(title, cut) {
@@ -428,7 +434,7 @@ function openAddSongs() {
 }
 $("addClose").onclick = () => $("addDlg").close();
 $("addDlg").addEventListener("click", e => { if (e.target === $("addDlg")) $("addDlg").close(); });  // outside the box
-/* 오프라인 줄 (user request 2026-11-15): 곡 출처 [📁 mp3 폴더 | ▶ 유튜브 재생목록] + 그 출처 (폴더 이름 · 다른 폴더 / 재생목록 주소 · 불러오기) */
+/* 오프라인 줄 (user request 2026-11-15): 곡 출처 [▶ 유튜브 재생목록 | 📁 mp3 폴더] (재생목록 first, user request 2026-11-23) + 그 출처 (폴더 이름 · 다른 폴더 / 재생목록 주소 · 불러오기) */
 function renderOffBar() {
   const bar = $("offBar");
   $("addBusy").hidden = !OFFYT.busy;  // 곡 추가 window dimmed with a spinner while a playlist loads (user request 2026-11-23)
@@ -437,7 +443,7 @@ function renderOffBar() {
   const tab = (src, label) => `<button data-src="${src}" class="${OFFSRC === src ? "on" : ""}">${label}</button>`;
   $("recW").hidden = OFFSRC !== "yt"; $("dirW").hidden = OFFSRC !== "dir";  // tabs (user request 2026-11-23)
   renderNewBadge();
-  bar.innerHTML = `<div class="offnote"><div class="row offsrc">${tab("dir", "📁 mp3 폴더")}${tab("yt", "▶ 유튜브 재생목록")}</div>`
+  bar.innerHTML = `<div class="offnote"><div class="row offsrc">${tab("yt", "▶ 유튜브 재생목록")}${tab("dir", "📁 mp3 폴더")}</div>`
     + (OFFSRC === "dir"
       ? (OFFDIR.dir ? `<div>📁 <b>${esc(OFFDIR.name)}</b> · mp3 ${OFFDIR.items.length}곡 (같은 이름의 json 이 있는 곡만 가사·싱크)</div>` : "")
         + `<div class="row"><button class="primary" id="offDirPick">📁 폴더 추가</button><span class="muted">고른 폴더의 mp3 전체 (하위 폴더 포함)</span></div>`
