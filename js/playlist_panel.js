@@ -559,11 +559,15 @@ function badgesHtml(it) {
   const bs = [], ss = [], st = songSyncState(it);
   if (songLy(it) === "parts") bs.push('<span class="b src" title="보컬별로 파트가 나뉜 가사">파트분리</span>');
   else if (!songHasLyr(it)) bs.push('<span class="b" title="가사가 없음">가사X</span>');
-  if (st === "stale") ss.push('<span class="b err" title="싱크를 맞춘 뒤 가사가 바뀜 — 싱크를 다시 맞춰야 함">가사다름</span>');
+  // 확인대기 (user request 2026-11-23): a sync edit waiting for review — in place of the state, which is the sync before it
+  // (admin: the 싱크 수정 reports not handled yet, admin_tools.js)
+  const wait = typeof admSyncWaits === "function" && admSyncWaits(it);
+  if (wait) ss.push('<span class="b warn" title="고친 싱크가 음원 관리의 확인을 기다리는 중 — 그동안은 고친 싱크로 틂">확인대기</span>');
+  else if (st === "stale") ss.push('<span class="b err" title="싱크를 맞춘 뒤 가사가 바뀜 — 싱크를 다시 맞춰야 함">가사다름</span>');
   else if (st === "resync") ss.push('<span class="b warn" title="바뀐 가사에 지난 싱크를 일부만 옮김 — 다시 맞춰야 함 (지난 싱크로 표시)">재싱크 필요</span>');
   else if (st === "fail") ss.push(`<span class="b err" title="자동 싱크 실패${it.sync_fail ? `: ${esc(it.sync_fail)}` : ""}">싱크 실패</span>`);  // red (user request 2026-11-22)
   else if (st === "none") ss.push('<span class="b" title="싱크가 없음">싱크X</span>');
-  ss.push(pctHtml(it));
+  if (!wait) ss.push(pctHtml(it));
   return `<div class="bl">${bs.join("")}</div><div class="bl">${ss.join("")}</div>`;
 }
 /* 앨범별 접기 (user request 2026-11-23): a channel's 발표곡 list gets one thin one-line header row per album (title · artist ·
