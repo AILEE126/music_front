@@ -15,10 +15,10 @@ const VOCAL_COLORS = {  // same table as music_backend library/vocal_colors.py (
   KAITO: ["#0000ff", "카이토"], MEIKO: ["#d80000", "메이코"], GUMI: ["#39ca25", "구미", "메구폰"], IA: ["#f096dc", "이아"],
   "카사네 테토": ["#ef7793", "테토", "teto", "重音テト"], "유니": ["#fa6e98", "UNI"], "시유": ["#ff8c00", "SeeU"],
   "카무이 가쿠포": ["#594d9e", "가쿠포", "가쿳포", "gakupo"], MAYU: ["#e1dfc9", "마유"], VY1: ["#ef837d"], VY2: ["#dd9030"],
-  "카아이 유키": ["#dd4444"], Kanaria: ["#fe1818", "카나리아"], "v flower": ["#8c5fc4", "플라워", "flower"], Lily: ["#f8e58c", "릴리"],
-  "유즈키 유카리": ["#b07ad6", "유카리", "yukari"], "오토마치 우나": ["#2fb7e8", "우나"], "츠루마키 마키": ["#f5c040", "마키"],
-  "토호쿠 즌코": ["#8ed14b", "즌코"], "코토노하 아카네": ["#ff7a9e", "아카네"], "코토노하 아오이": ["#74b3ff", "아오이"],
-  "SF-A2 개발코드 miki": ["#ff5e5e", "miki"], Fukase: ["#e73a3a", "후카세"], "호시마치 스이세이": ["#0099ff", "스이세이"], KAFU: ["#8ec5ff", "카후", "可不"],
+  "카아이 유키": ["#dd4444"], Kanaria: ["#fe1818", "카나리아"], "v flower": ["#8060b0", "플라워", "flower"], Lily: ["#fff888", "릴리"],
+  "유즈키 유카리": ["#ccb5f7", "유카리", "yukari"], "오토마치 우나": ["#4646bb", "우나"], "츠루마키 마키": ["#fad772", "마키"],
+  "토호쿠 즌코": ["#2e8b57", "도호쿠 즌코", "즌코"], "코토노하 아카네": ["#ffccdd", "아카네"], "코토노하 아오이": ["#abcbef", "아오이"],
+  "SF-A2 개발코드 miki": ["#d65e5e", "miki"], Fukase: ["#ff0218", "후카세"], "호시마치 스이세이": ["#0099ff", "스이세이"], KAFU: ["#0b0bf9", "카후", "可不"],
 };
 const VOCAL_ALIAS = Object.entries(VOCAL_COLORS).flatMap(([n, [, ...al]]) => [n, ...al].map(a => [a.toLowerCase(), n])).sort((a, b) => b[0].length - a[0].length);
 function readableColor(c, least = 120) {
@@ -48,8 +48,26 @@ const vdbSources = urls => [...urls.filter(u => MAIN_URL.test(u || "")), ...urls
 const STR = new Map(), istr = s => { if (!s) return ""; let v = STR.get(s); if (v === undefined) STR.set(s, v = s); return v; };
 const NONE_OBJ = Object.freeze({}), NONE_ARR = Object.freeze([]);
 const VPAIR = new Map(), vocalPair = n => { let p = VPAIR.get(n); if (!p) VPAIR.set(n, p = Object.freeze([n, vocalColor(n)])); return p; };
-const FLAGSET = new Map(), flagSet = f => { const k = f.join("|"); let s = FLAGSET.get(k); if (!s) FLAGSET.set(k, s = Object.freeze(f)); return s; };
 const KI_NONE = Object.freeze({nums: NONE_OBJ, gone: NONE_OBJ, only: NONE_OBJ, ord: NONE_OBJ, karaoke: false, extraTags: NONE_ARR, namu: ""});
+/* 필터 값은 한 번만 (user request 2026-11-23: 곡 검색 slow at 98만 곡 — 보컬 · 프로듀서 · 보컬 인원수 · 재생 가능 were worked out of
+   the row text again at every test): people lists kept once per text, dates once per date, and the rest packed in one small
+   number on the song (VSong.q: 1 playable known · 2 playable · 4 첫 글자 known · bits 3-8 its INITIALS place (42 = none) ·
+   512 곡 상태 known · bits 10-21 the FLAGS set · bits 22-23 노래방 tags, _ktags · bits 24-28 곡 종류) — 4 bytes a song; 보컬 · 프로듀서 lists: see _singers */
+const PEOPLE = new Map(), peopleOf = s => { let a = PEOPLE.get(s); if (!a) PEOPLE.set(s, a = Object.freeze(people(s))); return a; };
+const MAINS = new Map(), mainsOf = it => { const s = it.singer; let a = MAINS.get(s); if (!a) MAINS.set(s, a = Object.freeze(mainSingers(it))); return a; };
+const DATES = new Map(), YEARS = new Map();
+/* VSong.q2: more small values kept on the song, each a known bit + its place in a fixed list (a value not in the list is read
+   each time) — 보컬 종류 · 공식 여부 · 같은 곡 혼자 · 투고년도 are tested for every song at every filter change */
+const Q2 = {};
+const q2def = (f, at, vals, read) => { Q2[f] = {at, vals, read, m: (1 << Math.ceil(Math.log2(vals.length))) - 1, idx: new Map(vals.map((v, i) => [v, i]))}; };
+function q2(s, d) {
+  const q = s.q2;
+  if (q >> d.at & 1) return d.vals[q >> d.at + 1 & d.m];
+  const v = d.read(s), i = d.idx.get(v);
+  if (i !== undefined) s.q2 = q | 1 << d.at | i << d.at + 1;
+  return v;
+}
+const FLAGBITS = new Map(), flagsOf = m => { let s = FLAGBITS.get(m); if (!s) FLAGBITS.set(m, s = Object.freeze(FLAGS.filter((_, i) => m >> i & 1))); return s; };
 
 /* 짧은 주소 (user request 2026-11-19): the server sends a known address start as '~' + letter, and a Niconico / YouTube
    thumbnail that follows from the song's video as '~n' / '~y' — music_backend table_export.py URL_PRE, same table and order */
@@ -68,11 +86,13 @@ function unUrl(u, video = "") {
    the same names and values a plain item has. Writing a field keeps the value on that song (it hides the read one).
    plain() = the fields as a plain object, for whatever copies a song (saved playlist · 같이듣기 · last song) */
 class VSong {
-  constructor(r, k) { this.r = r; this.k = k || null; this.ki = k ? VDB.karaInfo(k) : KI_NONE; }
+  constructor(r, k) { this.r = r; this.k = k || null; this.ki = k ? VDB.karaInfo(k) : KI_NONE; this.q = this.q2 = 0; this.ps = this.pv = this.pc = null;
+    this._tr = this._fq = undefined;  // title place · search text (filter_panel.js · song_filter.js): set later on every song — a slot made here is far cheaper
+  }
   plain() {
     const o = {};
-    for (const f of Object.keys(VSONG_GET)) { const v = this[f]; if (v !== undefined) o[f] = v; }
-    for (const [f, v] of Object.entries(this)) if (f !== "r" && f !== "k" && f !== "ki") o[f] = v;
+    for (const f of Object.keys(VSONG_GET)) { const v = f === "_ktags" || f === "_short" ? undefined : this[f]; if (v !== undefined) o[f] = v; }  // only filter shortcuts
+    for (const [f, v] of Object.entries(this)) if (f !== "r" && f !== "k" && f !== "ki" && f !== "q" && f !== "q2" && f !== "ps" && f !== "pv" && f !== "pc") o[f] = v;
     return o;
   }
 }
@@ -99,10 +119,19 @@ const VSONG_GET = {
   // VocaDB 보조 보컬 names (user request 2026-11-22): not in singer — only plain '보컬(보조 보컬)' chips in the song info
   support() { return vcol(this, "support") || undefined; },
   vocals() { return vsingers(this).map(vocalPair); },
-  date() { const d = String(vcol(this, "upload_date") || ""); return d.length === 8 ? istr(`${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`) : ""; },
+  date() {
+    const d = String(vcol(this, "upload_date") || "");
+    let v = DATES.get(d);
+    if (v === undefined) DATES.set(d, v = d.length === 8 ? istr(`${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`) : "");
+    return v;
+  },
   thumb() { return unUrl(vcol(this, "thumb"), vcol(this, "video_url")); },
-  type() { return vcol(this, "song_type") || ""; },
-  vkind() { return vcol(this, "vocal_kind") || ""; },
+  type() {  // 곡 종류 — kept in q (bit 24 known · 25-28 its VDB_TYPES place); a type not in VDB_TYPES is read each time
+    let q = this.q;
+    if (!(q & 1 << 24)) { const t = vcol(this, "song_type") || "", i = VDB_TYPES.findIndex(x => x[0] === t); if (i < 0) return t; this.q = q = q | 1 << 24 | i << 25; }
+    return VDB_TYPES[q >> 25 & 15][0];
+  },
+  vkind() { return q2(this, Q2.vkind); },
   origId() { return vcol(this, "original_id") || ""; },  // 같은 곡 묶기 (원곡 번호)
   rating() { return +vcol(this, "rating_score") || 0; },
   secs() { return +vcol(this, "length_seconds") || 0; },  // 곡 길이 (songs col length_seconds, 2026-11-19 — Bilibili plays only with it)
@@ -122,9 +151,29 @@ const VSONG_GET = {
   vsync() { return vours(this).vsync ? 1 : undefined; },  // sync made on VocaDB's lyrics (export/db/vsync/<id>.json, 2026-11-17)
   parts() { return vours(this).parts ? 1 : undefined; },  // lyrics name the vocal of some groups — list badge 파트분리 (2026-11-21)
   files() { const f = vcol(this, "files"); return Array.isArray(f) && f.length ? f : undefined; },  // 파일 포맷 태그 [[종류, 주소, 설명], …]
-  flags() {  // 곡 상태 (song_filter.js FLAGS)
-    const ko = vcol(this, "title_ko");
-    return flagSet(songFlags(this, vcol(this, "lyrics") === "Y", !!(ko && ko !== vcol(this, "title_ja") && ko !== this.def)));
+  flags() {  // 곡 상태 (song_filter.js FLAGS) — worked out once (q)
+    let q = this.q;
+    if (!(q & 512)) {
+      const ko = vcol(this, "title_ko");
+      let m = 0;
+      for (const f of songFlags(this, vcol(this, "lyrics") === "Y", !!(ko && ko !== vcol(this, "title_ja") && ko !== this.def))) m |= 1 << FLAGS.indexOf(f);
+      this.q = q = q | 512 | m << 10;
+    }
+    return flagsOf(q >> 10 & 4095);
+  },
+  // playable (1) or not (0) — canPlay reads only > 0. Worked out once (q); was ~5 µs a song every time (4.6 s over 98만 곡)
+  _pn() {
+    let q = this.q;
+    if (!(q & 1)) this.q = q = q | 1 | (vidRef(this.video_link) || this.sources.some(u => vidRef(u)) ? 2 : 0);
+    return q & 2 ? 1 : 0;
+  },
+  // 노래방 filter (song_filter.js FMANY): a song on no karaoke list whose own tags hold no 노래방 value has none — worked out
+  // once (q bits 22 known · 23 has one), so its tags text isn't split again at every test
+  _ktags() {
+    if (this.k) return this.tags;
+    let q = this.q;
+    if (!(q & 1 << 22)) this.q = q = q | 1 << 22 | (this.tags.some(t => ONOFF_LISTS.includes(t)) ? 1 << 23 : 0);
+    return q & 1 << 23 ? this.tags : NONE_ARR;
   },
   api() { return !vmine(this.r) && !this.k ? true : undefined; },  // not one of our songs (badges: no 가사·싱크·노래방)
   video() { return this.sources[0] || ""; },  // Niconico first — sources are in that order
@@ -134,19 +183,33 @@ const VSONG_GET = {
   artistBase() { const m = this.vocalMore; return [this.composer, m ? vsingers(this).slice(0, VOCAL_SHOW).join(", ") : this.singer].filter(Boolean).join(" feat. "); },
   artist() { const m = this.vocalMore; return this.artistBase + (m ? ` [+${m}]` : ""); },
   // song_filter.js prepItem's fields
-  _ini() { return initialOf(this.title); },
-  _singers() { return people(this.singer); },
-  _vsingers() { return mainSingers(this); },  // 보컬 인원수 · 솔로 (피노키오피 빼고)
-  _composers() { return people(this.composer); },
-  _year() { const d = this.date; return /^\d{4}/.test(d) ? d.slice(0, 4) : ""; },
+  _ini() {
+    let q = this.q;
+    if (!(q & 4)) { const i = INITIALS.indexOf(initialOf(this.title)); this.q = q = q | 4 | (i < 0 ? 42 : i) << 3; }
+    const i = q >> 3 & 63;
+    return i === 42 ? "" : INITIALS[i];
+  },
+  // kept on the song (ps · pv · pc — the 3 most used filters, a pointer each): the row text is slow to reach at 98만 곡
+  _singers() { return this.ps ?? (this.ps = peopleOf(this.singer)); },
+  _vsingers() { return this.pv ?? (this.pv = mainsOf(this)); },  // 보컬 인원수 · 솔로 (피노키오피 빼고)
+  _composers() { return this.pc ?? (this.pc = peopleOf(this.composer)); },
+  _year() { return q2(this, Q2.year); },
   // 같은 곡 묶음 · 공식 여부 from the server (fam · own · ver columns) — none (older data): song_filter.js works them out
   _fam() { return VDB.col.fam === undefined ? undefined : vcol(this, "fam") || this.vocadb; },
   _own() { return VDB.col.own === undefined ? undefined : !!vcol(this, "own"); },
-  _ver() { return VDB.col.ver === undefined ? undefined : vcol(this, "ver") || ""; },
-  _fam1() { return VDB.col.fam1 !== undefined && !!vcol(this, "fam1"); },  // alone in its family — song_filter.js sameCut skips grouping it
+  _ver() { return q2(this, Q2.ver); },
+  _fam1() { return q2(this, Q2.fam1); },  // alone in its family — song_filter.js sameCut skips grouping it
+  _short() { return q2(this, Q2.short); },
 };
+q2def("vkind", 0, ["", "엔진", "섞임", "사람"], s => vcol(s, "vocal_kind") || "");
+q2def("ver", 3, ["", "공식", "엔진 커버", "우타이테"], s => VDB.col.ver === undefined ? undefined : vcol(s, "ver") || "");
+q2def("fam1", 6, [false, true], s => VDB.col.fam1 !== undefined && !!vcol(s, "fam1"));
+q2def("short", 17, [false, true], s => s.tags.includes("short version"));  // song_filter.js isShortVer
+q2def("year", 8, ["", ...Array.from({length: 128}, (_, i) => String(1900 + i))], s => {
+  const d = s.date; let y = YEARS.get(d); if (y === undefined) YEARS.set(d, y = /^\d{4}/.test(d) ? d.slice(0, 4) : ""); return y;
+});
 for (const [f, get] of Object.entries(VSONG_GET))
-  Object.defineProperty(VSong.prototype, f, {get, set(v) { Object.defineProperty(this, f, {value: v, writable: true, enumerable: true, configurable: true}); }, configurable: true});
+  Object.defineProperty(VSong.prototype, f, {get, set(v) { Object.defineProperty(this, f, {value: v, writable: true, enumerable: true, configurable: true}); this.q = this.q2 = 0; this.ps = this.pv = this.pc = null; }, configurable: true});  // worked out again
 /* a song as a plain object (what gets saved or sent) — plain items as they are */
 const plainSong = it => it instanceof VSong ? it.plain() : it;
 
@@ -166,7 +229,7 @@ const VDB = {
      Rows stay as the parsed arrays (no object per row) and are dropped once all() made the items. */
   rowById: new Map(),  // VocaDB id → data row array (cols: this.col) — until all() has made every item
   items: new Map(),  // VocaDB id → player item, made once (the same object everywhere: playlist · search · curated)
-  done: false, full: null, _fullOk: null,  // full: resolves when every block is read (newFull — set below)
+  done: false, full: null, _fullOk: null, cats: null,  // cats: the server's 전체 곡 filter counts (loadRest)  // full: resolves when every block is read (newFull — set below)
   /* a song of our DB (loaded or not yet) */
   has(id) { id = String(id); return this.items.has(id) || this.rowById.has(id) || (this.kara && this.kara.has(id)); },
   get total() { return this._all ? this._all.length : this.idx ? this.idx.files.reduce((a, b) => a + b.n, 0) : 0; },
@@ -180,7 +243,7 @@ const VDB = {
     this.col = Object.fromEntries(idx.cols.map((c, i) => [c, i]));
     this.kara = new Map(tableRows(kara).map(k => [String(k.vocadb_id), k]));
     this.rowById = new Map(); this.items = new Map(); this.blockP = new Map(); this.textP = new Map();
-    this.curated = []; this._all = null; this.extra = new Map(); this.prog = null;
+    this.curated = []; this._all = null; this.extra = new Map(); this.prog = null; this.cats = null;
     // 바뀐 곡 (songs/patch.json.gz, user request 2026-11-19 — table_export._songs): a block stays as it was and the day's changed /
     // new / deleted songs come in this one small file, laid over each block as it is read (block file → {rows, del})
     this.patch = new Map();
@@ -232,6 +295,9 @@ const VDB = {
   /* the rest, in the background: 4 blocks downloading ahead, parsed one at a time with the screen's turn in between (yieldUI) */
   async loadRest() {
     const mst = LOCAL.readJson(`${LOCAL.out}/db/master.json`, null);
+    // 곡 검색 카테고리 개수, counted by the server (songs/cats.json.gz — user request 2026-11-23): used only while made from
+    // this very list (sig = dataSig), else the search counts by itself (filter_panel.js warmSearch)
+    const idx = this.idx, cats = idx.cats ? this.blockText(idx.cats).then(t => JSON.parse(t)).catch(() => null) : Promise.resolve(null);
     const todo = this.idx.files.filter(b => !this.blockP.has(b.f)), all = this.idx.files.length;
     this.setProg(all - todo.length, all);
     todo.slice(0, 6).forEach(b => this.blockText(b));
@@ -242,7 +308,9 @@ const VDB = {
       await yieldUI();
     }
     await Promise.all(this.blockP.values());  // blocks ensure() started
-    const m = await mst;
+    const m = await mst, c = await cats;
+    if (idx.cats) this.textP.delete(idx.cats.f);
+    this.cats = c && c.sig === this.dataSig ? c.counts : null;
     this.master = {vocal: [], producer: [], artist: [], tag: [], title: []};
     for (const r of m ? tableRows(m) : []) (this.master[r.kind] || (this.master[r.kind] = [])).push({id: +r.id, name: r.ko || r.name, src: r.name, cat: r.cat});
     // our songs = with lyrics / sync of ours (ours) or on a karaoke list (+ karaoke songs without a data row yet)

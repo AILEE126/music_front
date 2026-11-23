@@ -124,19 +124,20 @@ $("sQ").addEventListener("keydown", e => {
    'short version' counts as that original's type here — Tell Your World's full song is VocaDB Remix 8395 of the 61 s
    Original CM, so 곡 종류 오리지널 + 같은 곡 정렬 '긴 버전 먼저' picks the full song. Set once per song (longVersionTypes) */
 FKIND.type = ["곡 종류", (it, v) => (VDB_TYPE_KO[it.typeAs || it.type] || it.typeAs || it.type) === v];
+FONE.type = it => VDB_TYPE_KO[it.typeAs || it.type] || it.typeAs || it.type;  // several 곡 종류 picked: one lookup (song_filter.js matchCond)
 const LONG_TAGS = ["extended version", "full version"];
+// the original found by VDB.itemById, the songs' own map (2026-11-23: a new 98만-entry map here took ~1 s); its own tags first
 async function longVersionTypes(all, tick) {
-  const byId = new Map(all.filter(it => it.vocadb).map(it => [String(it.vocadb), it]));
   for (let i = 0; i < all.length; i++) {
-    const it = all[i], o = it.origId && byId.get(String(it.origId));
-    if (o && isShortVer(o) && !isShortVer(it) && (it.tags || []).some(t => LONG_TAGS.includes(t))) it.typeAs = o.type;
+    const it = all[i];
+    if (it.origId && (it.tags || []).some(t => LONG_TAGS.includes(t)) && !isShortVer(it)) { const o = VDB.itemById(it.origId); if (o && isShortVer(o)) it.typeAs = o.type; }
     if (!(i & 4095)) await tick();
   }
 }
 /* filter categories: the scope's songs (with counts) + 곡 종류 */
-function sfCats(its, base = filterCats(its, true)) {
+function sfCats(its, base = filterCats(its, true), types = countBy(its.map(it => it.type ? [VDB_TYPE_KO[it.type] || it.type] : []))) {
   // 가사·싱크 상태 is replaced by 곡 상태 here (user request 2026-11-15 — 싱크 · 가사 유무 · 번역명 as tags)
-  const cats = base.filter(c => c.id !== "state"), types = countBy(its.map(it => it.type ? [VDB_TYPE_KO[it.type] || it.type] : []));
+  const cats = base.filter(c => c.id !== "state");
   if (types.length) cats.push({id: "type", label: "곡 종류", k: "type", rows: types, lab: x => x});
   cats.push(...sameCats());  // 같은 곡 정렬 · 자르기 (user request 2026-11-16)
   const p = id => (fltCat(id) || {p: 1e9}).p;  // 음원 관리 › 필터의 순서 (없으면 가나다순)
@@ -184,9 +185,17 @@ const warmSearch = () => warmP || (warmP = (async () => {
   if (!$("searchDlg").open) searchReset();  // the state the window opens in
   // 같은 곡 묶음 · 공식 여부 (song_filter.js) — once per song. The filter's categories are counted in the same pass (user request
   // 2026-11-22: not a step of their own after the songs — counted after everything, '카테고리 세는 중…' stayed long)
-  const cnt = catsReady(all) ? null : filterCatsCounter(true), cf = VDB.filter, cm = VDB.master;
-  for (let i = 0; i < all.length; i++) { verOf(all[i], all); if (cnt) cnt.add(all[i]); if (!(i & 1023)) { warmStep("family", i, all.length); await tick(); } }
-  if (cnt) catMemo.set(all, {f: cf, m: cm, cats: sfCats(all, cnt.done())});
+  // 2026-11-23 (user request — phones waited long here): counted by the server (VDB.cats) when it is of this list — then only
+  // 오류 신고 (admin players) is counted here, and the songs aren't gone through at all
+  const sc = VDB.cats, cnt = catsReady(all) ? null : filterCatsCounter(true, sc), cf = VDB.filter, cm = VDB.master;
+  if (sc) {
+    if (cnt && typeof ADM !== "undefined") for (const vid of ADM.byVid.keys()) { const it = VDB.itemById(vid); if (it) for (const r of reportKindsOf(it)) cnt.inc("report", r); }
+  } else for (let i = 0; i < all.length; i++) { verOf(all[i], all); if (cnt) cnt.add(all[i]); if (!(i & 1023)) { warmStep("family", i, all.length); await tick(); } }
+  if (cnt) {
+    const types = new Map();  // the server sends VocaDB's type — named here as sfCats does
+    if (sc) for (const [t, n] of Object.entries(sc.type || {})) { const k = VDB_TYPE_KO[t] || t; types.set(k, (types.get(k) || 0) + n); }
+    catMemo.set(all, {f: cf, m: cm, cats: sc ? sfCats(all, cnt.done(), sortCounts(types)) : sfCats(all, cnt.done())});
+  }
   warmStep("rank");
   // title places: kept from today's list, else made in the worker (the screen free meanwhile) — every sort below needs them
   if (!await titleRanksKept(all, tick)) await titleRanks(all, tick);
@@ -200,7 +209,11 @@ const warmSearch = () => warmP || (warmP = (async () => {
   // every song's search text, after the window is ready (user request 2026-11-19: ~7 s at 1M) — a search typed before it's done
   // waits for it (the list's spinner) — one maker, not two at once (that doubled it: 13 s). Not waited for here
   hayP = (async () => { for (let i = 0; i < all.length; i++) { searchHay(all[i]); if (!(i & 2047)) await tick(); } })();
+  // then the values the most used filters test (user request 2026-11-23 — 노래방 · 프로듀서 · 보컬 · 보컬 인원수 · 곡 종류): each is
+  // worked out once per song when first asked (vocadb_api.js VSong.q …) — here, so the first pick of one doesn't wait ~2 s for it
+  hayP.then(async () => { for (let i = 0; i < all.length; i++) { filterValues(all[i]); if (!(i & 2047)) await tick(); } });
 })());
+const filterValues = it => { it._singers; it._vsingers; it._composers; it._ktags; it.type; it.vkind; it._year; it._ver; it._ini; it.flags; };
 let hayP = null;  // every song's search text being made (warmSearch) — a text search waits for it (searchText)
 const searchText = () => hayP || Promise.resolve();
 /* 음원 관리 › 필터 (user request 2026-11-14 — export/db/filter.json): a category's row {id, label, icon, p} · its symbol */
@@ -264,25 +277,56 @@ function sortWork(msg, transfer) {
 }
 let TR_BY = [];  // title place → song (numSorted turns a sorted key back into its song)
 function setRanks(by) { for (let i = 0; i < by.length; i++) if (by[i]) by[i]._tr = i; TR_BY = by; }
+/* a short print of the title sorted by (FNV-1a) — kept with the order, so the next list's changed titles are found */
+const titleHash = t => { let h = 2166136261; for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 16777619); return h >>> 0; };
+const keepRanks = (by, hs, ids = Uint32Array.from(by, it => +it.vocadb || 0)) => idbKV("music-songs")("put", TR_KEY(), {sig: VDB.dataSig, ids, hs}).catch(() => {});
 async function titleRanks(all, tick) {
-  let by;
+  let by, hs;
   try {
     const titles = new Array(all.length), groups = new Int8Array(all.length);
     for (let i = 0; i < all.length; i++) { titles[i] = sortTitle(all[i]); groups[i] = titleGroup(titles[i]); if (!(i & 16383)) await tick(); }
     const {order} = await sortWork({titles, groups}, [groups.buffer]);
     by = Array.from(order, i => all[i]);
-  } catch (e) { by = await sortAsync(all, titleCmp, tick); }  // no worker: here, in steps
+    hs = Uint32Array.from(order, i => titleHash(titles[i]));
+  } catch (e) { by = await sortAsync(all, titleCmp, tick); hs = Uint32Array.from(by, it => titleHash(sortTitle(it))); }  // no worker: here, in steps
   setRanks(by);
-  idbKV("music-songs")("put", TR_KEY(), {sig: VDB.dataSig, ids: Uint32Array.from(by, it => +it.vocadb || 0)}).catch(() => {});
+  keepRanks(by, hs);
 }
-/* the kept title order → _tr, only when it was made from today's song list (→ true) */
+/* the kept title order → _tr (→ true). Made from another list (user request 2026-11-23: every upload — even one song's sync —
+   changed the list, and the whole order was sorted again, ~4 s on a PC): its songs whose title is the same keep their order,
+   the rest (new songs, changed titles) are put in their places one by one — the same order a new sort gives, songs of the
+   same title aside. Too many of them → false (sorted again) */
 async function titleRanksKept(all, tick) {
   const kept = await idbKV("music-songs")("get", TR_KEY()).catch(() => null);
-  if (!kept || !kept.ids || kept.sig !== VDB.dataSig) return false;
-  const at = new Map(), by = new Array(kept.ids.length);
-  for (let i = 0; i < kept.ids.length; i++) at.set(String(kept.ids[i]), i);
-  for (let i = 0; i < all.length; i++) { const r = at.get(all[i].vocadb); if (r === undefined) return false; by[r] = all[i]; if (!(i & 8191)) await tick(); }
-  setRanks(by);
+  if (!kept || !kept.ids) return false;
+  // the songs by VocaDB id are VDB.items already (2026-11-23: a new 98만-entry map here took ~1.5 s)
+  if (kept.sig === VDB.dataSig && kept.ids.length === all.length) {
+    const by = new Array(kept.ids.length);
+    for (let i = 0; i < kept.ids.length; i++) { const it = VDB.items.get(String(kept.ids[i])); if (!it) return false; by[i] = it; if (!(i & 16383)) await tick(); }
+    setRanks(by);
+    for (let i = 0; i < all.length; i++) if (by[all[i]._tr] !== all[i]) return false;  // every song its own place
+    return true;
+  }
+  if (!kept.hs || kept.hs.length !== kept.ids.length) return false;
+  for (let i = 0; i < all.length; i++) all[i]._tr = -1;  // -1: no place yet
+  const by = [], hs = [], ids = [];
+  for (let i = 0; i < kept.ids.length; i++) {
+    const it = VDB.items.get(String(kept.ids[i]));
+    if (it && it._tr === -1 && titleHash(sortTitle(it)) === kept.hs[i]) { it._tr = -2; by.push(it); hs.push(kept.hs[i]); ids.push(kept.ids[i]); }
+    if (!(i & 16383)) await tick();
+  }
+  const rest = all.filter(it => it._tr === -1);
+  if (rest.length > all.length / 20) return false;
+  // each one after the last kept song not after it (binary search) — then all put in, from the back
+  const at = rest.map(it => { let lo = 0, hi = by.length; while (lo < hi) { const m = lo + hi >> 1; if (titleCmp(by[m], it) <= 0) lo = m + 1; else hi = m; } return lo; });
+  const ord = rest.map((_, i) => i).sort((a, b) => at[a] - at[b] || titleCmp(rest[a], rest[b]) || a - b);
+  const out = new Array(by.length + rest.length), oh = new Uint32Array(out.length), oi = new Uint32Array(out.length);
+  let k = 0, j = 0;
+  const put = (it, h, id) => { oh[j] = h; oi[j] = id; out[j++] = it; };
+  for (const r of ord) { while (k < at[r]) { put(by[k], hs[k], ids[k]); k++; } put(rest[r], titleHash(sortTitle(rest[r])), +rest[r].vocadb || 0); }
+  while (k < by.length) { put(by[k], hs[k], ids[k]); k++; }
+  setRanks(out);
+  keepRanks(out, oh, oi);
   return true;
 }
 /* number-then-title sorts (user request 2026-11-19, sized for 1M songs: 인기순 ~4 s → ~0.4 s): the number and the title place

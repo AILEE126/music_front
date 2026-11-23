@@ -70,7 +70,7 @@ const fileKindsOf = it => it._fileKinds || (it._fileKinds = [...new Set((it.file
    원곡이 짧은 버전이면 원작자의 긴 버전(소실 리마스터), 사람 원곡이면 원작자가 낸 보카로 버전. 그다음 '먼저 나온 순'이면
    원작자 버전 중 가장 먼저 나온 것 (작곡가가 나중 버전에만 참여했어도 그 버전들끼리 차례) */
 const SAME_SORTS = ["재생 가능", "긴 버전 먼저", "원작자 먼저", "원곡 먼저", "인기순", "먼저 나온 순"];
-const isShortVer = it => (it.tags || []).includes("short version");
+const isShortVer = it => it._short ?? (it.tags || []).includes("short version");  // _short: the player's songs keep it
 const SAME_CUTS = ["1", "2", "3", "5", "10"];
 var samePlayable = it => (it.sources || []).length > 0;  // 플레이어는 canPlay 로 바꿈
 const SAME_KEYS = ["same_sort", "same_cut"];
@@ -147,15 +147,33 @@ function sameSpec(g) {
   const s = g.c.find(c => c.k === "same_sort"), n = g.c.find(c => c.k === "same_cut");
   if (!s && !n) return null;
   const keys = (s ? [].concat(s.v) : SAME_SORTS).filter(k => SAME_CMP[k]);
-  return {cut: n ? parseInt(firstV(n), 10) || 1 : 1, cmp: (a, b) => { for (const k of keys) { const d = SAME_CMP[k](a, b); if (d) return d; } return sameNo(a) - sameNo(b); }};
+  return {cut: n ? parseInt(firstV(n), 10) || 1 : 1, keys, cmp: (a, b) => { for (const k of keys) { const d = SAME_CMP[k](a, b); if (d) return d; } return sameNo(a) - sameNo(b); }};
+}
+/* a family's songs in sp's order, the first sp.cut — each song's sort values read once (user request 2026-11-23: the compare
+   read them again at every step, ~4 s for 원곡만 over 98만 곡). Same order as xs.sort(sp.cmp) */
+const SAME_KEY = {"재생 가능": it => samePlayable(it) ? 0 : 1, "긴 버전 먼저": it => isShortVer(it) ? 1 : 0, "원작자 먼저": it => it._own ? 0 : 1,
+  "원곡 먼저": it => it.origId ? 1 : 0, "인기순": it => -(it.rating || 0), "먼저 나온 순": dateKey};
+function sameTop(xs, sp) {
+  if (xs.length <= sp.cut) return xs;
+  const n = sp.keys.length, fs = sp.keys.map(k => SAME_KEY[k]);
+  const key = it => { const k = new Array(n + 2); for (let i = 0; i < n; i++) k[i] = fs[i](it); k[n] = sameNo(it); k[n + 1] = it; return k; };
+  const less = (a, b) => { for (let i = 0; i <= n; i++) if (a[i] !== b[i]) return a[i] < b[i]; return false; };
+  if (sp.cut === 1) {  // 1곡 (the usual cut): one pass, no sort — the first of equals, as the stable sort
+    let best = key(xs[0]);
+    for (let i = 1; i < xs.length; i++) { const k = key(xs[i]); if (less(k, best)) best = k; }
+    return [best[n + 1]];
+  }
+  const ks = xs.map(key);
+  ks.sort((a, b) => less(a, b) ? -1 : less(b, a) ? 1 : 0);
+  return ks.slice(0, sp.cut).map(k => k[n + 1]);
 }
 function sameCut(m, g, its) {
   const sp = sameSpec(g); if (!sp) return m;
   const fam = new Map(), keep = new Set();
-  // _fam1: alone in its family (server column, 2026-11-19 — sized for 1M songs: most songs, no grouping needed)
-  for (const it of m) { if (it._fam1) { keep.add(it); continue; } const k = sameKeyOf(it, its); fam.has(k) ? fam.get(k).push(it) : fam.set(k, [it]); }
-  for (const xs of fam.values()) (xs.length > sp.cut ? xs.sort(sp.cmp).slice(0, sp.cut) : xs).forEach(x => keep.add(x));
-  return m.filter(it => keep.has(it));
+  // _fam1: alone in its family (server column, 2026-11-19 — sized for 1M songs: most songs, no grouping needed) — always kept
+  for (const it of m) { if (it._fam1) continue; const k = sameKeyOf(it, its); fam.has(k) ? fam.get(k).push(it) : fam.set(k, [it]); }
+  for (const xs of fam.values()) sameTop(xs, sp).forEach(x => keep.add(x));
+  return m.filter(it => it._fam1 || keep.has(it));
 }
 /* sameCut 을 나눠서 (tick: chunkFilter 와 같음) */
 async function sameCutAsync(m, g, its, tick) {
@@ -164,22 +182,23 @@ async function sameCutAsync(m, g, its, tick) {
   for (let i = 0; i < m.length; i++) {
     if (!(i & 1023)) await tick();
     const it = m[i];
-    if (it._fam1) { keep.add(it); continue; }  // alone in its family (sameCut)
+    if (it._fam1) continue;  // alone in its family — always kept (sameCut)
     const k = sameKeyOf(it, its);
     fam.has(k) ? fam.get(k).push(it) : fam.set(k, [it]);
   }
   let i = 0;
   for (const xs of fam.values()) {
     if (!(++i & 2047)) await tick();
-    (xs.length > sp.cut ? xs.sort(sp.cmp).slice(0, sp.cut) : xs).forEach(x => keep.add(x));
+    sameTop(xs, sp).forEach(x => keep.add(x));
   }
-  return chunkFilter(m, it => keep.has(it), tick);
+  return chunkFilter(m, it => it._fam1 || keep.has(it), tick);
 }
 /* 곡 목록 → 필터를 지난 곡 (passGroups 와 같고 같은 곡 조건까지) — 순서는 그대로 */
 function filterGroups(its, groups) {
   if (!groups.some(g => g.c.some(c => SAME_KEYS.includes(c.k)))) return its.filter(it => passGroups(it, groups));
-  const gs = groups.filter(g => g.c.some(c => FKIND[c.k])), set = g => new Set(sameCut(its.filter(it => g.c.every(c => matchCond(it, c))), g, its));
-  const inc = gs.filter(g => !g.x).map(set), exc = gs.filter(g => g.x).map(set);
+  const gs = groups.filter(g => g.c.some(c => FKIND[c.k])), list = g => sameCut(its.filter(it => g.c.every(c => matchCond(it, c))), g, its);
+  if (gs.length === 1 && !gs[0].x) return list(gs[0]);  // one include group: its songs are the result, already in order
+  const inc = gs.filter(g => !g.x).map(g => new Set(list(g))), exc = gs.filter(g => g.x).map(g => new Set(list(g)));
   return its.filter(it => (!inc.length || inc.some(s => s.has(it))) && !exc.some(s => s.has(it)));
 }
 /* 나눠 하기 (user request 2026-11-16: 필터를 바꿀 때마다 화면이 잠깐 멈춤) — 2000곡마다 tick: 가끔 화면에 차례를 넘기고,
@@ -195,10 +214,12 @@ async function chunkFilter(its, f, tick) {
 /* filterGroups 와 같은 결과를 나눠서 */
 async function filterGroupsAsync(its, groups, tick) {
   if (!groups.some(g => g.c.some(c => SAME_KEYS.includes(c.k)))) return chunkFilter(its, it => passGroups(it, groups), tick);
-  const sets = [];
+  const lists = [];
   for (const g of groups.filter(g => g.c.some(c => FKIND[c.k])))
-    sets.push([g.x, new Set(await sameCutAsync(await chunkFilter(its, it => g.c.every(c => matchCond(it, c)), tick), g, its, tick))]);
-  const inc = sets.filter(s => !s[0]).map(s => s[1]), exc = sets.filter(s => s[0]).map(s => s[1]);
+    lists.push([g.x, await sameCutAsync(await chunkFilter(its, it => g.c.every(c => matchCond(it, c)), tick), g, its, tick)]);
+  // one include group (the usual filter): its songs are the result, already in order — not looked up again over every song
+  if (lists.length === 1 && !lists[0][0]) return lists[0][1];
+  const inc = lists.filter(s => !s[0]).map(s => new Set(s[1])), exc = lists.filter(s => s[0]).map(s => new Set(s[1]));
   return chunkFilter(its, it => (!inc.length || inc.some(s => s.has(it))) && !exc.some(s => s.has(it)), tick);
 }
 /* 같은 곡 카테고리 (값이 정해져 있음 — 곡 수 없음) */
@@ -260,7 +281,20 @@ const vcountLabel = v => v.endsWith("+") ? `${parseInt(v)}인 이상` : v + "인
 const chipLabel = c => c.k === "song" && Array.isArray(c.v) && c.v.length > 2 ? `${c.v.slice(0, 2).map(v => oneLabel(c.k, v)).join(", ")} 외 ${c.v.length - 2}곡`
   : Array.isArray(c.v) ? c.v.map(v => oneLabel(c.k, v)).join(c.k === "same_sort" ? " → " : " 또는 ") : oneLabel(c.k, c.v);
 /* 조건 하나에 맞는지 (값이 여러 개면 그중 하나라도) */
-const matchCond = (it, c) => !FKIND[c.k] || (Array.isArray(c.v) ? c.v.some(v => FKIND[c.k][1](it, v)) : FKIND[c.k][1](it, c.v));
+/* a song's one value (FONE) or values (FMANY) of a kind: a condition with several values picked looks them up in a Set of its
+   values, not value by value (user request 2026-11-23: 곡 종류 · 보컬 인원수 · 프로듀서 … with several values) — same result */
+const FONE = {ini: it => it._ini, vcount: vcountOf, vkind: vkindOf, ver: it => verOf(it), year: it => it._year};
+// _ktags: the player's songs say quickly when none of their tags can be a 노래방 value (vocadb_api.js)
+const FMANY = {singer: it => it._singers, composer: it => it._composers, kara: it => it._ktags || it.tags || [], tag: it => it.tags || []};
+const condSets = new WeakMap(), condSet = v => { let s = condSets.get(v); if (!s) condSets.set(v, s = new Set(v)); return s; };
+const matchCond = (it, c) => {
+  const f = FKIND[c.k];
+  if (!f) return true;
+  const one = FONE[c.k], many = FMANY[c.k], arr = Array.isArray(c.v);
+  if (one) return arr ? condSet(c.v).has(one(it)) : one(it) === c.v;
+  if (many) { if (!arr) return many(it).includes(c.v); const s = condSet(c.v); return many(it).some(x => s.has(x)); }
+  return arr ? c.v.some(v => f[1](it, v)) : f[1](it, c.v);
+};
 /* 그룹 안에 이 값이 들어 있는지 (값 하나짜리 조건이든 여러 개짜리 조건이든) */
 const condHas = (c, k, v) => c.k === k && (Array.isArray(c.v) ? c.v.includes(v) : c.v === v);
 var ONOFF_LISTS = ["한국", "TJ", "금영", "일본", "DAM", "JOYSOUND", "UGA"];  // 필터 '노래방' 값 (곡의 tags) — 이 순서로
@@ -285,12 +319,16 @@ const sortCounts = m => [...m.entries()].sort((a, b) => b[1] - a[1] || KO_COLLAT
    음성 합성 엔진·아티스트는 보컬·프로듀서 카테고리와 같아서 뺌 */
 /* counted in one pass over the songs (add), the categories made at the end (done) — filterCatsAsync gives the screen its
    turns in between (user request 2026-11-18: counting 25만 곡 at once stalled the player 1.5 s) */
-function filterCatsCounter(online) {
+/* seed: counts made beforehand {key: {value: songs}} (the player's 전체 곡 — music_backend vocadb/filter_counts.py, user request
+   2026-11-23: counting 98만 곡 kept the phone's 곡 검색 waiting) — then only what isn't in them is added (inc) */
+function filterCatsCounter(online, seed) {
   const m = {ini: new Map(), singer: new Map(), vcount: new Map(), vkind: new Map(), composer: new Map(), kara: new Map(), tags: new Map(),
              cat: new Map(), year: new Map(), state: new Map(), flag: new Map(), ver: new Map(), file: new Map(), report: new Map()};
   const inc = (map, x) => map.set(x, (map.get(x) || 0) + 1);
+  for (const [k, o] of Object.entries(seed || {})) if (m[k]) for (const v in o) m[k].set(v, o[v]);
   const states = Object.keys(STATES).filter(k => !online || !/^src:/.test(k));  // 온라인: no lyrics sources (not shown in the list either, 2026-11-22)
   return {
+    inc(k, x) { inc(m[k], x); },
     add(it) {
       inc(m.ini, it._ini);
       for (const x of it._singers) inc(m.singer, x);
