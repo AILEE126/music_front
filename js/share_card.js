@@ -12,7 +12,10 @@
    Within 3 s (user request 2026-11-20: waiting ~1 min for Pages was too slow): the link is not the Pages page but the same
    file at its commit on rawcdn.githack.com (text/html, live at once, no robots.txt); the card image is read from
    raw.githubusercontent.com (image/jpeg — githack refuses images), its name new per key so no stale cache. Pages still
-   publishes the same page later. */
+   publishes the same page later.
+   LOCAL 유튜브 재생목록 곡 (user request 2026-11-23): shared too — the card is the video's thumbnail + the 사이버노인정 mark
+   only — no title anywhere (card, page label = 사이버노인정, tweet = the link alone); folder s/yt_<video id>,
+   link #play=yt:<video id>&t=<title> plays that video. */
 const SHARE_V = 8;  // bump when the card drawing or its page changes (every card is made again on its next share)
 const SHARE = {cfg: null};
 async function shareCfg() {
@@ -24,17 +27,25 @@ async function shareCfg() {
   return SHARE.cfg;
 }
 
-/* 링크로 들어온 곡 (#play=<VocaDB id>) — 시작할 때 한 번 읽고 주소에서 지움 (새로고침해도 다시 틀지 않음) */
+/* 링크로 들어온 곡 (#play=<VocaDB id> | #play=yt:<video id>&t=<title>) — 시작할 때 한 번 읽고 주소에서 지움 (새로고침해도 다시 틀지 않음) */
 const SHARE_IN = (() => {
-  const m = /^#play=(\d+)$/.exec(location.hash);
+  const m = /^#play=(\d+|yt:[\w-]{11})(?:&t=(.*))?$/.exec(location.hash);
   if (m) history.replaceState(null, "", location.href.split("#")[0]);
-  return m ? m[1] : "";
+  let t = "";
+  try { t = decodeURIComponent(m && m[2] || ""); } catch (e) {}
+  return m ? {id: m[1], title: t} : {id: "", title: ""};
 })();
+/* the shared song's id: VocaDB id, or yt_<video id> for a LOCAL YouTube playlist video */
+const shareYt = it => it && it.offyt ? String(it.name || "").slice(3) : "";
+const shareId = it => it && it.vocadb ? String(it.vocadb) : shareYt(it) ? `yt_${shareYt(it)}` : "";
 let shareInUsed = false;
-const shareTake = () => { if (shareInUsed) return ""; shareInUsed = true; return SHARE_IN; };
+const shareTake = () => { if (shareInUsed) return ""; shareInUsed = true; return SHARE_IN.id; };
+/* a shared YouTube video (yt:<id>) → its playlist item (playlist_panel.js ytItemAt), title from the link */
+const shareYtItem = sid => ytItemAt({id: sid.slice(3), title: SHARE_IN.title || sid.slice(3)}, {cut: "", skipA: 0, skipB: 0});
 
 /* 카드에 쓸 글자: 제목 (플레이어가 보이는 앞 이름) · 일본어 제목 (같거나 없으면 플레이어의 다음 이름 — 발음 · 한글 제목 …) · 프로듀서 · 엔진(보컬, 3명 + 외 N명) */
 function shareText(it) {
+  if (shareYt(it)) return {title: it.title || titleOf(it), ja: "", producer: "", engine: ""};  // 유튜브 영상: 카드에는 글자 없음
   const main = titleOf(it), seen = fold(main);
   const ja = [it.defJa ? it.def : it.ja, it.ja, ...titleNames(it).slice(1)].map(x => String(x || "").trim()).find(x => x && fold(x) !== seen) || "";
   const v = String(it.singer || "").split(",").map(x => x.trim()).filter(Boolean);
@@ -53,7 +64,7 @@ function shareImg(url) {
   });
 }
 async function shareThumb(it) {
-  const yt = (it.sources || []).map(u => (/(?:youtu\.be\/|[?&]v=|\/embed\/|\/shorts\/)([\w-]{11})/.exec(u) || [])[1]).find(Boolean);
+  const yt = shareYt(it) || (it.sources || []).map(u => (/(?:youtu\.be\/|[?&]v=|\/embed\/|\/shorts\/)([\w-]{11})/.exec(u) || [])[1]).find(Boolean);
   const urls = yt ? [`https://i.ytimg.com/vi/${yt}/maxresdefault.jpg`, `https://i.ytimg.com/vi/${yt}/hqdefault.jpg`] : [];
   // 니코니코: 주소에 해시가 붙은 썸네일(…/<번호>.<해시>)만 .M (320×180) · .L (360×270) 이 있음 — 해시 없는 옛 영상은 130×100 뿐.
   // 640×360 이상은 서명 키가 붙은 주소라 브라우저에서는 못 얻음 (nvapi 가 CORS 를 막음)
@@ -100,7 +111,7 @@ function shareRound(g, x, y, w, h, r) {
    ink: "white" (white words on a dark shade) or "black" (black words on a light shade); the 사이버노인정 badge outline is the word color
    (공유 창 블랙/화이트 스위치, user request 2026-11-18). img: reuse an already fetched thumbnail (the toggle redraws without fetching again) */
 async function shareDraw(it, {blur = false, img, ink = "white"} = {}) {
-  const W = 1200, H = 630, P = 60, t = shareText(it), dark = ink === "black";
+  const W = 1200, H = 630, P = 60, t = shareText(it), dark = ink === "black", bare = !!shareYt(it);  // bare: thumbnail + mark only
   const sh = dark ? "255,255,255" : "0,0,0", fg = dark ? "0,0,0" : "255,255,255";  // shade · word colors as r,g,b
   if (img === undefined) img = await shareThumb(it);
   try { await document.fonts.ready; } catch (e) {}
@@ -122,6 +133,16 @@ async function shareDraw(it, {blur = false, img, ink = "white"} = {}) {
       box = {x, bottom: y + th};
     }
   }
+  if (!bare) shareWords(g, t, {W, H, P, sh, fg, box});
+  // 오른쪽 아래 구석: 이름표 — 타원 배경 없이 무지개 글자 + 검은 테두리, 살짝 비침 (user request 2026-11-18: 50~80% 사이 → 65% → 조금 더 투명하게 55%)
+  // 따로 그린 뒤 통째로 비치게 — 바로 비치게 그리면 검은 테두리가 글자 속으로 비쳐 탁해짐
+  shareMark(g, {W, H, fg, dark});
+  const blob = await new Promise(r => cv.toBlob(r, "image/jpeg", .9));
+  if (!blob) throw new Error("카드 그림을 만들지 못했습니다.");
+  return {blob, text: t, thumb: !!img, img, blur: blur && !!img, ink};
+}
+/* the shade + 제목 · 일본어 제목 · 프로듀서 · 엔진 (VocaDB songs only) */
+function shareWords(g, t, {W, H, P, sh, fg, box}) {
   const grad = g.createLinearGradient(0, H * .25, 0, H);
   grad.addColorStop(0, `rgba(${sh},0)`); grad.addColorStop(.45, `rgba(${sh},.55)`); grad.addColorStop(1, `rgba(${sh},.9)`);
   g.fillStyle = grad; g.fillRect(0, 0, W, H);
@@ -157,8 +178,8 @@ async function shareDraw(it, {blur = false, img, ink = "white"} = {}) {
   if (box && y - (tt.lines.length - 1) * tt.size * 1.15 - tt.size < box.bottom + 16) tt = shareFit(g, t.title, 800, 72, 44, box.x - E - 30, 2);  // would run under it
   g.fillStyle = `rgb(${fg})`;
   tt.lines.slice().reverse().forEach(l => { g.fillText(l, E, y); y -= tt.size * 1.15; });
-  // 오른쪽 아래 구석: 이름표 — 타원 배경 없이 무지개 글자 + 검은 테두리, 살짝 비침 (user request 2026-11-18: 50~80% 사이 → 65% → 조금 더 투명하게 55%)
-  // 따로 그린 뒤 통째로 비치게 — 바로 비치게 그리면 검은 테두리가 글자 속으로 비쳐 탁해짐
+}
+function shareMark(g, {W, H, fg, dark}) {
   const mk = Object.assign(document.createElement("canvas"), {width: W, height: H}), m = mk.getContext("2d");
   m.font = `800 28px ${SHARE_FONT}`; m.textAlign = "right";
   // the note = the tab icon's beamed note (player_screen.html favicon, user request 2026-11-18), not the ♪ glyph
@@ -178,23 +199,24 @@ async function shareDraw(it, {blur = false, img, ink = "white"} = {}) {
   (dark ? ["#ff6b8b", "#ffb347", "#ffe66d", "#7ee081", "#6ec6ff", "#b388ff"] : ["#e00000", "#e06a00", "#c9a400", "#009a00", "#0068d6", "#3a00d6", "#a000d6"]).forEach((c, i, a) => rb.addColorStop(i / (a.length - 1), c));
   m.fillStyle = rb; m.fillText(bn, bx, by);
   m.fill(note);
-  g.save(); g.shadowBlur = 0; g.globalAlpha = dark ? .55 : .4; g.drawImage(mk, 0, 0);  // 화이트: deep rainbow stood out more than 블랙's → fainter (user 2026-11-18) g.restore();
-  const blob = await new Promise(r => cv.toBlob(r, "image/jpeg", .9));
-  if (!blob) throw new Error("카드 그림을 만들지 못했습니다.");
-  return {blob, text: t, thumb: !!img, img, blur: blur && !!img, ink};
+  g.save(); g.shadowBlur = 0; g.globalAlpha = dark ? .55 : .4; g.drawImage(mk, 0, 0); g.restore();  // 화이트: deep rainbow stood out more than 블랙's → fainter (user 2026-11-18)
 }
 
 const shareAttr = s => String(s ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 const shareLink = (cfg, sha, id) => `https://rawcdn.githack.com/${cfg.repo}/${sha}/s/${id}/index.html`;
 function sharePage(cfg, id, t, key) {
-  const img = `https://raw.githubusercontent.com/${cfg.repo}/${cfg.branch}/s/${id}/card_${key}.jpg`, play = `${cfg.player.split("#")[0]}#play=${id}`;
+  // yt_<video id> → #play=yt:<video id>&t=<title> (the player has no list to look the title up in).
+  // Its card shows no title anywhere (user 2026-11-23: link · thumbnail · mark only) → the label X / Discord show = 사이버노인정
+  const yt = id.startsWith("yt_"), hash = yt ? `yt:${id.slice(3)}&t=${encodeURIComponent(t.title)}` : id;
+  if (yt) t = {...t, title: "사이버노인정"};
+  const img = `https://raw.githubusercontent.com/${cfg.repo}/${cfg.branch}/s/${id}/card_${key}.jpg`, play = `${cfg.player.split("#")[0]}#play=${hash}`;
   // no og:url: it would name the Pages address, which is not live yet when the link is posted
   // no description (user report 2026-11-18): 디스코드는 설명을 그림 위에 글로 또 보여 줌 — 정보는 카드 그림에만. 제목은 남김
   // (X 의 이름표 · 디스코드의 누르는 제목)
   return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${shareAttr(t.title)} — 사이버노인정</title>
+<title>${yt ? "사이버노인정" : `${shareAttr(t.title)} — 사이버노인정`}</title>
 <meta name="csc-key" content="${key}">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="사이버노인정">
@@ -247,7 +269,7 @@ async function shareKey(s) {
 /* 공유 창: 카드 미리보기 · [링크 복사] [X 에 올리기] (디스코드는 링크를 붙이면 카드가 뜸).
    User request 2026-11-18: the link itself is not shown; both buttons spin until the card is committed (no Pages wait). */
 async function openShare(it = cur) {
-  if (!it || !it.vocadb) return uiAlert(it ? "VocaDB 곡만 공유할 수 있습니다 (mp3 폴더 곡은 안 됨)." : "공유할 곡을 먼저 트세요.");
+  if (!shareId(it)) return uiAlert(it ? "VocaDB 곡과 유튜브 재생목록 곡만 공유할 수 있습니다 (mp3 폴더 곡은 안 됨)." : "공유할 곡을 먼저 트세요.");
   document.querySelector("dialog.sharedlg")?.remove();
   const d = document.createElement("dialog");
   d.className = "uidlg sharedlg";
@@ -280,12 +302,12 @@ async function openShare(it = cur) {
     }
     // user request 2026-11-23: reuse one X tab — a page can only reuse a tab it opened itself (named target), never the
     // user's own X tab. No "noopener" (that always opens a new tab); the opener link is cut by hand instead.
-    if (a === "x") { const w = window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(title)}&url=${encodeURIComponent(link)}`, "csc_x"); if (w) { try { w.opener = null; } catch (e) {} w.focus(); } }
+    if (a === "x") { const w = window.open(`https://twitter.com/intent/tweet?${title ? `text=${encodeURIComponent(title)}&` : ""}url=${encodeURIComponent(link)}`, "csc_x"); if (w) { try { w.opener = null; } catch (e) {} w.focus(); } }
   });
   bc.addEventListener("change", () => { blur = bc.checked; make(); });  // the link follows the picked look: redraw + upload again
   // one run = (draw ∥ read the share repo) → preview → one commit → link; a newer run (blur · ink toggle) makes the older one stop quietly
   async function make() {
-    const my = ++run, gone = () => d.dead || my !== run, id = it.vocadb;
+    const my = ++run, gone = () => d.dead || my !== run, id = shareId(it);
     link = ""; busy(true); bspin(true);
     const pre = shareCfg().then(async cfg => ({cfg, st: await shareState(cfg, id)}));
     pre.catch(() => {});  // its error is shown after the preview
@@ -296,7 +318,7 @@ async function openShare(it = cur) {
       img = card.img;
       // tweet text (user request 2026-11-23): 제목 — 프로듀서 feat. 가수들
       const {producer: pr, engine: en} = card.text, by = [pr, en && `feat. ${en}`].filter(Boolean).join(" ");
-      title = by ? `${card.text.title} — ${by}` : card.text.title;
+      title = shareYt(it) ? "" : by ? `${card.text.title} — ${by}` : card.text.title;  // 유튜브 영상: 링크만
       bspin(false);
       d.querySelector(".shimg").innerHTML = `<img alt="" src="${URL.createObjectURL(card.blob)}">`;
       st(card.thumb ? "링크 만드는 중…" : "썸네일을 받지 못해 글자만 있는 카드입니다. 링크 만드는 중…");

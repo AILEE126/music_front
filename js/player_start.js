@@ -62,12 +62,13 @@ async function offlineOpened() {
   // the song shown first: tab reloaded while a song played (e.g. the browser reloaded it by itself) → go on playing it from
   // there; else the last song, paused. Only its block is read before the screen opens
   const res = SHELL.takeResume(), vid = k => (/\/vocadb_(\d+)$/.exec(k || "") || [])[1];
-  const sid = typeof shareTake === "function" ? shareTake() : "";  // SNS 공유 카드 링크 (#play=<id>, share_card.js)
-  if (!await loadLibrary([sid, vid(res && res.k), vid(store.get("last", ""))].filter(Boolean))) return;
+  const sid = typeof shareTake === "function" ? shareTake() : "";  // SNS 공유 카드 링크 (#play=<id> | yt:<video id>, share_card.js)
+  const syt = sid.startsWith("yt:");  // a shared YouTube playlist video: played as it is, nothing to look up
+  if (!await loadLibrary([syt ? "" : sid, vid(res && res.k), vid(store.get("last", ""))].filter(Boolean))) return;
   // the '☁ <repo> · 서버 없이 재생 중' note above the playlist was removed (user request 2026-11-15)
   const find = k => { try { return k && LOCAL.item(...k.split(/\/(.*)/s)); } catch (e) { return null; } };
   // shared song: plays at once, not put in the playlist (user request 2026-11-18) — before the resumed / last song
-  const sit = sid && find(`stream/vocadb_${sid}`);
+  const sit = sid && (syt ? shareYtItem(sid) : find(`stream/vocadb_${sid}`));
   if (sid && !(sit && canPlay(sit))) uiAlert(sit ? "공유된 곡은 지금 재생할 수 없습니다 (영상 없음)." : "공유된 곡을 찾지 못했습니다.");
   const rit = res && find(res.k), it = sit && canPlay(sit) ? sit : rit && canPlay(rit) ? rit : find(store.get("last", ""));
   if (it && canPlay(it) && !SHELL.now) { if (it === rit) SHELL.resumeAt(it, res.t); play(it, it === rit || it === sit, it === sit ? "pick" : ""); }
