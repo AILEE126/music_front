@@ -372,6 +372,9 @@ function tick(force) {
   }
   // the line's progress bar: set where it is now and let it run to the end on its own (restarted on a new line · play/pause · seek)
   const run = `${idx}|${audio.paused}|${off}`;
+  // before the first line nothing runs — forget the last run, or the same line again after it (싱크 편집: a line clicked plays
+  // from 1 s before it) kept the old bar, which had run on hidden: frozen for that second, then half full (user report 2026-11-24)
+  if (idx < 0) progRun = "";
   if (idx >= 0 && (run !== progRun || force)) {
     progRun = run;
     const bar = box.querySelector(`.g[data-i="${idx}"] .prog i`);
