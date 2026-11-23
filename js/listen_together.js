@@ -375,11 +375,21 @@ function ltSendQueue(to) {
 }
 /* host: the side panel's playlist → guests see it as it is (user request 2026-11-14 — read-only there).
    Our DB songs go as their VocaDB id only (like the saved playlist), mp3 songs as name/title only (the guest can't play them) */
+/* LOCAL host playing a YouTube playlist (user request 2026-11-23): the room shows that list's name + address (with a copy
+   button) where the filter goes — {title, url} or null. 발표곡 (REL:<channel>) → the channel's 릴리스 tab */
+function ltYtNow() {
+  if (ONLINE || OFFSRC !== "yt" || !OFFYT.list) return null;
+  const l = OFFYT.list, url = l.startsWith("REL:") ? `https://www.youtube.com/channel/${l.slice(4)}/releases` : `https://www.youtube.com/playlist?list=${l}`;
+  return {title: OFFYT.title || "유튜브 재생목록", url};
+}
+/* mp3 폴더 재생 중 (LOCAL): nobody else can play those files → no room (user request 2026-11-23) */
+const ltMp3Now = () => !ONLINE && OFFSRC === "dir";
 function ltPlMsg() {
   // channel: no list — 10만 곡 넘는 id 목록은 PeerJS 로 안 건너감 (test 2026-11-17); guests make it from the same filter
   if (LT.chOn) return {t: "pl", plf: null, ch: true};  // the channel's filter is never shown or sent (user request 2026-11-17)
+  const yt = ltYtNow();
   // viewAll: not narrowed by 재생목록에서 찾기
-  return {t: "pl", plf: PLF, list: viewAll.map(it => it.vocadb && VDB.has(it.vocadb) ? +it.vocadb
+  return {t: "pl", plf: yt ? null : PLF, yt, list: viewAll.map(it => it.vocadb && VDB.has(it.vocadb) ? +it.vocadb
     : it.site === "local" ? {site: "local", name: it.name, title: it.title, artist: it.artist || ""} : ltStrip(it))};
 }
 let ltPlSig = "", ltPlT = 0;
@@ -387,11 +397,12 @@ function ltPlChanged() {  // called by renderList (player_screen.js) — sent on
   if (LT.role !== "host") return;
   clearTimeout(ltPlT);
   ltPlT = setTimeout(() => {
-    const sig = viewAll.map(keyOf).join("\n") + "\n" + JSON.stringify(PLF);  // plf: the host's 재생목록 필터 (user request 2026-11-15) — may change alone
+    const sig = viewAll.map(keyOf).join("\n") + "\n" + JSON.stringify(PLF) + JSON.stringify(ltYtNow());  // plf: the host's 재생목록 필터 (user request 2026-11-15) — may change alone
     if (sig === ltPlSig) return;
     ltPlSig = sig;
     const m = ltPlMsg();
     LT.conns.forEach((_, c) => ltSend(c, m));
+    ltRender();  // the host's own room card (유튜브 재생목록 이름 · 주소)
   }, 300);
 }
 /* guest: show the host's playlist instead of mine (mine comes back on leaving) */
@@ -686,7 +697,7 @@ function ltGuestGot(m) {
   if (m.t === "go") return ltGuestGo(m.id);
   if (m.t === "pong") { const r = performance.now() - m.at; if (r >= 0 && r < 5000) LT.rtt = LT.rtt ? LT.rtt * 0.7 + r * 0.3 : r; return; }
   if (m.t === "queue") return ltApplyQueue(m);
-  if (m.t === "pl") { LT.hostPlf = m.plf || null; if (m.ch) ltChGuestPl(); else ltShowPl(m.list); return ltRender(); }
+  if (m.t === "pl") { LT.hostPlf = m.plf || null; LT.hostYt = m.yt || null; if (m.ch) ltChGuestPl(); else ltShowPl(m.list); return ltRender(); }
   if (m.t === "reqs") { LT.reqs = m.list || []; LT.cool = m.cool || {}; ltRenderReqs(); }
 }
 /* host's queue → mine (songs I can't play here are left out) */
@@ -765,7 +776,7 @@ function ltLeave(quiet, keepSong) {  // keepSong: the channel's song stays (left
   ltLobbyStop();
   const peer = LT.peer;
   ltPrepEnd(); LT.gprep = null;
-  LT.peer = null; LT.role = ""; LT.code = ""; LT.host = null; LT.members = []; LT.colors = {}; LT.hostPlf = null; LT.reqs = []; LT.reqPage = 0; LT.lead = 0; LT.conns = new Map(); LT.lostAt = 0; LT.retryAt = 0;
+  LT.peer = null; LT.role = ""; LT.code = ""; LT.host = null; LT.members = []; LT.colors = {}; LT.hostPlf = null; LT.hostYt = null; LT.reqs = []; LT.reqPage = 0; LT.lead = 0; LT.conns = new Map(); LT.lostAt = 0; LT.retryAt = 0;
   SHELL.follow = false;
   if (LT.chSave) {  // left the channel: the screen as before entering — my song (paused at its place) and my queue
     const k = LT.chSave; LT.chSave = null;
@@ -1177,6 +1188,8 @@ function ltRender() {
   document.querySelector("#listenDlg .ltfield").hidden = true;  // no nickname field any more — the start nickname (2026-11-17)
   $("ltLock").title = LT.lock ? "비밀방 (누르면 공개방)" : "공개방 (누르면 비밀방)";
   $("ltNewPw").hidden = !LT.lock;
+  $("ltMake").disabled = ltMp3Now();
+  $("ltMake").title = ltMp3Now() ? "mp3 폴더 곡은 다른 사람이 들을 수 없어 방을 만들 수 없습니다 (곡 추가에서 유튜브 재생목록으로 바꾸면 가능)" : "";
   $("ltTitle").placeholder = `${ltName() || "이름없음"}님의 방`;  // empty title → this name
   $("ltPwAsk").hidden = !LT.ask;
   if (LT.ask) {
@@ -1229,10 +1242,12 @@ function ltRender() {
     return `<li class="${k === ltKey(LT.me) ? "me" : ""}${c ? " mc" : ""}"${c ? ` style="--mc:${c}"` : ""}>${i === 0 && !LT.chOn ? ltCrownSvg() : ""}${esc(ltNick(m) || "익명")}</li>`;
   }).join("");
   // 방장의 재생목록 필터 (user request 2026-11-15) — host: mine · guest: what the host sent
-  const plf = LT.role === "host" && !LT.chOn ? PLF : LT.hostPlf;
+  const plf = LT.role === "host" && !LT.chOn ? PLF : LT.hostPlf, yt = LT.chOn ? null : LT.role === "host" ? ltYtNow() : LT.hostYt;
   // user request 2026-11-15: no filter → just '필터 없음' · a filter → the header with a thin 필터 저장하기 at its right end
   // channel (user request 2026-11-17): its filter stays private — only an 'OPEN CHANNEL' tag, nothing to save
   $("ltPlf").innerHTML = LT.chOn ? `<div class="ltplfhead"><span>현재 재생중인 목록의 필터</span></div>${ltChTag()}`
+    : yt ? `<div class="ltplfhead"><span>현재 재생중인 유튜브 재생목록</span></div><div class="ltyt"><span class="ltytname">${esc(yt.title)}</span>`
+      + `<span class="ltyturl"><a href="${esc(yt.url)}" target="_blank" rel="noopener">${esc(yt.url)}</a><button type="button" class="ltsmall ltytcopy" data-u="${esc(yt.url)}">복사</button></span></div>`
     : plf && filterOf(plf).groups.length
     ? `<div class="ltplfhead"><span>현재 재생중인 목록의 필터</span><button type="button" class="ltsmall ltplfsave" title="이 필터를 저장된 필터에 넣음 (곡 검색 › 저장된 필터)">필터 저장하기</button></div>` + plfHtml(plf)
     : '<div class="ltplfnone">필터 없음</div>';
@@ -1443,7 +1458,7 @@ $("ltName").addEventListener("input", () => {
   ltRender();
 });
 $("ltName").addEventListener("keydown", e => { if (e.key === "Enter" && LT.linkCode) ltJoin(LT.linkCode); });  // opened by a link without a nickname
-$("ltMake").onclick = () => ltHost(!LT.lock, $("ltNewPw").value.trim(), $("ltTitle").value.trim());
+$("ltMake").onclick = () => ltMp3Now() ? null : ltHost(!LT.lock, $("ltNewPw").value.trim(), $("ltTitle").value.trim());
 $("ltTitle").addEventListener("keydown", e => { if (e.key === "Enter") $("ltMake").click(); });
 $("ltNewPw").addEventListener("keydown", e => { if (e.key === "Enter") $("ltMake").click(); });
 $("ltPwGo").onclick = () => { const pw = $("ltPwIn").value; if (!pw) return $("ltPwIn").focus(); $("ltPwIn").value = ""; ltJoin(LT.ask, pw); };
@@ -1451,6 +1466,11 @@ $("ltPwIn").addEventListener("keydown", e => { if (e.key === "Enter") $("ltPwGo"
 $("ltPwNo").onclick = () => { LT.ask = ""; $("ltPwIn").value = ""; LT.status = ""; ltRender(); };
 /* 필터 저장하기 (user request 2026-11-15): the room's playlist filter → 저장된 필터 (the same list the search window saves to) */
 $("ltPlf").addEventListener("click", async e => {
+  const cp = e.target.closest(".ltytcopy");
+  if (cp) {  // 유튜브 재생목록 주소 복사
+    try { await navigator.clipboard.writeText(cp.dataset.u); cp.textContent = "복사됨 ✓"; } catch (er) { cp.textContent = "복사 실패"; }
+    return setTimeout(() => { cp.textContent = "복사"; }, 1500);
+  }
   if (!e.target.closest(".ltplfsave") || LT.chOn) return;  // the channel's filter can't be saved
   const plf = LT.role === "host" ? PLF : LT.hostPlf;
   const pf = filterOf(plf), groups = pf.groups.filter(g => g.c && g.c.length).map(({x, c}) => ({x, c}));

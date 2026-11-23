@@ -6,6 +6,7 @@ const syncShell = () => { if (SHELL.now && cur && keyOf(SHELL.now) === keyOf(cur
 /* 재생목록의 곡을 누르면 그 곡부터 (⏭ 는 재생목록 순서대로) · 검색 창에서 바로 튼 곡은 재생목록 지금 곡 다음에 들어감 */
 async function play(it, autoplay = true, how = "pick") {  // how '': 재생 목록에서 그 곡 다음부터 (처음 열 때 지난 곡)
   if (!it) return;
+  if (it.site === "local" && mp3Blocked()) return;  // 같이듣기 방장: mp3 곡은 손님이 못 들음
   if (editing && !await uiConfirm("편집하던 싱크·파트·가사를 저장하지 않고 다른 곡으로 넘어갈까요?")) return;
   stopEdit();
   SHELL.load(it, autoplay, how);  // 곡이 바뀌면 재생기가 알려 줌 → showSong

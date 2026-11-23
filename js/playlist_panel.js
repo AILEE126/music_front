@@ -167,6 +167,7 @@ function renderSearchBtn() {
 renderSearchBtn();  // before the library is in
 function renderOnOff() { $("btnSkip").hidden = ONLINE; $("onOff").classList.toggle("on", ONLINE); $("onOff").setAttribute("aria-pressed", ONLINE); renderOffBar(); renderSearchBtn(); }
 $("onOff").addEventListener("click", async () => {
+  if (ONLINE && OFFSRC === "dir" && mp3Blocked()) return;  // LOCAL would open the mp3 folder's list
   ONLINE = !ONLINE; store.set("online", ONLINE);
   for (const d of ["searchDlg", "addDlg"]) if ($(d).open) $(d).close();  // the 검색 / 곡 추가 window of the other mode
   if (ONLINE && (!SHELL.queue.length || SHELL.queue.some(it => it.site !== "stream" || it.offyt))) { SHELL.setQueue(await PL.restore()); SHELL.plan(SHELL.now); }  // back from the mp3 folder's list
@@ -321,11 +322,13 @@ async function loadYtList(input, name = "") {  // name: shown instead of YouTube
   finally { OFFYT.busy = false; renderOffBar(); renderList(); }
 }
 function setOffSrc(src) {
+  if (src === "dir" && mp3Blocked()) return;
   OFFSRC = src; store.set("off.src", src);
   renderOffBar(); renderList();
   if (src === "dir" && !OFFDIR.dir) connectOffDir(false);
 }
 async function connectOffDir(pickNew) {
+  if (mp3Blocked()) return;
   try {
     if (!pickNew && await OFFDIR.saved()) { try { await OFFDIR.reconnect(); } catch (e) { if (e.name === "AbortError") throw e; await OFFDIR.pick(); } }
     else await OFFDIR.pick();
@@ -347,6 +350,7 @@ $("dirList").addEventListener("click", async e => {
   const b = e.target.closest("button[data-a]"); if (!b) return;
   const i = +b.closest(".dirrow").dataset.i;
   if (b.dataset.a === "del") { await OFFDIR.forget(i); return renderDirHist(); }
+  if (mp3Blocked()) return;
   try { await OFFDIR.connectRecent(i); } catch (err) { if (err.name !== "AbortError") uiAlert(err.message); return; }
   if (OFFSRC !== "dir") { OFFSRC = "dir"; store.set("off.src", "dir"); }
   OFFDIR.items.forEach(prepItem);
