@@ -215,11 +215,34 @@ async function runSearch(keep) {
   } catch (e) { if (e !== STALE) throw e; }
   finally { if (gen === searchGen) listBusy(false); }
 }
+/* 걸린 필터 조건 (user request 2026-11-23: which filter condition brought a song in wasn't visible): per result, the values it
+   matched — only where it tells something: a condition with several values (which one) or, with several 포함 groups, the
+   matched group's conditions. One-value conditions of a single group match every result → not shown.
+   User request 2026-11-23: 원곡만's conditions as one '원곡만' chip (it is one switch; also hidden in a single group), and
+   the chips in the tag row left of the 투고일 — a row of their own made each song up to 4 lines tall */
+function sMatchHtml(it, gs) {
+  const inc = gs.filter(g => !g.x && g.c.some(c => FKIND[c.k] && !SAME_KEYS.includes(c.k)));
+  const out = [];
+  for (const g of inc) {
+    if (!g.c.every(c => matchCond(it, c))) continue;
+    const part = [], di = new Set(FE.defIdx(g) || []);
+    if (di.size && inc.length > 1) part.push(`<span class="fmc" title="원곡만">${F_DEF_SVG} 원곡만</span>`);
+    for (const [j, c] of g.c.entries()) {
+      if (di.has(j) || !FKIND[c.k] || SAME_KEYS.includes(c.k) || c.k === "text") continue;
+      const vs = Array.isArray(c.v) ? c.v : [c.v];
+      if (vs.length < 2 && inc.length < 2) continue;
+      for (const v of vs.filter(v => matchCond(it, {k: c.k, v})))
+        part.push(`<span class="fmc" title="${esc(chipKind({k: c.k, v}))}">${esc(catIcon(chipKind({k: c.k, v})))} ${esc(oneLabel(c.k, v))}</span>`);
+    }
+    if (part.length) out.push(part.join(""));
+  }
+  return out.length ? `<span class="fm" title="이 곡이 걸린 필터 조건">${out.join('<span class="fmor">또는</span>')}</span>` : "";
+}
 function renderSearch(info) {
   const st = $("sList").scrollTop;  // runSearch already put it at 0 when it should go to the top
   $("sInfo").textContent = info;
   $("sMakePl").disabled = !S.items.some(canPlay);
-  const inPl = new Set(SHELL.queue.map(keyOf)), show = S.items.slice(0, 300), inF = new Set(fSongIds());
+  const inPl = new Set(SHELL.queue.map(keyOf)), show = S.items.slice(0, 300), inF = new Set(fSongIds()), gs = FE.live();
   $("sList").innerHTML = show.map((it, i) => {
     // no karaoke numbers in the results (user request 2026-11-15: 노래방 모드 shows them)
     // 곡 종류 — 하위 태그 색이 있으면 그 색 (보컬 인원수 칩은 2026-11-22 뺌, user request)
@@ -229,7 +252,7 @@ function renderSearch(info) {
     return `<div class="sitem${canPlay(it) ? "" : " gone"}" data-i="${i}">${coverHtml(it, "thumb")}
       <div class="meta"><div class="t">${titleHtml(it)}</div>
         <div class="a">${artistVocHtml(it)}</div>
-        <div class="tags">${verChipHtml(it)}${tk ? tagChipHtml("type", tk, tk, "", "곡 종류") : ""}${it.date ? `<span class="d">${esc(it.date)}</span>` : ""}</div></div>
+        <div class="tags">${verChipHtml(it)}${tk ? tagChipHtml("type", tk, tk, "", "곡 종류") : ""}${sMatchHtml(it, gs)}${it.date ? `<span class="d">${esc(it.date)}</span>` : ""}</div></div>
       <div class="badges">${badgesHtml(it)}</div>
       <div class="sacts">${inPl.has(keyOf(it)) ? `<span class="sin" title="재생목록에 있는 곡">✓</span>` : ""}${inF.has(songId(it)) ? `<span class="sin f" title="필터에 넣은 곡">${FILT_SVG}</span>` : ""}`
         + `<button class="ib smore" data-a="more" title="곡 옵션" aria-label="곡 옵션">${MORE_SVG}</button></div></div>`;

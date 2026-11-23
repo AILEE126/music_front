@@ -989,6 +989,10 @@ body.m .recrow .rthumb{width:80px;height:45px}body.m .recrow.ch .rthumb img{widt
 .sitem .a{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sitem .tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px;font-size:11px;align-items:center}
 .sitem .tags .d{color:var(--muted)}
+/* 걸린 필터 조건 (user request 2026-11-23, search_dialog.js sMatchHtml) */
+.sitem .fm{display:contents;color:var(--accent)}  /* inside the tag row, left of the 투고일 */.sitem .fmc .fdi{width:11px;height:11px;vertical-align:-1px}
+.sitem .fmc{padding:0 6px;border-radius:999px;background:var(--accent-soft);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.sitem .fmor{color:var(--muted)}
 .sitem .b.kara{--bc:var(--muted);color:var(--bc);border:1px solid var(--bc);background:none}
 .b.kara.gone{text-decoration:line-through;text-decoration-thickness:2px;opacity:.6}
 /* 하위 태그 색 (user request 2026-11-15 — 음원 관리 › 필터): the karaoke-number look in the tag's color */
