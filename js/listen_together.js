@@ -1047,14 +1047,17 @@ function ltRenderCh() {
     const here = LT.chOn && !!LT.role && LT.chFast === fast, name = ltChName(fast);
     const info = here ? {n: LT.members.length || 1, song: SHELL.now ? SHELL.now.title || "" : ""} : LTS[fast ? "ch2" : "ch"];
     const n = info ? info.n || 1 : 0;
-    return `<div class="ltroom ltch on${fast ? " ltch2" : ""}${here ? " here" : ""}" title="${esc(name)}${fast ? " · 2배속" : ""}${n && info.song ? " · ♪ " + esc(info.song) : ""}">
+    // user request 2026-11-23: no 입장 button — a ▶ triangle in the channel's color, the whole bar enters
+    return `<div class="ltroom ltch on${fast ? " ltch2" : ""}${here ? " here" : ""}"${here ? "" : ` data-ch="${fast ? 2 : 1}" role="button" tabindex="0"`} title="${esc(name)}${fast ? " · 2배속" : ""}${n && info.song ? " · ♪ " + esc(info.song) : ""}${here ? "" : LT.role ? " — 눌러서 채널로 옮기기" : " — 눌러서 입장"}">
     <span class="who"><span class="ltchdot"></span><span class="ltchname">${esc(name)}</span></span>
-    <span class="meta">${n ? `${n}명 듣는 중` : "재생 중"}</span>
-    ${here ? `<span class="here">지금 있는 채널</span>` : `<button class="primary" data-ch="${fast ? 2 : 1}">${LT.role ? "채널로 옮기기" : "입장"}</button>`}
+    <span class="meta">${n ? `${n}명 듣는 중` : ""}</span><!-- no '재생 중' while empty (user request 2026-11-23) -->
+    ${here ? `<span class="here">지금 있는 채널</span>` : `<span class="ltchgo" aria-hidden="true"></span>`}
   </div>`;
   }).join("");
 }
-$("ltChRow").addEventListener("click", e => { const b = e.target.closest("button[data-ch]"); if (b) b.dataset.ch === "2" ? ltChFastEnter() : ltChJoin(); });
+const ltChGo = e => { const r = e.target.closest(".ltch[data-ch]"); if (r) r.dataset.ch === "2" ? ltChFastEnter() : ltChJoin(); };
+$("ltChRow").addEventListener("click", ltChGo);
+$("ltChRow").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); ltChGo(e); } });
 function ltRenderRooms() {
   ltRenderCh();
   const ul = $("ltRooms"), rooms = LTS.rooms;

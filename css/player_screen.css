@@ -383,6 +383,12 @@ body.simple .nbadge.open{filter:brightness(.7) saturate(.6)}  /* 간단: ONAIR a
 .ltroom.ltch{border:1.5px solid var(--ok);background:linear-gradient(90deg,rgb(21 128 61 / .12),transparent 70%)}
 .ltroom.ltch.here{border-color:var(--accent)}
 .ltchname{font-weight:800;letter-spacing:.08em;color:var(--ok)}
+/* the whole bar enters; ▶ in the channel's color where 입장 was (user request 2026-11-23) */
+.ltroom.ltch{min-height:47px;box-sizing:border-box}  /* same height as with the old 30px button */
+.ltroom.ltch[data-ch]{cursor:pointer}
+.ltroom.ltch[data-ch]:hover{filter:brightness(1.12)}
+.ltchgo{flex:none;width:0;height:0;margin-right:4px;border-style:solid;border-width:8px 0 8px 12px;border-color:transparent transparent transparent var(--ok)}
+.ltch2 .ltchgo{border-left-color:var(--ch2)}
 .ltchsub{font-size:12px;font-weight:500;color:var(--muted);margin-left:4px}
 .ltchdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:middle;flex:none}
 .ltroom.ltch.on .ltchdot,#ltRoom .ltchdot,.ltcard .ltchdot{background:#ef4444;animation:ltchpulse 1.4s ease-in-out infinite}
