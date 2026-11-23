@@ -219,7 +219,7 @@ async function loadYtList(input) {
     OFFYT.items = vids.map(ytItem);
     saveOffyt();
     const thumb = info && info.thumbnail_url || (vids[0] ? `https://i.ytimg.com/vi/${vids[0].id}/mqdefault.jpg` : "");
-    histAdd({list, url: `https://www.youtube.com/playlist?list=${list}`, title: OFFYT.title, n: vids.length, thumb});
+    if (!rec) histAdd({list, url: `https://www.youtube.com/playlist?list=${list}`, title: OFFYT.title, n: vids.length, thumb});
     // the server sees which playlists users load (Manage › 추천 재생목록, user request 2026-11-22) — never blocks playing;
     // a recommended one isn't recorded (user request 2026-11-23)
     if (!rec) LOCAL.saveUserPlaylist({list, url: `https://www.youtube.com/playlist?list=${list}`, title: OFFYT.title, n: vids.length, thumb}).catch(() => {});
@@ -277,6 +277,8 @@ async function loadRec() {
    (store key offyt.hist, never sent anywhere); ✕ takes one out */
 const HIST_MAX = 30;
 const histGet = () => store.get("offyt.hist", []) || [];
+// a recommended playlist is never kept there (user request 2026-11-23) — older entries are just not shown
+const histShown = () => histGet().filter(x => !(REC.lists || []).some(r => r.list === x.list));
 function histAdd(r) {
   store.set("offyt.hist", [{...r, at: nowText()}, ...histGet().filter(x => x.list !== r.list)].slice(0, HIST_MAX));
 }
@@ -285,7 +287,7 @@ const recCard = (r, i, del) => `<button type="button" class="reccard${OFFSRC ===
   + (del ? '<b class="rdel" data-del="1" title="기록에서 빼기">✕</b>' : "") + `</span>`
   + `<span class="rt">${esc(r.title || r.list)}</span>${del && r.at ? `<span class="rat">${esc(r.at.slice(0, 16))}</span>` : ""}</button>`;
 function renderRec() {
-  const L = REC.lists, H = histGet();
+  const L = REC.lists, H = histShown();
   $("recInfo").textContent = L && L.length ? `${L.length}개` : "";
   $("recList").innerHTML = !L ? '<div class="empty">불러오는 중…</div>' : !L.length ? '<div class="empty">아직 추천 재생목록이 없습니다.</div>'
     : L.map((r, i) => recCard(r, i, false)).join("");
@@ -304,7 +306,7 @@ async function recPick(e, lists) {
   if (OFFYT.list === r.list) $("addDlg").close();
 }
 $("recList").addEventListener("click", e => recPick(e, REC.lists));
-$("histList").addEventListener("click", e => recPick(e, histGet()));
+$("histList").addEventListener("click", e => recPick(e, histShown()));
 function openAddSongs() {
   renderOffBar();
   $("addDlg").showModal();
