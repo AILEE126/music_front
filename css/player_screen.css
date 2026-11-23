@@ -937,10 +937,11 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
 .recrow button{background:none;border:1px solid var(--accent);color:var(--accent)}
 .recrow button:not(.primary){border-color:var(--line);color:var(--muted)}  /* 듣는 중 */
 .recrow button:hover{background:color-mix(in srgb,var(--accent) 12%,transparent)}
-/* 앨범별 접기 — a header row as tall as a song row (playlist_panel.js albumView) */
-.item.albhdr{background:var(--chip)}
-.item.albhdr .thumb{display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--muted)}
-.item.albhdr .t{font-weight:800}
+/* 앨범별 접기 — a thin one-line header row: ▾ title · artist · count (playlist_panel.js albumView, user request 2026-11-23) */
+.item.albhdr{background:var(--chip);padding:4px 8px 4px 14px;gap:6px}
+.item.albhdr .fold{flex:none;width:14px;font-size:12px;color:var(--muted)}
+.item.albhdr .t{font-weight:800;font-size:13px;min-width:0}
+.item.albhdr .a{flex:1;min-width:60px}
 .badges .b.ok{color:var(--ok);border-color:var(--ok)}
 .recrow.ch .rthumb{background:none}
 .recrow.ch .rthumb img{width:60px;height:60px;border-radius:50%;object-fit:cover}  /* channel picture: a circle (user request 2026-11-23) */

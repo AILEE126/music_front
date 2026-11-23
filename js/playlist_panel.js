@@ -185,7 +185,8 @@ const saveOffyt = () => store.set("offyt", {url: OFFYT.url, list: OFFYT.list, ti
 /* 시청완료 (user request 2026-11-23): videos of a plain YouTube playlist (not a channel's) played to the end once — their
    ids kept in this browser only (store offyt.seen, newest 5000), shown on the row */
 const SEEN_MAX = 5000, SEEN = new Set(store.get("offyt.seen", []) || []);
-const ALB_FOLD = new Set(store.get("offyt.fold", []) || []);  // folded albums (albumView) — here: renderList may run at load
+// albums start folded (user request 2026-11-23): only the ones opened are kept (offyt.open) — here: renderList may run at load
+const ALB_OPEN = new Set(store.get("offyt.open", []) || []), albFolded = key => !ALB_OPEN.has(key);
 const isChannelList = () => /^(REL:|UULV)/.test(OFFYT.list);
 function markSeen(it) {
   if (!it || !it.offyt || isChannelList()) return;
@@ -383,7 +384,7 @@ function loadAlbums(r) {
   if (!al.length) return uiAlert("이 채널의 앨범을 아직 받지 않았습니다 (관리 › 추천 재생목록 › 앨범 다시 받기).");
   const vids = al.flatMap((a, k) => a.vids.map(v => ({id: v.id, title: v.title, author: r.title, alb: k})));  // author: the line under the title
   Object.assign(OFFYT, {url: "", list: chList(r, "REL"), title: `${r.title} · 발표곡`, vids, opt: ytOpt(r),
-    albums: al.map(a => ({list: a.list, title: a.title}))});
+    albums: al.map(a => ({list: a.list, title: a.title, by: a.by || ""}))});
   OFFYT.items = vids.map(ytItem);
   saveOffyt(); renderOffBar(); renderList();
 }
@@ -466,6 +467,24 @@ function renderList() {
 }
 /* 목록은 보이는 줄(과 위아래 몇 줄)만 그림. 줄 높이가 모두 같아 그린 줄을 재서 위아래 빈 칸으로 전체 높이를 맞춤 */
 var ROW_H = 0, vlFrom = -1, vlTo = -1, VL_STEP = 20;
+/* album header rows are thinner (HDR_H, one line — user request 2026-11-23): then TOPS holds every row's top */
+var HDR_H = 0, TOPS = null;
+function calcTops() {
+  const h = ROW_H || 56, hh = HDR_H || 30;
+  if (TOPS && TOPS.v === view && TOPS.h === h && TOPS.hh === hh) return;
+  TOPS = null;
+  if (!view.some(it => it.hdr)) return;
+  const t = [0];
+  for (const it of view) t.push(t[t.length - 1] + (it.hdr ? hh : h));
+  TOPS = Object.assign(t, {v: view, h, hh});
+}
+const rowTop = i => TOPS ? TOPS[i] : i * (ROW_H || 56);
+const rowAt = y => {  // the row at height y
+  if (!TOPS) return Math.floor(y / (ROW_H || 56));
+  let lo = 0, hi = view.length - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (TOPS[m] <= y) lo = m; else hi = m - 1; }
+  return lo;
+};
 function renderRows(force) {
   const L = $("list");
   if (guestPl && !view.length) { L.innerHTML = `<div class="empty">방장의 재생목록이 비어 있습니다.</div>`; vlFrom = vlTo = -1; return; }
@@ -481,15 +500,17 @@ function renderRows(force) {
     if ($("plSearch")) $("plSearch").onclick = openSearch;
     vlFrom = vlTo = -1; return;
   }
-  const h = ROW_H || 56, n = Math.ceil((L.clientHeight || 800) / h), top = Math.min(L.scrollTop, Math.max(0, view.length * h - L.clientHeight));
-  const from = Math.max(0, (Math.floor(top / h / VL_STEP) - 1) * VL_STEP), to = Math.min(view.length, from + n + 3 * VL_STEP);
+  calcTops();
+  const h = TOPS ? Math.min(TOPS.h, TOPS.hh) : ROW_H || 56, n = Math.ceil((L.clientHeight || 800) / h);
+  const top = Math.min(L.scrollTop, Math.max(0, rowTop(view.length) - L.clientHeight));
+  const from = Math.max(0, (Math.floor(rowAt(top) / VL_STEP) - 1) * VL_STEP), to = Math.min(view.length, from + n + 3 * VL_STEP);
   if (!force && from === vlFrom && to === vlTo) return;
   vlFrom = from; vlTo = to;
-  L.innerHTML = `<div class="vpad" style="height:${from * h}px"></div>` + view.slice(from, to).map((it, k) => itemHtml(it, from + k)).join("")
-    + `<div class="vpad" style="height:${(view.length - to) * h}px"></div>` + (loading ? plLoadHtml() : "");
+  L.innerHTML = `<div class="vpad" style="height:${rowTop(from)}px"></div>` + view.slice(from, to).map((it, k) => itemHtml(it, from + k)).join("")
+    + `<div class="vpad" style="height:${rowTop(view.length) - rowTop(to)}px"></div>` + (loading ? plLoadHtml() : "");
   L.scrollTop = top;
-  const real = (L.querySelector(".item") || {}).offsetHeight;
-  if (real && real !== ROW_H) { ROW_H = real; renderRows(true); }
+  const real = (L.querySelector(".item:not(.albhdr)") || {}).offsetHeight, hreal = (L.querySelector(".item.albhdr") || {}).offsetHeight;
+  if (real && real !== ROW_H || hreal && hreal !== HDR_H) { ROW_H = real || ROW_H; HDR_H = hreal || HDR_H; renderRows(true); }
 }
 var rowsQueued = false;
 $("list").addEventListener("scroll", () => {
@@ -516,27 +537,28 @@ function badgesHtml(it) {
   ss.push(pctHtml(it));
   return `<div class="bl">${bs.join("")}</div><div class="bl">${ss.join("")}</div>`;
 }
-/* 앨범별 접기 (user request 2026-11-23): a channel's 발표곡 list gets one header row per album (same height as a song row —
-   the list draws only the rows in sight); a click on it folds / unfolds the album (kept in this browser: offyt.fold) */
+/* 앨범별 접기 (user request 2026-11-23): a channel's 발표곡 list gets one thin one-line header row per album (title · artist ·
+   count — renderRows knows its height); a click on it folds / unfolds the album (kept in this browser: offyt.open; all folded at first) */
 function albumView(items) {
   const n = {}, out = [];
   for (const it of items) n[it.alb] = (n[it.alb] || 0) + 1;
   let last;
   for (const it of items) {
     const a = OFFYT.albums[it.alb] || {};
-    if (it.alb !== last) { last = it.alb; out.push({hdr: true, key: a.list, title: a.title || "", n: n[it.alb]}); }
-    if (!ALB_FOLD.has(a.list)) out.push(it);
+    if (it.alb !== last) { last = it.alb; out.push({hdr: true, key: a.list, title: a.title || "", by: a.by || "", n: n[it.alb]}); }
+    if (!albFolded(a.list)) out.push(it);
   }
   return out;
 }
-function foldAlbum(key, fold = !ALB_FOLD.has(key)) {
-  if (fold) ALB_FOLD.add(key); else ALB_FOLD.delete(key);
-  store.set("offyt.fold", [...ALB_FOLD]);
+function foldAlbum(key, fold = !albFolded(key)) {
+  if (fold) ALB_OPEN.delete(key); else ALB_OPEN.add(key);
+  store.set("offyt.open", [...ALB_OPEN]);
   renderList();
 }
 function itemHtml(it, i) {
-  if (it.hdr) return `<div class="item albhdr${ALB_FOLD.has(it.key) ? " fold" : ""}" data-i="${i}" title="누르면 이 앨범 접기 / 펴기">`
-    + `<span class="thumb">${ALB_FOLD.has(it.key) ? "▸" : "▾"}</span><div class="meta"><div class="t">${esc(it.title)}</div><div class="a">곡 ${it.n}개</div></div></div>`;
+  if (it.hdr) return `<div class="item albhdr${albFolded(it.key) ? " fold" : ""}" data-i="${i}" title="누르면 이 앨범 접기 / 펴기">`
+    + `<span class="fold">${albFolded(it.key) ? "▸" : "▾"}</span><span class="t">${esc(it.title)}</span>`
+    + `<span class="a">${it.by ? `${esc(it.by)} · ` : ""}${it.n}곡</span></div>`;
   const pl = ONLINE && !guestPl;
   const hl = SHELL.qView && SHELL.qView() ? SHELL.qView().now : cur;  // OPEN CHANNEL: the mark stays on my song from before
   return `<div class="item${hl && keyOf(hl) === keyOf(it) ? " cur" : ""}${typeof admRowCls === "function" ? admRowCls(it) : ""}" data-i="${i}"${pl ? ' draggable="true"' : ""}>
@@ -552,12 +574,13 @@ const detailHtml = titleSubHtml;  // 재생 화면 제목줄: 기본 이름 옆 
 /* ◎ 재생 중인 곡으로 (곡이 넘어가도 목록은 저절로 움직이지 않음) */
 $("btnFindCur").onclick = () => {
   const now = (SHELL.qView && SHELL.qView() ? SHELL.qView().now : SHELL.now) || cur; if (!now) return;  // OPEN CHANNEL: my song from before
-  if (OFFYT.albums && now.offyt && now.alb != null && OFFYT.albums[now.alb] && ALB_FOLD.has(OFFYT.albums[now.alb].list))
+  if (OFFYT.albums && now.offyt && now.alb != null && OFFYT.albums[now.alb] && albFolded(OFFYT.albums[now.alb].list))
     foldAlbum(OFFYT.albums[now.alb].list, false);  // its album is folded: open it
   const i = view.findIndex(it => !it.hdr && keyOf(it) === keyOf(now));
   if (i < 0) { uiAlert("지금 재생 중인 곡이 재생목록에 없습니다 (검색에서 바로 튼 곡)."); return; }
   const L = $("list");
-  L.scrollTop = i * ROW_H - (L.clientHeight - ROW_H) / 2;
+  calcTops();
+  L.scrollTop = rowTop(i) - (L.clientHeight - ROW_H) / 2;
   renderRows(false);
   const el = L.querySelector(`.item[data-i="${i}"]`);
   if (el) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
