@@ -25,7 +25,9 @@ async function playView(start) {
 $("btnPlayView").onclick = () => playView();
 /* 기억해 둔 재생목록을 되살림 (화면을 새로 열었을 때) — songs put in before it was read stay, after the saved ones */
 async function restoreQueue() {
-  if (!ONLINE && SHELL.queue.length) { PL.restored = true; PL.restoredOk(); return; }  // the mp3 folder's list is up — the playlist comes back online
+  // LOCAL: the server playlist never fills the queue (user report 2026-11-23: after a reload it showed up in the 유튜브 재생목록's
+  // queue) — the list comes back online (onOff), LOCAL's own queue from the reload save (qRestoreAfterReload)
+  if (!ONLINE) { PL.restored = true; PL.restoredOk(); return; }
   let q = await PL.restore();
   // 요약본 stood in (PL.early): songs taken out of it meanwhile stay out; the rest of the list joins as live items
   if (PL.early) { const now = new Set(SHELL.queue.map(keyOf)); q = q.filter(it => !PL.early.has(keyOf(it)) || now.has(keyOf(it))); }

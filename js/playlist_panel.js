@@ -31,6 +31,7 @@ const PL = {
   /* 우리 DB 곡은 VocaDB id 만 (숫자), 그 밖(mp3 · 예전 곡)은 곡 그대로. IndexedDB 를 못 쓰면 localStorage 에 */
   save() {
     if (!this.restored) return;  // restoreQueue saves what was added meanwhile
+    if (!ONLINE) return;  // LOCAL's queue (유튜브 재생목록 · mp3) is not the saved playlist — never written over it
     const q = SHELL.queue.map(qPack);
     PL_DB("put", PL_KEY, q).then(() => store.set(PL_KEY, null), () => store.set(PL_KEY, q));
     clearTimeout(this._snapT);
@@ -69,14 +70,30 @@ const PL = {
    sessionStorage (this tab only), read once at start (offlineOpened). Our DB songs as VocaDB id, others as the item */
 const QSAVE_KEY = "player.qsave";
 const qPack = it => it.vocadb && VDB.has(it.vocadb) ? +it.vocadb : plStrip(it);
-const qUnpack = l => (l || []).map(x => typeof x === "number" ? VDB.itemById(x) : liveItem(x)).filter(it => it && canPlay(it));
+// mp3 songs → the folder's live item (its file) — gone from the folder = dropped
+const qLocal = x => ((typeof OFFDIR !== "undefined" && OFFDIR.items) || []).find(it => keyOf(it) === keyOf(x)) || null;
+const qUnpack = l => (l || []).map(x => typeof x === "number" ? VDB.itemById(x) : x && x.site === "local" ? qLocal(x) : liveItem(x)).filter(it => it && canPlay(it));
+/* LOCAL: the base list (유튜브 재생목록 · mp3 폴더) is saved too — the server playlist is not the list there.
+   User request 2026-11-23: every reload keeps the queue (was: update reloads only) */
+let qSaved = false;  // an update reload saved it already (its playing song is history — the next one comes back)
 function qSaveForReload(q) {
-  try { sessionStorage.setItem(QSAVE_KEY, JSON.stringify({pinned: q.pinned.map(qPack), upcoming: q.upcoming.map(qPack), history: q.history.map(qPack), at: Date.now()})); } catch (e) {}
+  qSaved = true;
+  try { sessionStorage.setItem(QSAVE_KEY, JSON.stringify({pinned: q.pinned.map(qPack), upcoming: q.upcoming.map(qPack), history: q.history.map(qPack),
+    online: ONLINE, ...(ONLINE ? {} : {queue: SHELL.queue.map(qPack)}), at: Date.now()})); } catch (e) {}
 }
+/* any reload (F5 · the browser's own): my queue as it is now — a guest follows the host's, so nothing of theirs;
+   in the channel my own queue is the one kept aside (LT.chSave) */
+function qSaveNow() {
+  if (qSaved || (SHELL.follow && !(typeof LT !== "undefined" && LT.chSave))) return;
+  // the playing song comes back playing (play_engine takeResume) — not history
+  qSaveForReload(typeof LT !== "undefined" && LT.chSave || {pinned: SHELL.pinned, upcoming: SHELL.upcoming, history: SHELL.history});
+}
+addEventListener("pagehide", qSaveNow);
 function qRestoreAfterReload(playing) {
   let s = null;
   try { s = JSON.parse(sessionStorage.getItem(QSAVE_KEY) || "null"); sessionStorage.removeItem(QSAVE_KEY); } catch (e) {}
-  if (!s || Date.now() - s.at > 30 * 60 * 1000) return;
+  if (!s || Date.now() - s.at > 30 * 60 * 1000 || (s.online ?? ONLINE) !== ONLINE) return;  // saved in the other mode: not this list
+  if (s.queue) { SHELL.setQueue(qUnpack(s.queue)); renderList(); }  // LOCAL's base list
   const k = playing ? keyOf(playing) : "", pinned = qUnpack(s.pinned), upcoming = qUnpack(s.upcoming);
   // the song the page came back with was the next one: take it out once (pinned first, as next() would)
   const drop = l => { const i = l.findIndex(x => keyOf(x) === k); if (i >= 0) { l.splice(i, 1); return true; } return false; };
@@ -152,7 +169,7 @@ function renderOnOff() { $("btnSkip").hidden = ONLINE; $("onOff").classList.togg
 $("onOff").addEventListener("click", async () => {
   ONLINE = !ONLINE; store.set("online", ONLINE);
   for (const d of ["searchDlg", "addDlg"]) if ($(d).open) $(d).close();  // the 검색 / 곡 추가 window of the other mode
-  if (ONLINE && SHELL.queue.some(it => it.site !== "stream" || it.offyt)) { SHELL.setQueue(await PL.restore()); SHELL.plan(SHELL.now); }  // back from the mp3 folder's list
+  if (ONLINE && (!SHELL.queue.length || SHELL.queue.some(it => it.site !== "stream" || it.offyt))) { SHELL.setQueue(await PL.restore()); SHELL.plan(SHELL.now); }  // back from the mp3 folder's list
   renderOnOff(); renderList();
   if (typeof ltRender === "function") ltRender();  // 같이듣기 button / wave as before the switch
 });
