@@ -140,8 +140,8 @@ async function sortAsync(a, cmp, tick) {
 }
 /* the sorted scope — shared work (the background warm-up and a search wanting the same order wait for one sort, never two;
    a newer search doesn't throw it away). The caller's tick only checks for staleness afterwards */
-async function sortedScope(tick) {
-  const its = scopeItems(), key = FE.sort, m = sortMemo.get(its);
+async function sortedScope(tick, key = FE.sort) {
+  const its = scopeItems(), m = sortMemo.get(its);
   if (!m || m.key !== key) {
     const p = (async () => await numSorted(its, key, bgTick()) || sortAsync(its, ourCmp(key), bgTick()))();  // numSorted: filter_panel.js
     sortMemo.set(its, {key, p});
@@ -164,8 +164,11 @@ async function filteredScope(gs, tick) {
   if (!m) filtMemo.set(scope, m = new Map());
   const had = m.get(key);
   if (had && had.sort === sort) { m.delete(key); m.set(key, had); return had.out; }  // newest last
+  // 신고 들어온 순 (filter_panel.js repAt): the reports change while the scope stays — the few songs found are sorted, not the scope
   const out = had ? await numSorted(had.out, sort, tick) || await sortAsync(had.out, ourCmp(sort), tick)
+    : sort === "report" ? await sortAsync(await filterGroupsAsync(await sortedScope(tick, "RatingScore"), gs, tick), ourCmp(sort), tick)
     : await filterGroupsAsync(await sortedScope(tick), gs, tick);
+  if (sort === "report") return out;
   if (key.includes('"k":"report"')) return out;  // 오류 신고 changes while the scope stays (admin_tools.js) — not kept
   m.delete(key); m.set(key, {sort, out});
   if (m.size > FILT_KEEP) m.delete(m.keys().next().value);

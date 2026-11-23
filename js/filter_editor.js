@@ -27,7 +27,8 @@ const fOwn = c => F_OWN_CATS.includes(c.k) ? " own" : "";
 const F_TAG_MIN = 10, F_LIST_MAX = 2000;  // 태그 분류의 최소 값 수 · 목록에 한 번에 그리는 줄 수
 /* 정렬 · 범위 (user request 2026-11-22: 필터에 같이 저장 — 프리셋 · OPEN CHANNEL · 저장된 필터 모두). n 0 = 끝까지 */
 const F_SORTS = [["RatingScore", "인기순"], ["list", "노래방 목록 순"], ["Name", "제목 (가나다)"], ["no", "노래방 번호"], ["PublishDate", "투고일 (최신)"],
-                 ["old", "투고일 (오래된)"], ["composer", "프로듀서"], ["singer", "보컬"]];
+                 ["old", "투고일 (오래된)"], ["composer", "프로듀서"], ["singer", "보컬"], ["report", "신고 들어온 순"]];
+const F_SORT_HOST = ["report"];  // offered only where the screen says so (H.sortOk) — 신고 들어온 순: the admin player's 싱크 수정 filter
 const F_N_DEF = 1000;
 /* a saved filter in any shape → {groups, sort, from, n}: groups only (saved before 2026-11-22 — no sort: shown blank) ·
    {groups, top} (OPEN CHANNEL's 인기순 상위 N곡, 2026-11-20) · {groups, sort, from, n} */
@@ -56,7 +57,7 @@ function filterPlacePop(p, anchor, minW) {
 
 /* H: chips · panel (그룹 상자 · 고르는 칸이 그려질 곳) · key (store 이름 앞 글자) · cats() → [{id, label, k, rows: [[값, 곡 수]], lab}] (아직 없으면 null)
    · icon(cat) · more(cat) (더보기 안에 둘 카테고리) · sortBox (정렬 · 범위 칸이 그려질 곳 — 없으면 panel 맨 아래) · keepSort · chipKind(c) · chipLabel(c) · oneLabel(k, v) · condCat(c) → 카테고리 id · known(c) · popParent()
-   · onChange(keep) · afterRender() · fold() (접기 단추) · showOrig() · advOnly() · grip(pop, key) */
+   · onChange(keep) · sortAuto(sort) · sortOk(k) (F_SORT_HOST 정렬을 보일지) · afterRender() · fold() (접기 단추) · showOrig() · advOnly() · grip(pop, key) */
 function makeFilterEditor(H) {
   const E = {groups: [], cur: 0, solo: false, cats: []};
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b), copy = x => JSON.parse(JSON.stringify(x));
@@ -93,7 +94,8 @@ function makeFilterEditor(H) {
     E.groups = E.groups.filter(E.real);
     E.cur = Math.max(0, E.groups.includes(keep) ? E.groups.indexOf(keep) : E.groups.length - 1);
   };
-  E.changed = keep => { E.ensure(); E.render(); if (H.onChange) H.onChange(keep); };
+  // H.sortAuto(sort): a sort the change brings with it (null = keep)
+  E.changed = keep => { E.ensure(); if (H.sortAuto) E.sort = H.sortAuto(E.sort) || E.sort; E.render(); if (H.onChange) H.onChange(keep); };
   /* 원곡만 접기 (user request 2026-11-17): a group holding every 원곡만 condition shows them as one '원곡만' chip (with the
      starting 곡 종류 when it is there too). It never unfolds (user request 2026-11-22: the unfolded conditions looked like the
      removed 기본 필터) and is only a label — no ×, no drag: 원곡만 goes in / out with the switch only. → their indices in g.c, or null */
@@ -247,7 +249,8 @@ function makeFilterEditor(H) {
   /* 정렬 · 몇 번째부터 · 몇 곡 (user request 2026-11-22: 상위 n곡 → n번부터 n곡, 필터에 같이 저장) */
   function renderSort() {
     if (sortEl.contains(document.activeElement)) return;
-    sortEl.innerHTML = `<select data-sort title="정렬 — 필터에 같이 저장됩니다">${F_SORTS.map(([k, l]) => `<option value="${k}"${k === E.sort ? " selected" : ""}>${l}</option>`).join("")}</select>`
+    const ok = ([k]) => !F_SORT_HOST.includes(k) || k === E.sort || (H.sortOk && H.sortOk(k));
+    sortEl.innerHTML = `<select data-sort title="정렬 — 필터에 같이 저장됩니다">${F_SORTS.filter(ok).map(([k, l]) => `<option value="${k}"${k === E.sort ? " selected" : ""}>${l}</option>`).join("")}</select>`
       + `<label title="정렬한 순서에서 몇 번째 곡부터 (0 = 맨 위부터)"><input type="number" data-from min="0" step="1" value="${E.from}">번부터</label>`
       + `<label title="거기서부터 몇 곡 (비우거나 0 = 끝까지)"><input type="number" data-n min="0" step="1" value="${E.n || ""}" placeholder="전체">곡</label>`;
   }

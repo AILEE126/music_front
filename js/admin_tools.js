@@ -8,7 +8,7 @@
      right-click again → 선택한 곡 싱크 반영. The player has no server: it leaves Server/data/sync_apply/<id>.json
      {ids, who, at} on the data branch and the server applies it in its next upload round (error_reports.apply_player_requests)
      — every player already plays the pending sync meanwhile. Songs with no waiting sync edit are left out. */
-const ADM = {byVid: new Map(), syncRid: new Map(), fixed: new Map(), busy: false, last: 0, sel: null, anchor: -1, ok: false, tok: ""};
+const ADM = {byVid: new Map(), syncRid: new Map(), repAt: new Map(), fixed: new Map(), busy: false, last: 0, sel: null, anchor: -1, ok: false, tok: ""};
 const ADM_CACHE = "adm.reports", ADM_EVERY = 10 * 60 * 1000;
 const isAdmin = () => ADM.ok && typeof LOCAL !== "undefined" && LOCAL.ready && LOCAL.canWrite;
 /* is this token a 관리자 token? (looked up again whenever the token changes and at every reload of the reports) */
@@ -34,7 +34,7 @@ async function admLoad() {
   ADM.busy = true; ADM.last = Date.now();
   try {
     const was = ADM.ok;
-    if (!await admCheck()) { if (was) { if (ADM.sel) admSelEnd(); ADM.byVid = new Map(); ADM.syncRid = new Map(); admChanged(); } return; }
+    if (!await admCheck()) { if (was) { if (ADM.sel) admSelEnd(); ADM.byVid = new Map(); ADM.syncRid = new Map(); ADM.repAt = new Map(); admChanged(); } return; }
     const d = LOCAL.data;
     const [idx, names, reqs] = await Promise.all([LOCAL.readJson(`${d}report_index.json`, {}),
       LOCAL.listDir(`${d}reports`), LOCAL.listDir(`${d}sync_apply`)]);
@@ -52,14 +52,16 @@ async function admLoad() {
       for (const x of (q && q.syncs) || []) if (x && x.sync) fixed.set(String(x.vocadb), x.sync);
     });
     ADM.fixed = fixed;
-    const by = new Map(), sync = new Map();
+    const by = new Map(), sync = new Map(), at = new Map();
     for (const id of ids) {
       const k = known[id], [kind, vid] = k ? [k.kind, k.vocadb] : cache[id] || ["", ""];
       if ((k && k.done) || queued.has(id) || !kind || !vid || (kind === "싱크 수정" && fixed.has(vid))) continue;
       (by.get(vid) || by.set(vid, new Set()).get(vid)).add(kind);
-      if (kind === "싱크 수정") sync.set(vid, id);  // ids are in time order → the newest stays
+      const ka = at.get(vid) || at.set(vid, new Map()).get(vid);
+      if (!ka.has(kind)) ka.set(kind, id);  // ids are in time order → per kind the oldest (신고 들어온 순, filter_panel.js repAt)
+      if (kind === "싱크 수정") sync.set(vid, id);  // the newest stays
     }
-    ADM.byVid = by; ADM.syncRid = sync;
+    ADM.byVid = by; ADM.syncRid = sync; ADM.repAt = at;
     admChanged();
   } catch (e) { console.warn("관리자: 오류 신고 목록을 못 읽음:", e.message || e); }
   finally { ADM.busy = false; }
@@ -70,7 +72,7 @@ async function admLoad() {
 function admSynced(it, s) {
   ADM.fixed.set(String(it.vocadb || ""), s);
   const vid = String(it.vocadb || ""), k = ADM.byVid.get(vid);
-  ADM.syncRid.delete(vid);
+  ADM.syncRid.delete(vid); ADM.repAt.get(vid)?.delete("싱크 수정");
   if (k) { k.delete("싱크 수정"); if (!k.size) ADM.byVid.delete(vid); }
   admChanged();
 }
@@ -167,7 +169,7 @@ async function admApplySync() {
     const at = nowText(), id = at.replace(/[-: ]/g, "").replace(/^(\d{8})/, "$1_") + "_" + Math.random().toString(36).slice(2, 6);
     await LOCAL.writeText(`${LOCAL.data}sync_apply/${id}.json`, JSON.stringify({at, who, ids: rids, songs}, null, 1) + "\n", who);
   } catch (e) { uiAlert("싱크 반영 요청을 못 올렸습니다 — " + (e.message || e)); return; }
-  for (const s of songs) { ADM.syncRid.delete(s.vocadb); const k = ADM.byVid.get(s.vocadb); if (k) { k.delete("싱크 수정"); if (!k.size) ADM.byVid.delete(s.vocadb); } }
+  for (const s of songs) { ADM.syncRid.delete(s.vocadb); ADM.repAt.get(s.vocadb)?.delete("싱크 수정"); const k = ADM.byVid.get(s.vocadb); if (k) { k.delete("싱크 수정"); if (!k.size) ADM.byVid.delete(s.vocadb); } }
   admSelEnd();
   admChanged();
   uiAlert(`${rids.length.toLocaleString()}곡 싱크 반영을 요청했습니다. 서버가 다음에 데이터를 올릴 때 반영됩니다.`);

@@ -6,6 +6,10 @@ const sfItems = scopeItems;
 /* the filter is not kept in the browser (user request 2026-11-18): the search window opens fresh every time (searchReset) —
    a filter to keep goes in 저장된 필터. It opens on 원곡만 · 인기순 0번부터 1000곡 (filter_editor.js — the server's 기본 필터 is gone,
    user request 2026-11-22) */
+/* the 오류 신고 kinds of the 포함 groups (fRepWas: any at the last draw) */
+let fRepWas = false;
+const fRepKinds = () => FE.live().flatMap(g => g.x ? [] : g.c.filter(c => c.k === "report").flatMap(c => [].concat(c.v)));
+const fRep = () => fRepKinds().length > 0;
 const FE = makeFilterEditor({
   chips: $("fChips"), panel: $("fPanel"), key: "f.",
   // categories not counted yet (user request 2026-11-19: counting 1M songs held the window ~6 s — results come first): the
@@ -28,8 +32,12 @@ const FE = makeFilterEditor({
   known: c => !!FKIND[c.k],
   popParent: () => $("searchDlg"),  // inside the dialog (top layer) so it shows above it
   onChange: keep => runSearch(keep),
+  // 오류 신고 put in → 신고 들어온 순 (user request 2026-11-23: 싱크 수정, then every kind); taken out → back to 인기순
+  sortAuto: s => { const on = fRep(); return on && !fRepWas ? "report" : !on && s === "report" ? "RatingScore" : null; },
+  sortOk: k => k !== "report" || fRep(),
   fold: () => setFilterOpen(false),
   afterRender() {
+    fRepWas = fRep();
     const n = FE.picked();  // 원곡만 스위치 말고 고른 조건 수
     $("btnFilter").classList.toggle("on", !!n);
     $("btnFilter").classList.toggle("open", !$("fPanel").hidden);
@@ -355,16 +363,26 @@ async function numSorted(its, sort, tick) {
   for (let i = 0; i < out.length; i++) res[i] = by[out[i] % R];
   return res;
 }
+/* 신고 들어온 순: the song's oldest report not handled yet of the filter's kinds (none → any kind) — admin_tools.js, report ids
+   are in time order */
+function repAt(it, kinds) {
+  const m = typeof ADM !== "undefined" && ADM.repAt.get(String(it.vocadb || ""));
+  let out = "";
+  if (m) for (const [k, id] of m) if ((!kinds.size || kinds.has(k)) && (!out || id < out)) out = id;
+  return out;
+}
 /* key: the sort (the window's by default) · byId: ties by VocaDB id, not title place (OPEN CHANNEL's cut — the same on every player) */
 function ourCmp(key = FE.sort, byId = false) {
   const big = 1e9, txt = (a, b) => (a ? 0 : 1) - (b ? 0 : 1) || KO_CMP(a || "", b || "");
   const ord = it => { const o = it.ord || {}; return o.namu != null ? o.namu : o.japan != null ? 1e6 + o.japan : big; };
   const num = it => { const n = it.nums || {}, b = ["TJ", "금영", "DAM", "JOYSOUND", "UGA"].findIndex(x => n[x]); return b < 0 ? [big, big] : [b, parseInt(String(n[["TJ", "금영", "DAM", "JOYSOUND", "UGA"][b]]).replace(/\D/g, ""), 10) || big]; };
+  const kinds = key === "report" ? new Set(fRepKinds()) : null;
   const byTitle = (a, b) => a._tr !== undefined && b._tr !== undefined ? a._tr - b._tr : titleCmp(a, b);  // _tr: titleRanks
   const cmp = {RatingScore: (a, b) => (b.rating || 0) - (a.rating || 0), list: (a, b) => ord(a) - ord(b), Name: () => 0,
     no: (a, b) => { const x = num(a), y = num(b); return x[0] - y[0] || x[1] - y[1]; },
     PublishDate: (a, b) => (a.date ? 0 : 1) - (b.date ? 0 : 1) || (b.date || "").localeCompare(a.date || ""), old: (a, b) => txt(a.date, b.date),
-    composer: (a, b) => txt(a.composer, b.composer), singer: (a, b) => txt(a.singer, b.singer)}[key] || (() => 0);
+    composer: (a, b) => txt(a.composer, b.composer), singer: (a, b) => txt(a.singer, b.singer),
+    report: (a, b) => txt(repAt(a, kinds), repAt(b, kinds))}[key] || (() => 0);
   if (byId) return (a, b) => cmp(a, b) || (key === "Name" ? titleCmp(a, b) : 0) || (+a.vocadb || 0) - (+b.vocadb || 0);
   return (a, b) => cmp(a, b) || byTitle(a, b);
 }
