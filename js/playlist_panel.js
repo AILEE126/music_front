@@ -317,6 +317,7 @@ $("addDlg").addEventListener("click", e => { if (e.target === $("addDlg")) $("ad
 /* 오프라인 줄 (user request 2026-11-15): 곡 출처 [📁 mp3 폴더 | ▶ 유튜브 재생목록] + 그 출처 (폴더 이름 · 다른 폴더 / 재생목록 주소 · 불러오기) */
 function renderOffBar() {
   const bar = $("offBar");
+  $("addBusy").hidden = !OFFYT.busy;  // 곡 추가 window dimmed with a spinner while a playlist loads (user request 2026-11-23)
   if (ONLINE) { bar.innerHTML = ""; return; }
   if (OFFSRC === "yt" && !OFFYT.items.length && OFFYT.vids.length) OFFYT.items = OFFYT.vids.map(ytItem);
   const tab = (src, label) => `<button data-src="${src}" class="${OFFSRC === src ? "on" : ""}">${label}</button>`;

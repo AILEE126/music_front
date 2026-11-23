@@ -199,6 +199,7 @@
     <div class="recw"><div class="rech">이전에 추가한 재생목록 <span class="muted" id="histInfo"></span><span class="muted"> · 이 브라우저에만 남음</span></div><div class="recgrid" id="histList"></div></div>
     <div class="recw"><div class="rech">이전에 연결한 mp3 폴더 <span class="muted" id="dirInfo"></span><span class="muted"> · 이 브라우저에만 남음</span></div><div id="dirList"></div></div>
   </div>
+  <div id="addBusy" class="addbusy" hidden><i></i>불러오는 중…</div><!-- user request 2026-11-23: dim + spinner while a YouTube playlist loads -->
 </dialog>
 <dialog id="searchDlg"><!-- 곡 검색 (user request 2026-11-14): VocaDB API + our songs — results are played or put in the playlist -->
   <div class="dlg-head">곡 검색<span class="grow"></span><button id="sReport" class="rptlink" title="곡의 문제 알리기 (싱크·가사·곡 정보·재생 등) · 텍스트 대치 제안 — 음원 관리 › 오류 신고에 남음">오류신고 · 텍스트 대치 제안</button><!-- user request 2026-11-15: same button as the player's, in the search popup too --><button class="ib" id="sClose" title="닫기 (Esc)">✕</button></div>

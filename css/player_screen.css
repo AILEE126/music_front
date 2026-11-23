@@ -896,6 +896,9 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
 /* 곡 추가 창 (user request 2026-11-22): same size as 곡 검색 — source picks + 추천 재생목록 cards */
 #addDlg{width:min(980px,96vw);height:min(86vh,900px);padding:0}
 #addDlg[open]{display:flex;flex-direction:column}
+#addDlg .addbusy{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(0,0,0,.45);color:#fff;font-size:15px}
+#addDlg .addbusy[hidden]{display:none}
+#addDlg .addbusy i{width:40px;height:40px;border:4px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}
 #addDlg .dlg-head{display:flex;align-items:center;gap:8px}
 #addDlg .grow{flex:1}
 #addDlg .dlg-body{display:flex;flex-direction:column;gap:12px;flex:1;min-height:0;text-align:left;overflow-y:auto}
