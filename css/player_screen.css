@@ -147,12 +147,14 @@ body.simple :is(.item,.sitem) .badges{filter:brightness(.7) saturate(.6)}  /* �
    drag sets its height (--vid-f = share of the window height, remembered; 16:9 kept) */
 /* 영상 · 댓글 tabs (user request 2026-11-15): same size on and off — off slides up into the edge (only the lower part shows)
    with a slash over the icon; no color change. Icon sits low so it still shows while slid in */
-#btnVideo,#btnCmt{position:absolute;top:-1px;width:56px;height:30px;border-top:0;border-radius:0 0 9px 9px;z-index:3;align-items:flex-end;padding-bottom:7px;transition:transform .18s,clip-path .18s}
+#btnVideo,#btnCmt,#btnSkip{position:absolute;top:-1px;width:56px;height:30px;border-top:0;border-radius:0 0 9px 9px;z-index:3;align-items:flex-end;padding-bottom:7px;transition:transform .18s,clip-path .18s}
 #btnVideo{right:20px;touch-action:none}
-#btnCmt{right:84px}
-#btnVideo.on,#btnCmt.on{color:var(--muted);background:var(--card);border-color:var(--line)}  /* not the common "on" button look */
-#btnVideo:not(.on),#btnCmt:not(.on){transform:translateY(-10px);clip-path:inset(10px 0 0 0)}
-#btnVideo:not(.on)::after,#btnCmt:not(.on)::after{content:"";position:absolute;left:50%;top:17px;width:20px;height:1.6px;margin-left:-10px;border-radius:1px;background:currentColor;transform:rotate(-35deg)}
+#btnCmt,#btnSkip{right:84px}
+#btnSkip{font-size:11px;font-weight:800;letter-spacing:.5px}  /* LOCAL only, where 💬 sits in SERVER mode (user request 2026-11-23) */
+#btnSkip[hidden]{display:none}
+#btnVideo.on,#btnCmt.on,#btnSkip.on{color:var(--muted);background:var(--card);border-color:var(--line)}  /* not the common "on" button look */
+#btnVideo:not(.on),#btnCmt:not(.on),#btnSkip:not(.on){transform:translateY(-10px);clip-path:inset(10px 0 0 0)}
+#btnVideo:not(.on)::after,#btnCmt:not(.on)::after,#btnSkip:not(.on)::after{content:"";position:absolute;left:50%;top:17px;width:20px;height:1.6px;margin-left:-10px;border-radius:1px;background:currentColor;transform:rotate(-35deg)}
 #btnVideo::before{content:"";position:absolute;left:0;right:0;top:-1px;height:2px;background:var(--card)}  /* covers the video's bottom line inside the tab */
 #btnVideo svg{width:16px;height:10px}
 #btnVideo.on:not(:disabled){cursor:ns-resize}
@@ -546,6 +548,7 @@ html[data-theme=light] :is(.fcat.own,.fdd-opt.own){--own:#7c3aed}
 #libInfo .cnt>b{font-size:17px;font-weight:800;color:var(--accent)}
 #libInfo{display:flex;flex-direction:column;line-height:1.25}
 #libInfo .cnt{white-space:nowrap}
+#libInfo .plname{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #libInfo .tot{font-size:12px;color:var(--muted)}  /* all our songs + '/', not highlighted */
 .libinfo:has(#libInfo .lbl){align-items:flex-end}  /* buttons line up with the count line */
 /* 필터 그룹 (위 목록): 그룹 = 한 줄 상자. 상자 안 조건은 모두 맞아야(교집합), 상자끼리는 하나라도(합집합), 빨간 상자(−)는 빼기.

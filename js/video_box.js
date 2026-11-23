@@ -87,6 +87,10 @@ const VID_F = f => { f = Math.min(.85, Math.max(.1, f)); document.documentElemen
   tab.addEventListener("keydown", e => { if (e.key === "Enter" && !SIMPLE) { e.preventDefault(); VID.on = !VID.on; store.set("video", VID.on); showVideo(); } });
 }
 $("btnCmt").onclick = () => { audio.comments = !audio.comments; showVideo(); };
+/* SKIP (user request 2026-11-23, LOCAL only): the recommended playlists' front / end skip on or off — play_engine skipOf */
+const renderSkip = () => $("btnSkip").classList.toggle("on", store.get("offSkip", true));
+$("btnSkip").onclick = () => { store.set("offSkip", !store.get("offSkip", true)); renderSkip(); };
+renderSkip();
 $("songMeta").addEventListener("click", e => { if (e.target.id === "tagsMore" && cur) { store.set("tagsOpen", !store.get("tagsOpen", false)); renderMeta(cur); } });
 for (const ev of ["sourcechange", "emptied", "error", "loadedmetadata", "guidechange"]) on(audio, ev, showVideo);  // 중계 플레이어가 바뀜·뜸·못 틂
 cleanups.push(() => SHELL.placeVideo(null));  // 화면을 떠나면 영상 칸이 없어짐 → 접음 (소리는 그대로)

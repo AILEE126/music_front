@@ -147,7 +147,7 @@ function renderSearchBtn() {
   if (m) m.innerHTML = (ONLINE ? ICO_SEARCH : ICO_ADD) + lbl;
 }
 renderSearchBtn();  // before the library is in
-function renderOnOff() { $("onOff").classList.toggle("on", ONLINE); $("onOff").setAttribute("aria-pressed", ONLINE); renderOffBar(); renderSearchBtn(); }
+function renderOnOff() { $("btnSkip").hidden = ONLINE; $("onOff").classList.toggle("on", ONLINE); $("onOff").setAttribute("aria-pressed", ONLINE); renderOffBar(); renderSearchBtn(); }
 $("onOff").addEventListener("click", async () => {
   ONLINE = !ONLINE; store.set("online", ONLINE);
   for (const d of ["searchDlg", "addDlg"]) if ($(d).open) $(d).close();  // the 검색 / 곡 추가 window of the other mode
@@ -357,7 +357,9 @@ function renderList() {
   // my online playlist: '<all our songs> / <in the playlist>곡' — the total and the slash plain, the playlist count stands out (user request 2026-11-15)
   const total = ONLINE && !guestPl ? vdbTotal() : 0;
   const n = PL.early && !guestPl && !pq ? Math.max(view.length, PL.savedN) : view.length;  // 요약본 up: the whole saved list's count
-  $("libInfo").innerHTML = `<span class="lbl">${lbl}</span><span class="cnt">${total ? `<span class="tot">${total.toLocaleString()} / </span>` : ""}<b>${n.toLocaleString()}</b>${unit}</span>`;
+  // LOCAL YouTube list: its name above '영상 n개' (user request 2026-11-23)
+  const plName = !guestPl && !ONLINE && OFFSRC === "yt" && OFFYT.list ? `<span class="plname" title="${esc(OFFYT.title)}">${esc(OFFYT.title)}</span>` : "";
+  $("libInfo").innerHTML = `${plName}<span class="lbl">${lbl}</span><span class="cnt">${total ? `<span class="tot">${total.toLocaleString()} / </span>` : ""}<b>${n.toLocaleString()}</b>${unit}</span>`;
   renderPlFilter();
   $("btnPlClear").hidden = !ONLINE || !!guestPl;
   renderRows(true);
