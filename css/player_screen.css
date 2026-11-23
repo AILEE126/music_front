@@ -898,7 +898,7 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
 .item.dropto{box-shadow:inset 0 2px 0 var(--accent)}
 #list .empty button{margin-top:10px}
 /* 곡 추가 창 (user request 2026-11-22): same size as 곡 검색 — source picks + 추천 재생목록 cards */
-#addDlg{width:min(980px,96vw);height:min(86vh,900px);padding:0}
+#addDlg{width:min(980px,96vw);height:min(calc(86vh + 100px),1000px,calc(100vh - 16px));max-height:calc(100vh - 16px);padding:0}  /* same size as 곡 검색 (user request 2026-11-23) */
 #addDlg[open]{display:flex;flex-direction:column}
 #addDlg .addbusy{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(0,0,0,.45);color:#fff;font-size:15px}
 #addDlg .addbusy[hidden]{display:none}
@@ -909,22 +909,42 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
 #addDlg .offnote{margin:0}
 #addDlg .rech{font-weight:700;margin-bottom:8px}
 #addDlg .rech .muted{font-weight:400;font-size:12px;color:var(--muted)}
+#addDlg .rech{display:flex;align-items:center;gap:8px}
+#recCat{margin-left:auto;font-weight:400;min-width:120px}  /* 카테고리 (user request 2026-11-23) */
+#recCat[hidden]{display:none}
+/* 새 영상 알림 (user request 2026-11-23): count on 곡 추가 · the word on the rows */
+.nbadge{position:absolute;top:-6px;right:-10px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#e5484d;color:#fff;font-size:10px;font-weight:800;line-height:16px;text-align:center;font-style:normal}
+.nbadge[hidden]{display:none}
+.mnav button[data-nav="search"]{position:relative}
+.mnav button[data-nav="search"] .nbadge{top:2px;right:calc(50% - 22px)}
+.nnew{color:#e5484d}
 .recpager{display:flex;justify-content:center;flex-wrap:wrap;gap:4px;margin-top:10px}
 .recpager:empty{display:none}
 .recpager button{min-width:30px;height:28px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:inherit;cursor:pointer}
 .recpager button.on{border-color:var(--accent);color:var(--accent);font-weight:700}
 .recpager button:disabled{opacity:.4;cursor:default}
 .recw[hidden]{display:none}
-/* 추천 재생목록 rows like 곡 검색's (user request 2026-11-23) */
+/* 추천 재생목록 rows like 곡 검색's, bigger pictures (user request 2026-11-23) */
 .recrows{border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .recrows .empty{padding:16px;text-align:center;color:var(--muted)}
 .recrow{cursor:pointer}
 .recrow:last-child{border-bottom:0}
 .recrow.on{background:color-mix(in srgb,var(--ok) 12%,transparent)}
-.recrow .rthumb{flex:none;width:64px;height:36px;border-radius:4px;overflow:hidden;background:var(--chip);display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.recrow .rthumb{flex:none;width:112px;height:63px;border-radius:4px;overflow:hidden;background:var(--chip);display:flex;align-items:center;justify-content:center;color:var(--muted)}
 .recrow .rthumb img{width:100%;height:100%;object-fit:cover}
 .recrow>button{flex:none}
-.recrow.ch .rthumb img{object-fit:contain}  /* channel picture: square */
+/* 불러오기 · 라이브 · 발표곡: outline only, the row's own background (user request 2026-11-23) */
+.recrow button{background:none;border:1px solid var(--accent);color:var(--accent)}
+.recrow button:not(.primary){border-color:var(--line);color:var(--muted)}  /* 듣는 중 */
+.recrow button:hover{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+/* 앨범별 접기 — a header row as tall as a song row (playlist_panel.js albumView) */
+.item.albhdr{background:var(--chip)}
+.item.albhdr .thumb{display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--muted)}
+.item.albhdr .t{font-weight:800}
+.badges .b.ok{color:var(--ok);border-color:var(--ok)}
+.recrow.ch .rthumb{background:none}
+.recrow.ch .rthumb img{width:60px;height:60px;border-radius:50%;object-fit:cover}  /* channel picture: a circle (user request 2026-11-23) */
+body.m .recrow .rthumb{width:80px;height:45px}body.m .recrow.ch .rthumb img{width:44px;height:44px}  /* phone: room for the title */
 #dirList{display:flex;flex-direction:column;gap:6px}
 #dirList .empty{padding:16px;text-align:center;color:var(--muted)}
 .dirrow{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card)}

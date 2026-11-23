@@ -128,7 +128,7 @@ $("list").addEventListener("click", e => {
   const el = e.target.closest(".item"); if (!el) return;
   e.stopImmediatePropagation();
   const i = +el.dataset.i, it = view[i];
-  if (!it) return;
+  if (!it || it.hdr) return;  // an album header (playlist_panel.js albumView)
   if (e.shiftKey && ADM.anchor >= 0) {
     const [a, b] = ADM.anchor < i ? [ADM.anchor, i] : [i, ADM.anchor];
     for (const x of view.slice(a, b + 1)) ADM.sel.add(keyOf(x));

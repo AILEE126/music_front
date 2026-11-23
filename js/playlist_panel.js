@@ -145,6 +145,7 @@ function renderSearchBtn() {
   b.title = ONLINE ? "곡 검색 창 열기 (전체 곡 · 노래방 곡 · 가사·싱크 있는 곡 — 우리 DB) — 찾은 곡을 바로 틀거나 재생목록에 넣음"
     : "곡 추가 창 열기 — mp3 폴더 · 유튜브 재생목록 · 추천 재생목록";
   if (m) m.innerHTML = (ONLINE ? ICO_SEARCH : ICO_ADD) + lbl;
+  renderNewBadge();  // the icons were just replaced
 }
 renderSearchBtn();  // before the library is in
 function renderOnOff() { $("btnSkip").hidden = ONLINE; $("onOff").classList.toggle("on", ONLINE); $("onOff").setAttribute("aria-pressed", ONLINE); renderOffBar(); renderSearchBtn(); }
@@ -176,11 +177,80 @@ function ytOptAt(no) {
 }
 const ytItem = (v, i = 0) => ytItemAt(v, ytOptAt(i + 1));
 const ytItemAt = (v, o) => liveItem({site: "stream", name: "yt:" + v.id, offyt: true, title: ytCut(v.title || v.id, o.cut), artist: v.author || "",
-  skipA: o.skipA, skipB: o.skipB,
+  skipA: o.skipA, skipB: o.skipB, alb: v.alb,
   video: `https://www.youtube.com/watch?v=${v.id}`, video_link: `https://www.youtube.com/watch?v=${v.id}`, thumb: `https://i.ytimg.com/vi/${v.id}/mqdefault.jpg`});
-const OFFYT = (() => { const s = store.get("offyt", null) || {}; return {url: s.url || "", list: s.list || "", title: s.title || "", vids: s.vids || [], opt: s.opt || {}, items: [], busy: false}; })();
+const OFFYT = (() => { const s = store.get("offyt", null) || {}; return {url: s.url || "", list: s.list || "", title: s.title || "", vids: s.vids || [], opt: s.opt || {}, albums: s.albums || null, items: [], busy: false}; })();
 const ytOpt = r => r ? {cut: r.cut || "", skip_a: +r.skip_a || 0, skip_b: +r.skip_b || 0, ex: r.ex || []} : {};
-const saveOffyt = () => store.set("offyt", {url: OFFYT.url, list: OFFYT.list, title: OFFYT.title, vids: OFFYT.vids, opt: OFFYT.opt});
+const saveOffyt = () => store.set("offyt", {url: OFFYT.url, list: OFFYT.list, title: OFFYT.title, vids: OFFYT.vids, opt: OFFYT.opt, albums: OFFYT.albums});
+/* 시청완료 (user request 2026-11-23): videos of a plain YouTube playlist (not a channel's) played to the end once — their
+   ids kept in this browser only (store offyt.seen, newest 5000), shown on the row */
+const SEEN_MAX = 5000, SEEN = new Set(store.get("offyt.seen", []) || []);
+const ALB_FOLD = new Set(store.get("offyt.fold", []) || []);  // folded albums (albumView) — here: renderList may run at load
+const isChannelList = () => /^(REL:|UULV)/.test(OFFYT.list);
+function markSeen(it) {
+  if (!it || !it.offyt || isChannelList()) return;
+  const id = it.name.slice(3); if (SEEN.has(id)) return;
+  SEEN.add(id); store.set("offyt.seen", [...SEEN].slice(-SEEN_MAX));
+  if (!ONLINE && OFFSRC === "yt") renderRows(true);
+  noteWatch(true);
+}
+/* 새 영상 알림 (user request 2026-11-23): a plain YouTube playlist watched through once is remembered in this browser
+   (store offyt.done {list: {title, url, thumb, at = last watched, n, fresh = videos not seen, chk = last check}}); twice a
+   day the player reads those lists again (ytListIds — the bridge) and counts the videos not seen yet → a badge on 곡 추가
+   and the lists on top of its window. A playlist doesn't tell when a video was added, so the seen ids decide what is new
+   (the user asked about keeping the last watch date: kept too, shown on the row) */
+function doneGet() { return store.get("offyt.done", {}) || {}; }
+function noteWatch(watched) {
+  if (!OFFYT.list || isChannelList() || !OFFYT.vids.length) return;
+  const d = doneGet(), x = d[OFFYT.list], ids = OFFYT.vids.map(v => v.id), fresh = ids.filter(id => !SEEN.has(id)).length;
+  if (!x && fresh) return;  // not watched through yet
+  d[OFFYT.list] = {title: OFFYT.title, url: `https://www.youtube.com/playlist?list=${OFFYT.list}`,
+    thumb: `https://i.ytimg.com/vi/${ids[0]}/mqdefault.jpg`, at: watched || !x ? nowText() : x.at, n: ids.length, fresh, chk: Date.now()};
+  store.set("offyt.done", d);
+  renderNewBadge();
+}
+async function checkNewVideos() {
+  for (const list of Object.keys(doneGet())) {
+    if (Date.now() - (doneGet()[list].chk || 0) < 12 * 3600e3) continue;
+    let ids = null;
+    try { ids = [...new Set(await ytListIds(list))]; } catch (e) {}  // deleted / private now: try again next round
+    const d = doneGet(); if (!d[list]) continue;
+    if (ids) Object.assign(d[list], {n: ids.length, fresh: ids.filter(id => !SEEN.has(id)).length});
+    d[list].chk = Date.now();
+    store.set("offyt.done", d);
+  }
+  renderNewBadge();
+}
+setTimeout(checkNewVideos, 15000);  // after the screen is up
+setInterval(checkNewVideos, 3600e3);
+function renderNewBadge() {
+  const L = Object.entries(doneGet()).filter(([, x]) => x.fresh > 0), n = L.reduce((s, [, x]) => s + x.fresh, 0);
+  for (const host of [$("btnSearch").querySelector(".ico"), document.querySelector('#mNav [data-nav="search"]')]) {
+    if (!host) continue;
+    const b = host.querySelector(".nbadge") || host.appendChild(Object.assign(document.createElement("b"), {className: "nbadge"}));
+    b.hidden = ONLINE || !n; b.textContent = n > 99 ? "99+" : n;
+    b.title = `새 영상이 올라온 재생목록 ${L.length}개 — 곡 추가에서 보기`;
+  }
+  $("newW").hidden = !L.length || OFFSRC !== "yt";
+  $("newInfo").textContent = L.length ? `${L.length}개` : "";
+  $("newList").innerHTML = L.map(([list, x]) => `<div class="sitem recrow" data-l="${esc(list)}" title="이 재생목록 불러오기">`
+    + `<span class="rthumb"><img src="${esc(x.thumb)}" loading="lazy" alt=""></span>`
+    + `<div class="meta"><div class="t">${esc(x.title)}</div><div class="a"><b class="nnew">새 영상 ${x.fresh}개</b> · 마지막 시청 ${esc(String(x.at || "").slice(0, 10))}</div></div>`
+    + `<button type="button" class="primary">불러오기</button></div>`).join("");
+}
+$("newList").addEventListener("click", async e => {
+  const c = e.target.closest(".recrow"); if (!c) return;
+  const x = doneGet()[c.dataset.l]; if (!x) return;
+  if (OFFSRC !== "yt") { OFFSRC = "yt"; store.set("off.src", "yt"); }
+  await loadYtList(x.url);
+  if (OFFYT.list === c.dataset.l) $("addDlg").close();
+});
+// watched = reached the end, or 뒤 스킵's point (the last 3 % also counts — a video often ends on a still)
+SHELL.audio.addEventListener("timeupdate", () => {
+  const it = SHELL.now, a = SHELL.audio, d = a.duration;
+  if (it && it.offyt && d > 0 && a.currentTime >= Math.min(d * 0.97, d - (it.skipB || 0) - 1)) markSeen(it);
+});
+SHELL.audio.addEventListener("ended", () => markSeen(SHELL.now));
 var offItems = () => OFFSRC === "yt" ? OFFYT.items : OFFDIR.items;
 const offReady = () => OFFSRC === "yt" ? !!OFFYT.list : !!OFFDIR.dir;
 /* the playlist's video numbers: the stream bridge page asks YouTube's own player (getPlaylist — up to 200; a page opened here
@@ -215,13 +285,14 @@ async function loadYtList(input, name = "") {  // name: shown instead of YouTube
     const vids = ids.map(id => ({id}));
     for (let i = 0; i < vids.length; i += 6)
       await Promise.all(vids.slice(i, i + 6).map(async v => { const o = await ytOembed(`https://www.youtube.com/watch?v=${v.id}`); if (o) { v.title = o.title; v.author = o.author_name; } }));
-    Object.assign(OFFYT, {url: String(input).trim(), list, title: name || info && info.title || "유튜브 재생목록", vids, opt: ytOpt(rec)});
+    Object.assign(OFFYT, {url: String(input).trim(), list, title: name || info && info.title || "유튜브 재생목록", vids, opt: ytOpt(rec), albums: null});
     OFFYT.items = vids.map(ytItem);
     saveOffyt();
     const thumb = info && info.thumbnail_url || (vids[0] ? `https://i.ytimg.com/vi/${vids[0].id}/mqdefault.jpg` : "");
     // the server sees which playlists users load (Manage › 추천 재생목록, user request 2026-11-22) — never blocks playing;
     // a recommended one isn't recorded (user request 2026-11-23)
     if (!rec) LOCAL.saveUserPlaylist({list, url: `https://www.youtube.com/playlist?list=${list}`, title: OFFYT.title, n: vids.length, thumb}).catch(() => {});
+    noteWatch(false);  // a remembered list: its new-video count from what was just read
   } catch (e) { uiAlert(e.message); }
   finally { OFFYT.busy = false; renderOffBar(); renderList(); }
 }
@@ -262,7 +333,7 @@ $("dirList").addEventListener("click", async e => {
    Manage › 추천 재생목록 (Server/data/rec_playlists.json {lists: [{list, url, title, thumb}]}); a row loads that playlist.
    2026-11-23 (user request): the two sources work like tabs — 유튜브 재생목록 shows only the address box + 추천 재생목록 as
    rows like 곡 검색's (page numbers under them), mp3 폴더 only the folder picks; 이전에 추가한 재생목록 is gone */
-const REC = {lists: null, page: 0};
+const REC = {lists: null, page: 0, cat: ""};  // cat: the 카테고리 box ("" = 전체 — user request 2026-11-23)
 const REC_PAGE = 20;  // rows per page
 async function loadRec() {
   try { const d = LOCAL.ready ? await LOCAL.readJson(`${LOCAL.data}rec_playlists.json`, null) : null; REC.lists = (d && d.lists) || []; }
@@ -277,8 +348,9 @@ async function loadRec() {
 }
 /* 채널 (user request 2026-11-23): a channel entry {kind: "channel", list: UC…} plays its 라이브 tab (playlist UULV…) or its
    동영상 tab = 발표곡 (UULF…); both take the channel's title regex · skips */
-const CH_TABS = {LV: "라이브", LF: "발표곡"};
-const chList = (r, t) => "UU" + t + r.list.slice(2);
+const CH_TABS = {LV: "라이브", REL: "발표곡"};
+// 라이브 = the 라이브 tab's playlist · 발표곡 = the 릴리스 tab's albums, read by the server (rec_playlists.py _albums — 2026-11-23)
+const chList = (r, t) => t === "REL" ? "REL:" + r.list : "UU" + t + r.list.slice(2);
 const recFor = list => (REC.lists || []).find(r => r.kind === "channel" ? Object.keys(CH_TABS).some(t => chList(r, t) === list) : r.list === list);
 const recRow = (r, i) => {
   const ch = r.kind === "channel", now = t => OFFSRC === "yt" && OFFYT.list === (ch ? chList(r, t) : r.list);
@@ -286,30 +358,48 @@ const recRow = (r, i) => {
   const on = ch ? Object.keys(CH_TABS).some(now) : now();
   return `<div class="sitem recrow${on ? " on" : ""}${ch ? " ch" : ""}" data-i="${i}" title="${ch ? "채널의 라이브 또는 발표곡 불러오기" : "이 재생목록 불러오기"}">`
     + `<span class="rthumb">${r.thumb ? `<img src="${esc(r.thumb)}" loading="lazy" alt="">` : "▶"}</span>`
-    + `<div class="meta"><div class="t">${esc(r.title || r.list)}</div><div class="a">${ch ? "유튜브 채널" : "유튜브 재생목록"}${r.n ? ` · 영상 ${r.n}개` : ""}</div></div>`
-    + (ch ? `<span class="sacts">${btn("LV")}${btn("LF")}</span>` : btn("")) + `</div>`;
+    + `<div class="meta"><div class="t">${esc(r.title || r.list)}</div><div class="a">${ch ? "유튜브 채널" : "유튜브 재생목록"}${r.cat ? ` · ${esc(r.cat)}` : ""}${(doneGet()[r.list] || {}).fresh ? ` · <b class="nnew">새 영상 ${doneGet()[r.list].fresh}개</b>` : ""}${r.n ? ` · 영상 ${r.n}개` : ""}</div></div>`
+    + (ch ? `<span class="sacts">${btn("LV")}${btn("REL")}</span>` : btn("")) + `</div>`;
 };
 function renderRec() {
-  const L = REC.lists, pages = L ? Math.ceil(L.length / REC_PAGE) : 0;
+  // 카테고리 box: 전체 + every category the recommended ones have; rows keep their index in REC.lists (recPick)
+  const cats = [...new Set((REC.lists || []).map(r => r.cat).filter(Boolean))].sort();
+  if (REC.cat && !cats.includes(REC.cat)) REC.cat = "";
+  $("recCat").hidden = !cats.length;
+  $("recCat").innerHTML = `<option value="">전체</option>` + cats.map(c => `<option${c === REC.cat ? " selected" : ""}>${esc(c)}</option>`).join("");
+  const L = REC.lists && REC.lists.map((r, i) => ({r, i})).filter(x => !REC.cat || x.r.cat === REC.cat), pages = L ? Math.ceil(L.length / REC_PAGE) : 0;
   REC.page = Math.min(REC.page, Math.max(0, pages - 1));
   $("recInfo").textContent = L && L.length ? `${L.length}개` : "";
   $("recList").innerHTML = !L ? '<div class="empty">불러오는 중…</div>' : !L.length ? '<div class="empty">아직 추천 재생목록이 없습니다.</div>'
-    : L.slice(REC.page * REC_PAGE, (REC.page + 1) * REC_PAGE).map((r, i) => recRow(r, REC.page * REC_PAGE + i)).join("");
+    : L.slice(REC.page * REC_PAGE, (REC.page + 1) * REC_PAGE).map(x => recRow(x.r, x.i)).join("");
   $("recPager").innerHTML = pages > 1 ? `<button type="button" data-p="${REC.page - 1}"${REC.page ? "" : " disabled"} title="이전 페이지">‹</button>`
     + Array.from({length: pages}, (_, p) => `<button type="button" data-p="${p}" class="${p === REC.page ? "on" : ""}">${p + 1}</button>`).join("")
     + `<button type="button" data-p="${REC.page + 1}"${REC.page < pages - 1 ? "" : " disabled"} title="다음 페이지">›</button>` : "";
+}
+/* 발표곡 (user request 2026-11-23): every album · single of the channel in one list, in the order of its 릴리스 tab — the
+   playlist folds by album (albumView) */
+function loadAlbums(r) {
+  const al = (r.albums || []).filter(a => a.vids && a.vids.length);
+  if (!al.length) return uiAlert("이 채널의 앨범을 아직 받지 않았습니다 (관리 › 추천 재생목록 › 앨범 다시 받기).");
+  const vids = al.flatMap((a, k) => a.vids.map(v => ({id: v.id, title: v.title, author: r.title, alb: k})));  // author: the line under the title
+  Object.assign(OFFYT, {url: "", list: chList(r, "REL"), title: `${r.title} · 발표곡`, vids, opt: ytOpt(r),
+    albums: al.map(a => ({list: a.list, title: a.title}))});
+  OFFYT.items = vids.map(ytItem);
+  saveOffyt(); renderOffBar(); renderList();
 }
 async function recPick(e, lists) {
   const c = e.target.closest(".recrow"); if (!c) return;
   const r = lists[+c.dataset.i], b = e.target.closest("button[data-t]");
   // a channel: its 라이브 or 발표곡 button (the row itself = 발표곡)
-  const t = r.kind === "channel" ? (b && b.dataset.t) || "LF" : "", list = t ? chList(r, t) : r.list;
+  const t = r.kind === "channel" ? (b && b.dataset.t) || "REL" : "", list = t ? chList(r, t) : r.list;
   if (OFFSRC !== "yt") { OFFSRC = "yt"; store.set("off.src", "yt"); }
-  await loadYtList(t ? `https://www.youtube.com/playlist?list=${list}` : r.url || `https://www.youtube.com/playlist?list=${list}`,
+  if (t === "REL") loadAlbums(r);
+  else await loadYtList(t ? `https://www.youtube.com/playlist?list=${list}` : r.url || `https://www.youtube.com/playlist?list=${list}`,
     t ? `${r.title} · ${CH_TABS[t]}` : "");
   if (OFFYT.list === list) $("addDlg").close();
 }
 $("recList").addEventListener("click", e => recPick(e, REC.lists));
+$("recCat").addEventListener("change", () => { REC.cat = $("recCat").value; REC.page = 0; renderRec(); });
 $("recPager").addEventListener("click", e => { const b = e.target.closest("button[data-p]"); if (b && !b.disabled) { REC.page = +b.dataset.p; renderRec(); } });
 function openAddSongs() {
   renderOffBar();
@@ -328,6 +418,7 @@ function renderOffBar() {
   if (OFFSRC === "yt" && !OFFYT.items.length && OFFYT.vids.length) OFFYT.items = OFFYT.vids.map(ytItem);
   const tab = (src, label) => `<button data-src="${src}" class="${OFFSRC === src ? "on" : ""}">${label}</button>`;
   $("recW").hidden = OFFSRC !== "yt"; $("dirW").hidden = OFFSRC !== "dir";  // tabs (user request 2026-11-23)
+  renderNewBadge();
   bar.innerHTML = `<div class="offnote"><div class="row offsrc">${tab("dir", "📁 mp3 폴더")}${tab("yt", "▶ 유튜브 재생목록")}</div>`
     + (OFFSRC === "dir"
       ? (OFFDIR.dir ? `<div>📁 <b>${esc(OFFDIR.name)}</b> · mp3 ${OFFDIR.items.length}곡 (같은 이름의 json 이 있는 곡만 가사·싱크)</div>` : "")
@@ -366,6 +457,7 @@ function renderList() {
   const n = PL.early && !guestPl && !pq ? Math.max(view.length, PL.savedN) : view.length;  // 요약본 up: the whole saved list's count
   // LOCAL YouTube list: its name above '영상 n개' (user request 2026-11-23)
   const plName = !guestPl && !ONLINE && OFFSRC === "yt" && OFFYT.list ? `<span class="plname" title="${esc(OFFYT.title)}">${esc(OFFYT.title)}</span>` : "";
+  if (!guestPl && !ONLINE && OFFSRC === "yt" && OFFYT.albums) view = albumView(view);  // after the count: headers aren't songs
   $("libInfo").innerHTML = `${plName}<span class="lbl">${lbl}</span><span class="cnt">${total ? `<span class="tot">${total.toLocaleString()} / </span>` : ""}<b>${n.toLocaleString()}</b>${unit}</span>`;
   renderPlFilter();
   $("btnPlClear").hidden = !ONLINE || !!guestPl;
@@ -412,6 +504,8 @@ function badgesHtml(it) {
   // user request 2026-11-22, the same rule for every song: gray 가사X · 싱크X (no lyrics = both) · colored 파트분리 · the %
   // (노래방 모드: the number) · 가사다름 (stale) · 재싱크 필요 (resync) · 싱크 실패 (red); plain lyrics and 직접 싱크 show nothing
   // the state as the server sent it, the same values the filters read (song_filter.js songLy · songSyncState)
+  // a YouTube playlist's video (no lyrics ever): only 시청완료 (user request 2026-11-23)
+  if (it.offyt) return `<div class="bl">${SEEN.has(it.name.slice(3)) && !isChannelList() ? '<span class="b ok" title="이 브라우저에서 끝까지 본 영상">시청완료</span>' : ""}</div>`;
   const bs = [], ss = [], st = songSyncState(it);
   if (songLy(it) === "parts") bs.push('<span class="b src" title="보컬별로 파트가 나뉜 가사">파트분리</span>');
   else if (!songHasLyr(it)) bs.push('<span class="b" title="가사가 없음">가사X</span>');
@@ -422,7 +516,27 @@ function badgesHtml(it) {
   ss.push(pctHtml(it));
   return `<div class="bl">${bs.join("")}</div><div class="bl">${ss.join("")}</div>`;
 }
+/* 앨범별 접기 (user request 2026-11-23): a channel's 발표곡 list gets one header row per album (same height as a song row —
+   the list draws only the rows in sight); a click on it folds / unfolds the album (kept in this browser: offyt.fold) */
+function albumView(items) {
+  const n = {}, out = [];
+  for (const it of items) n[it.alb] = (n[it.alb] || 0) + 1;
+  let last;
+  for (const it of items) {
+    const a = OFFYT.albums[it.alb] || {};
+    if (it.alb !== last) { last = it.alb; out.push({hdr: true, key: a.list, title: a.title || "", n: n[it.alb]}); }
+    if (!ALB_FOLD.has(a.list)) out.push(it);
+  }
+  return out;
+}
+function foldAlbum(key, fold = !ALB_FOLD.has(key)) {
+  if (fold) ALB_FOLD.add(key); else ALB_FOLD.delete(key);
+  store.set("offyt.fold", [...ALB_FOLD]);
+  renderList();
+}
 function itemHtml(it, i) {
+  if (it.hdr) return `<div class="item albhdr${ALB_FOLD.has(it.key) ? " fold" : ""}" data-i="${i}" title="누르면 이 앨범 접기 / 펴기">`
+    + `<span class="thumb">${ALB_FOLD.has(it.key) ? "▸" : "▾"}</span><div class="meta"><div class="t">${esc(it.title)}</div><div class="a">곡 ${it.n}개</div></div></div>`;
   const pl = ONLINE && !guestPl;
   const hl = SHELL.qView && SHELL.qView() ? SHELL.qView().now : cur;  // OPEN CHANNEL: the mark stays on my song from before
   return `<div class="item${hl && keyOf(hl) === keyOf(it) ? " cur" : ""}${typeof admRowCls === "function" ? admRowCls(it) : ""}" data-i="${i}"${pl ? ' draggable="true"' : ""}>
@@ -438,7 +552,9 @@ const detailHtml = titleSubHtml;  // 재생 화면 제목줄: 기본 이름 옆 
 /* ◎ 재생 중인 곡으로 (곡이 넘어가도 목록은 저절로 움직이지 않음) */
 $("btnFindCur").onclick = () => {
   const now = (SHELL.qView && SHELL.qView() ? SHELL.qView().now : SHELL.now) || cur; if (!now) return;  // OPEN CHANNEL: my song from before
-  const i = view.findIndex(it => keyOf(it) === keyOf(now));
+  if (OFFYT.albums && now.offyt && now.alb != null && OFFYT.albums[now.alb] && ALB_FOLD.has(OFFYT.albums[now.alb].list))
+    foldAlbum(OFFYT.albums[now.alb].list, false);  // its album is folded: open it
+  const i = view.findIndex(it => !it.hdr && keyOf(it) === keyOf(now));
   if (i < 0) { uiAlert("지금 재생 중인 곡이 재생목록에 없습니다 (검색에서 바로 튼 곡)."); return; }
   const L = $("list");
   L.scrollTop = i * ROW_H - (L.clientHeight - ROW_H) / 2;
@@ -449,6 +565,7 @@ $("btnFindCur").onclick = () => {
 $("list").addEventListener("click", e => {
   const el = e.target.closest(".item"); if (!el || guestPl) return;  // 손님: 방장 재생목록은 보기만
   const i = +el.dataset.i;
+  if (view[i] && view[i].hdr) return foldAlbum(view[i].key);
   play(view[i], true, ONLINE ? "" : "pick");  // playlist song: ⏭ goes on from it
 });
 /* drag a playlist row to reorder (user request 2026-11-14: the playlist moved to the side panel) */
@@ -476,6 +593,7 @@ function songContext(e, it, extra = []) {
 $("list").addEventListener("contextmenu", e => {
   const el = e.target.closest(".item"); if (!el) return;
   const i = +el.dataset.i, it = view[i];
+  if (!it || it.hdr) return e.preventDefault();
   // in a 같이듣기 room / OPEN CHANNEL: request the song (user request 2026-11-18 — playlist and offline rows alike)
   const req = typeof LT !== "undefined" && LT.role ? [{label: "신청곡으로 신청", fn: () => ltRequestFromMenu(it)}] : [];
   const adm = ONLINE && !guestPl && typeof admMenu === "function" ? admMenu(it) : [];  // 관리자: 선택 모드 (admin_tools.js)
