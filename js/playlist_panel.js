@@ -203,23 +203,22 @@ function ytListIds(list) {
   });
 }
 const ytOembed = url => fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(url)}`).then(r => r.ok ? r.json() : null).catch(() => null);
-async function loadYtList(input) {
+async function loadYtList(input, name = "") {  // name: shown instead of YouTube's (a channel's 라이브 / 발표곡)
   const m = String(input || "").match(/[?&]list=([\w-]+)/) || String(input || "").trim().match(/^((?:PL|OL|UU|FL|RD|LL)[\w-]{10,})$/);
   if (!m) return uiAlert("유튜브 재생목록 주소를 넣어 주세요 (…playlist?list=… 또는 …&list=…).");
   OFFYT.busy = true; renderOffBar();
   try {
     const list = m[1], ids = [...new Set(await ytListIds(list))];
     if (!REC.lists) await loadRec();
-    const rec = REC.lists.find(r => r.list === list);
+    const rec = recFor(list);
     const info = await ytOembed(`https://www.youtube.com/playlist?list=${list}`);
     const vids = ids.map(id => ({id}));
     for (let i = 0; i < vids.length; i += 6)
       await Promise.all(vids.slice(i, i + 6).map(async v => { const o = await ytOembed(`https://www.youtube.com/watch?v=${v.id}`); if (o) { v.title = o.title; v.author = o.author_name; } }));
-    Object.assign(OFFYT, {url: String(input).trim(), list, title: info && info.title || "유튜브 재생목록", vids, opt: ytOpt(rec)});
+    Object.assign(OFFYT, {url: String(input).trim(), list, title: name || info && info.title || "유튜브 재생목록", vids, opt: ytOpt(rec)});
     OFFYT.items = vids.map(ytItem);
     saveOffyt();
     const thumb = info && info.thumbnail_url || (vids[0] ? `https://i.ytimg.com/vi/${vids[0].id}/mqdefault.jpg` : "");
-    if (!rec) histAdd({list, url: `https://www.youtube.com/playlist?list=${list}`, title: OFFYT.title, n: vids.length, thumb});
     // the server sees which playlists users load (Manage › 추천 재생목록, user request 2026-11-22) — never blocks playing;
     // a recommended one isn't recorded (user request 2026-11-23)
     if (!rec) LOCAL.saveUserPlaylist({list, url: `https://www.youtube.com/playlist?list=${list}`, title: OFFYT.title, n: vids.length, thumb}).catch(() => {});
@@ -260,59 +259,58 @@ $("dirList").addEventListener("click", async e => {
   $("addDlg").close();
 });
 /* 곡 추가 창 (user request 2026-11-22): the source picks below + 추천 재생목록 — YouTube playlists registered in
-   Manage › 추천 재생목록 (Server/data/rec_playlists.json {lists: [{list, url, title, thumb}]}); a card loads that playlist */
+   Manage › 추천 재생목록 (Server/data/rec_playlists.json {lists: [{list, url, title, thumb}]}); a row loads that playlist.
+   2026-11-23 (user request): the two sources work like tabs — 유튜브 재생목록 shows only the address box + 추천 재생목록 as
+   rows like 곡 검색's (page numbers under them), mp3 폴더 only the folder picks; 이전에 추가한 재생목록 is gone */
 const REC = {lists: null, page: 0};
-const REC_PAGE = 12;  // cards per page, page numbers under them (user request 2026-11-23)
+const REC_PAGE = 20;  // rows per page
 async function loadRec() {
   try { const d = LOCAL.ready ? await LOCAL.readJson(`${LOCAL.data}rec_playlists.json`, null) : null; REC.lists = (d && d.lists) || []; }
   catch (e) { REC.lists = []; }
   // options changed in Manage meanwhile → the loaded recommended playlist takes them at once
-  const r = OFFYT.list && REC.lists.find(x => x.list === OFFYT.list);
+  const r = OFFYT.list && recFor(OFFYT.list);
   if (r && JSON.stringify(ytOpt(r)) !== JSON.stringify(OFFYT.opt)) {
     OFFYT.opt = ytOpt(r); saveOffyt();
     if (OFFYT.items.length) { OFFYT.items = OFFYT.vids.map(ytItem); if (!ONLINE && OFFSRC === "yt") renderList(); }
   }
   renderRec();
 }
-/* 이전에 추가한 재생목록 (user request 2026-11-22): the playlists this browser loaded, newest first — browser storage only
-   (store key offyt.hist, never sent anywhere); ✕ takes one out */
-const HIST_MAX = 30;
-const histGet = () => store.get("offyt.hist", []) || [];
-// a recommended playlist is never kept there (user request 2026-11-23) — older entries are just not shown
-const histShown = () => histGet().filter(x => !(REC.lists || []).some(r => r.list === x.list));
-function histAdd(r) {
-  store.set("offyt.hist", [{...r, at: nowText()}, ...histGet().filter(x => x.list !== r.list)].slice(0, HIST_MAX));
-}
-const recCard = (r, i, del) => `<button type="button" class="reccard${OFFSRC === "yt" && OFFYT.list === r.list ? " on" : ""}" data-i="${i}" title="이 재생목록 불러오기">`
-  + `<span class="rthumb">${r.thumb ? `<img src="${esc(r.thumb)}" loading="lazy" alt="">` : "▶"}<i>${r.n ? `영상 ${r.n}개` : "▶ 재생목록"}</i>`
-  + (del ? '<b class="rdel" data-del="1" title="기록에서 빼기">✕</b>' : "") + `</span>`
-  + `<span class="rt">${esc(r.title || r.list)}</span>${del && r.at ? `<span class="rat">${esc(r.at.slice(0, 16))}</span>` : ""}</button>`;
+/* 채널 (user request 2026-11-23): a channel entry {kind: "channel", list: UC…} plays its 라이브 tab (playlist UULV…) or its
+   동영상 tab = 발표곡 (UULF…); both take the channel's title regex · skips */
+const CH_TABS = {LV: "라이브", LF: "발표곡"};
+const chList = (r, t) => "UU" + t + r.list.slice(2);
+const recFor = list => (REC.lists || []).find(r => r.kind === "channel" ? Object.keys(CH_TABS).some(t => chList(r, t) === list) : r.list === list);
+const recRow = (r, i) => {
+  const ch = r.kind === "channel", now = t => OFFSRC === "yt" && OFFYT.list === (ch ? chList(r, t) : r.list);
+  const btn = t => `<button type="button" data-t="${t || ""}" class="${now(t) ? "" : "primary"}">${t ? CH_TABS[t] : "불러오기"}${now(t) ? " · 듣는 중" : ""}</button>`;
+  const on = ch ? Object.keys(CH_TABS).some(now) : now();
+  return `<div class="sitem recrow${on ? " on" : ""}${ch ? " ch" : ""}" data-i="${i}" title="${ch ? "채널의 라이브 또는 발표곡 불러오기" : "이 재생목록 불러오기"}">`
+    + `<span class="rthumb">${r.thumb ? `<img src="${esc(r.thumb)}" loading="lazy" alt="">` : "▶"}</span>`
+    + `<div class="meta"><div class="t">${esc(r.title || r.list)}</div><div class="a">${ch ? "유튜브 채널" : "유튜브 재생목록"}${r.n ? ` · 영상 ${r.n}개` : ""}</div></div>`
+    + (ch ? `<span class="sacts">${btn("LV")}${btn("LF")}</span>` : btn("")) + `</div>`;
+};
 function renderRec() {
-  const L = REC.lists, H = histShown(), pages = L ? Math.ceil(L.length / REC_PAGE) : 0;
+  const L = REC.lists, pages = L ? Math.ceil(L.length / REC_PAGE) : 0;
   REC.page = Math.min(REC.page, Math.max(0, pages - 1));
   $("recInfo").textContent = L && L.length ? `${L.length}개` : "";
   $("recList").innerHTML = !L ? '<div class="empty">불러오는 중…</div>' : !L.length ? '<div class="empty">아직 추천 재생목록이 없습니다.</div>'
-    : L.slice(REC.page * REC_PAGE, (REC.page + 1) * REC_PAGE).map((r, i) => recCard(r, REC.page * REC_PAGE + i, false)).join("");
+    : L.slice(REC.page * REC_PAGE, (REC.page + 1) * REC_PAGE).map((r, i) => recRow(r, REC.page * REC_PAGE + i)).join("");
   $("recPager").innerHTML = pages > 1 ? `<button type="button" data-p="${REC.page - 1}"${REC.page ? "" : " disabled"} title="이전 페이지">‹</button>`
     + Array.from({length: pages}, (_, p) => `<button type="button" data-p="${p}" class="${p === REC.page ? "on" : ""}">${p + 1}</button>`).join("")
     + `<button type="button" data-p="${REC.page + 1}"${REC.page < pages - 1 ? "" : " disabled"} title="다음 페이지">›</button>` : "";
-  $("histInfo").textContent = H.length ? `${H.length}개` : "";
-  $("histList").innerHTML = H.length ? H.map((r, i) => recCard(r, i, true)).join("") : '<div class="empty">아직 불러온 재생목록이 없습니다.</div>';
 }
 async function recPick(e, lists) {
-  const c = e.target.closest(".reccard"); if (!c) return;
-  const r = lists[+c.dataset.i];
-  if (e.target.closest("[data-del]")) {
-    store.set("offyt.hist", histGet().filter(x => x.list !== r.list));
-    return renderRec();
-  }
+  const c = e.target.closest(".recrow"); if (!c) return;
+  const r = lists[+c.dataset.i], b = e.target.closest("button[data-t]");
+  // a channel: its 라이브 or 발표곡 button (the row itself = 발표곡)
+  const t = r.kind === "channel" ? (b && b.dataset.t) || "LF" : "", list = t ? chList(r, t) : r.list;
   if (OFFSRC !== "yt") { OFFSRC = "yt"; store.set("off.src", "yt"); }
-  await loadYtList(r.url || `https://www.youtube.com/playlist?list=${r.list}`);
-  if (OFFYT.list === r.list) $("addDlg").close();
+  await loadYtList(t ? `https://www.youtube.com/playlist?list=${list}` : r.url || `https://www.youtube.com/playlist?list=${list}`,
+    t ? `${r.title} · ${CH_TABS[t]}` : "");
+  if (OFFYT.list === list) $("addDlg").close();
 }
 $("recList").addEventListener("click", e => recPick(e, REC.lists));
 $("recPager").addEventListener("click", e => { const b = e.target.closest("button[data-p]"); if (b && !b.disabled) { REC.page = +b.dataset.p; renderRec(); } });
-$("histList").addEventListener("click", e => recPick(e, histShown()));
 function openAddSongs() {
   renderOffBar();
   $("addDlg").showModal();
@@ -329,11 +327,12 @@ function renderOffBar() {
   if (ONLINE) { bar.innerHTML = ""; return; }
   if (OFFSRC === "yt" && !OFFYT.items.length && OFFYT.vids.length) OFFYT.items = OFFYT.vids.map(ytItem);
   const tab = (src, label) => `<button data-src="${src}" class="${OFFSRC === src ? "on" : ""}">${label}</button>`;
+  $("recW").hidden = OFFSRC !== "yt"; $("dirW").hidden = OFFSRC !== "dir";  // tabs (user request 2026-11-23)
   bar.innerHTML = `<div class="offnote"><div class="row offsrc">${tab("dir", "📁 mp3 폴더")}${tab("yt", "▶ 유튜브 재생목록")}</div>`
     + (OFFSRC === "dir"
       ? (OFFDIR.dir ? `<div>📁 <b>${esc(OFFDIR.name)}</b> · mp3 ${OFFDIR.items.length}곡 (같은 이름의 json 이 있는 곡만 가사·싱크)</div>` : "")
         + `<div class="row"><button class="primary" id="offDirPick">📁 폴더 추가</button><span class="muted">고른 폴더의 mp3 전체 (하위 폴더 포함)</span></div>`
-      : `<div class="row offyt"><input type="text" id="offYtUrl" placeholder="유튜브 재생목록 주소 (…list=…)" value="${esc(OFFYT.url)}" autocomplete="off" spellcheck="false">`
+      : `<div class="row offyt"><input type="text" id="offYtUrl" placeholder="유튜브 재생목록 주소 (…list=…)" value="" autocomplete="off" spellcheck="false">`
         + `<button class="primary" id="offYtGo"${OFFYT.busy ? " disabled" : ""}>${OFFYT.busy ? "불러오는 중…" : "불러오기"}</button></div>`
         + (OFFYT.list ? `<div>▶ <b>${esc(OFFYT.title)}</b> · 영상 ${OFFYT.items.length}개 (소리는 인터넷으로 — 가사·싱크는 없음)</div>` : ""))
     + `</div>`;
