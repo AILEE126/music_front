@@ -261,7 +261,8 @@ $("dirList").addEventListener("click", async e => {
 });
 /* 곡 추가 창 (user request 2026-11-22): the source picks below + 추천 재생목록 — YouTube playlists registered in
    Manage › 추천 재생목록 (Server/data/rec_playlists.json {lists: [{list, url, title, thumb}]}); a card loads that playlist */
-const REC = {lists: null};
+const REC = {lists: null, page: 0};
+const REC_PAGE = 12;  // cards per page, page numbers under them (user request 2026-11-23)
 async function loadRec() {
   try { const d = LOCAL.ready ? await LOCAL.readJson(`${LOCAL.data}rec_playlists.json`, null) : null; REC.lists = (d && d.lists) || []; }
   catch (e) { REC.lists = []; }
@@ -287,10 +288,14 @@ const recCard = (r, i, del) => `<button type="button" class="reccard${OFFSRC ===
   + (del ? '<b class="rdel" data-del="1" title="기록에서 빼기">✕</b>' : "") + `</span>`
   + `<span class="rt">${esc(r.title || r.list)}</span>${del && r.at ? `<span class="rat">${esc(r.at.slice(0, 16))}</span>` : ""}</button>`;
 function renderRec() {
-  const L = REC.lists, H = histShown();
+  const L = REC.lists, H = histShown(), pages = L ? Math.ceil(L.length / REC_PAGE) : 0;
+  REC.page = Math.min(REC.page, Math.max(0, pages - 1));
   $("recInfo").textContent = L && L.length ? `${L.length}개` : "";
   $("recList").innerHTML = !L ? '<div class="empty">불러오는 중…</div>' : !L.length ? '<div class="empty">아직 추천 재생목록이 없습니다.</div>'
-    : L.map((r, i) => recCard(r, i, false)).join("");
+    : L.slice(REC.page * REC_PAGE, (REC.page + 1) * REC_PAGE).map((r, i) => recCard(r, REC.page * REC_PAGE + i, false)).join("");
+  $("recPager").innerHTML = pages > 1 ? `<button type="button" data-p="${REC.page - 1}"${REC.page ? "" : " disabled"} title="이전 페이지">‹</button>`
+    + Array.from({length: pages}, (_, p) => `<button type="button" data-p="${p}" class="${p === REC.page ? "on" : ""}">${p + 1}</button>`).join("")
+    + `<button type="button" data-p="${REC.page + 1}"${REC.page < pages - 1 ? "" : " disabled"} title="다음 페이지">›</button>` : "";
   $("histInfo").textContent = H.length ? `${H.length}개` : "";
   $("histList").innerHTML = H.length ? H.map((r, i) => recCard(r, i, true)).join("") : '<div class="empty">아직 불러온 재생목록이 없습니다.</div>';
 }
@@ -306,6 +311,7 @@ async function recPick(e, lists) {
   if (OFFYT.list === r.list) $("addDlg").close();
 }
 $("recList").addEventListener("click", e => recPick(e, REC.lists));
+$("recPager").addEventListener("click", e => { const b = e.target.closest("button[data-p]"); if (b && !b.disabled) { REC.page = +b.dataset.p; renderRec(); } });
 $("histList").addEventListener("click", e => recPick(e, histShown()));
 function openAddSongs() {
   renderOffBar();
