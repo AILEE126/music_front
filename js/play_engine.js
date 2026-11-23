@@ -844,9 +844,34 @@ function makePlayer(el) {
   // user request: no YouTube/Niconico buttons on hover — a clear layer over the video takes the mouse; click = play/pause
   const shield = document.createElement("div");
   shield.className = "vshield";
-  shield.title = "누르면 재생 / 일시정지";
-  shield.addEventListener("click", () => P.toggle());
+  shield.title = "누르면 재생 / 일시정지 · 왼쪽 / 오른쪽 두 번 누르면 10초 뒤로 / 앞으로";
+  // like YouTube (user request 2026-11-23): a double click / tap on the left / right half = 10 s back / on — so a single
+  // click waits a moment before play / pause
+  let tap = null;
+  const jump = d => {
+    const t = audio.currentTime + d, dur = audio.duration;
+    audio.currentTime = Math.max(0, dur > 0 ? Math.min(t, dur - 0.5) : t);
+    const f = document.createElement("div");
+    f.className = "vjump " + (d < 0 ? "l" : "r"); f.textContent = d < 0 ? "« 10초" : "10초 »";
+    host.appendChild(f); setTimeout(() => f.remove(), 600);
+  };
+  shield.addEventListener("click", e => {
+    const left = e.clientX - host.getBoundingClientRect().left < host.getBoundingClientRect().width / 2;
+    if (tap && tap.left === left) { clearTimeout(tap.t); tap = null; return jump(left ? -10 : 10); }
+    if (tap) clearTimeout(tap.t);
+    tap = {left, t: setTimeout(() => { tap = null; P.toggle(); }, 250)};
+  });
   host.appendChild(shield);
+  // 전체화면 (user request 2026-11-23): bottom right while the mouse is over the video (a touch shows it a while)
+  const fsBtn = document.createElement("button");
+  fsBtn.type = "button"; fsBtn.className = "vfs"; fsBtn.title = "전체화면 (다시 누르면 원래대로)"; fsBtn.setAttribute("aria-label", "전체화면");
+  fsBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+  fsBtn.hidden = !document.fullscreenEnabled;
+  fsBtn.addEventListener("click", () => document.fullscreenElement ? document.exitFullscreen() : host.requestFullscreen().catch(() => {}));
+  host.appendChild(fsBtn);
+  let actT = 0;
+  host.addEventListener("pointerdown", e => { if (e.pointerType !== "mouse") { host.dataset.act = 1; clearTimeout(actT); actT = setTimeout(() => delete host.dataset.act, 2500); } });
+  document.addEventListener("fullscreenchange", () => { host.toggleAttribute("data-fs", document.fullscreenElement === host); placed = ""; placeNow(); });
   // Bilibili volume warning (LocalMedia.biliGuide) over the video — 2026-11-19 (user request): a real warning box (yellow
   // and red) instead of the step-by-step guide; the steps live in ⚙ 설정 › 추가기능 (openSetupGuide). 나중에 = sound on.
   const bubble = document.createElement("div");
@@ -959,6 +984,7 @@ function makePlayer(el) {
     placed = cls + css; host.className = cls; host.style.cssText = css;
   }
   function placeNow() {
+    if (document.fullscreenElement === host) return;  // full screen: the browser sizes it
     let r = null;
     // 폰 화면이 꺼짐: 영상 칸을 1px 로 접음 → 작은 플레이어라 유튜브·니코니코가 낮은 화질로 받음 (user request 2026-11-15, battery)
     if (APP.screenOff) return setHost("folded");

@@ -200,6 +200,14 @@ button.onoff.on .lb.on{color:var(--ok)}
 #streamHost.folded{left:0;top:0;width:1px;height:1px;opacity:.01;pointer-events:none}
 #streamHost iframe{display:block;width:100%;height:100%;border:0}
 #streamHost .vshield{position:absolute;inset:0;z-index:2;cursor:pointer}  /* over the video: hides the sites' hover buttons, click = play/pause */
+#streamHost .vfs{position:absolute;right:8px;bottom:8px;z-index:3;width:38px;height:38px;padding:7px;border:0;border-radius:8px;background:rgba(0,0,0,.55);color:#fff;cursor:pointer;opacity:0;transition:opacity .2s}
+#streamHost .vfs[hidden]{display:none}
+#streamHost:hover .vfs,#streamHost[data-act] .vfs,#streamHost[data-fs] .vfs{opacity:1}  /* setHost replaces the class */
+#streamHost .vfs svg{width:100%;height:100%;display:block}
+#streamHost .vjump{position:absolute;top:50%;z-index:3;transform:translateY(-50%);padding:10px 16px;border-radius:24px;background:rgba(0,0,0,.6);color:#fff;font-weight:700;pointer-events:none;animation:vjump .6s ease-out forwards}
+#streamHost .vjump.l{left:12%}
+#streamHost .vjump.r{right:12%}
+@keyframes vjump{0%{opacity:0}20%{opacity:1}100%{opacity:0}}
 /* Bilibili volume guide (play_engine.js biliGuide): step guide card in the middle of the video (user request 2026-11-18:
    Tampermonkey script, copy buttons). Stands out like a focused button: thick dashed accent border + focus ring + slow pulse */
 #streamHost{container-type:size}

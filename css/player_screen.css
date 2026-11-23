@@ -348,6 +348,7 @@ html[data-theme=light] body:not(.simple) .ltmembers li.mc{color:color-mix(in srg
 body.lt-guest #list{cursor:not-allowed}
 body.lt-guest .vshield{pointer-events:none}
 body.lt-guest #streamHost{pointer-events:none}
+body.lt-guest #streamHost .vfs{pointer-events:auto}  /* 전체화면 works for guests too */
 body.lt-guest #streamHost:has(.vguide:not([hidden])){pointer-events:auto}  /* Bilibili volume guide: its buttons must be reachable */
 /* OPEN CHANNEL (user request 2026-11-20): every button of the play bar but volume · seek, and the phone's
    mini bar, are off (싱크 stays on — it asks to leave first, lyrics_view.js) — struck through with one straight line, buttons side by side share one unbroken line (::before — .ib.mode.on
