@@ -10,18 +10,19 @@ async function play(it, autoplay = true, how = "pick") {  // how '': 재생 목�
   stopEdit();
   SHELL.load(it, autoplay, how);  // 곡이 바뀌면 재생기가 알려 줌 → showSong
 }
-/* ▶ 처음부터: 재생목록(오프라인은 mp3 폴더의 곡)을 처음 곡부터 (무작위면 섞은 첫 곡) */
-async function playView() {
+/* ▶ 처음부터: 재생목록(오프라인은 mp3 폴더의 곡)을 처음 곡부터 (무작위면 섞은 첫 곡)
+   start: a playlist row clicked — same as ▶ 처음부터, only starting at that song (user request 2026-11-23) */
+async function playView(start) {
   // right after opening, the saved list not read yet (no 요약본): wait for it with the loading notice (user request 2026-11-19)
   if (ONLINE && !guestPl && !PL.restored && !view.length) await loadWait(PL.whenRestored());
-  const list = view.filter(canPlay);
+  const list = viewSongs.filter(canPlay);  // folded albums' songs too
   if (!list.length) return ONLINE ? openSearch() : uiAlert("재생할 곡이 없습니다.");
   if (editing && !await uiConfirm("편집하던 싱크·파트·가사를 저장하지 않고 다른 곡으로 넘어갈까요?")) return;
   stopEdit();
   if (!listFilter) SHELL.setQueue(list);  // filtered view: keep the whole playlist (⏭ follows the filter — SHELL.playFilter)
-  SHELL.load(SHELL.shuffle ? list[Math.floor(Math.random() * list.length)] : list[0], true);
+  SHELL.load(start || (SHELL.shuffle ? list[Math.floor(Math.random() * list.length)] : list[0]), true);
 }
-$("btnPlayView").onclick = playView;
+$("btnPlayView").onclick = () => playView();
 /* 기억해 둔 재생목록을 되살림 (화면을 새로 열었을 때) — songs put in before it was read stay, after the saved ones */
 async function restoreQueue() {
   if (!ONLINE && SHELL.queue.length) { PL.restored = true; PL.restoredOk(); return; }  // the mp3 folder's list is up — the playlist comes back online

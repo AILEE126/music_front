@@ -443,8 +443,9 @@ var guestPl = null;
    Only the view: the playlist itself keeps every song (row index → queue index through plIdx) */
 var listFilter = null;
 const plIdx = i => SHELL.queue.indexOf(view[i]);
-/* viewAll: the list before the 재생목록에서 찾기 box (what 같이듣기 sends to guests) · view: what the rows show */
-var viewAll = [];
+/* viewAll: the list before the 재생목록에서 찾기 box (what 같이듣기 sends to guests) · view: what the rows show
+   · viewSongs: view without album headers, folded albums' songs in too (▶ 처음부터 plays them) */
+var viewAll = [], viewSongs = [];
 function renderList() {
   view = guestPl ? guestPl.slice() : ONLINE ? SHELL.queue.slice() : offItems().slice();
   if (listFilter && ONLINE && !guestPl) view = view.filter(listFilter.fn);
@@ -458,6 +459,7 @@ function renderList() {
   const n = PL.early && !guestPl && !pq ? Math.max(view.length, PL.savedN) : view.length;  // 요약본 up: the whole saved list's count
   // LOCAL YouTube list: its name above '영상 n개' (user request 2026-11-23)
   const plName = !guestPl && !ONLINE && OFFSRC === "yt" && OFFYT.list ? `<span class="plname" title="${esc(OFFYT.title)}">${esc(OFFYT.title)}</span>` : "";
+  viewSongs = view;
   if (!guestPl && !ONLINE && OFFSRC === "yt" && OFFYT.albums) view = albumView(view);  // after the count: headers aren't songs
   $("libInfo").innerHTML = `${plName}<span class="lbl">${lbl}</span><span class="cnt">${total ? `<span class="tot">${total.toLocaleString()} / </span>` : ""}<b>${n.toLocaleString()}</b>${unit}</span>`;
   renderPlFilter();
@@ -589,7 +591,7 @@ $("list").addEventListener("click", e => {
   const el = e.target.closest(".item"); if (!el || guestPl) return;  // 손님: 방장 재생목록은 보기만
   const i = +el.dataset.i;
   if (view[i] && view[i].hdr) return foldAlbum(view[i].key);
-  play(view[i], true, ONLINE ? "" : "pick");  // playlist song: ⏭ goes on from it
+  if (view[i]) playView(view[i]);  // like ▶ 처음부터, starting at this song (⏭ goes on from it)
 });
 /* drag a playlist row to reorder (user request 2026-11-14: the playlist moved to the side panel) */
 let dragFrom = -1;
