@@ -3,21 +3,20 @@
 /* ================= 원곡 영상 칸: 재생 중인 온라인 곡의 중계 플레이어(니코니코·유튜브)가 곧 영상 =================
    재생기(play_engine.js)가 중계 플레이어를 이 칸 위에 겹쳐 보임 (placeVideo). 영상을 숨기면 칸만 접음 — 소리는 그대로 */
 const VID = {on: store.get("video", false)};
-/* 간단 표시 (이름 밑 '기본 | 간단' 스위치): 재생목록 썸네일 · 오른쪽 위 썸네일을 숨기고 영상도 접음 (영상 켜기 설정은 그대로 — 간단 표시를 끄면 다시 보임)
+/* 간단 표시 (이름 밑 '기본 | 간단' 스위치): 재생목록 썸네일 · 오른쪽 위 썸네일을 숨기고, 켜는 순간 영상도 접음
+   (user request 2026-11-24: 잠그지 않음 — 간단 중에도 영상 버튼으로 다시 펼 수 있고, 그 뒤로는 고른 대로 둠)
    · 가사·오버레이도 보컬 색 없이 일반 글자색 (파트 표시는 그대로 — player_screen.css · play_engine.js sendNow) */
 let SIMPLE = !!store.get("simple", false);
 function applySimple() {
   document.body.classList.toggle("simple", SIMPLE);
   $("btnSimple").classList.toggle("on", SIMPLE); $("btnSimple").setAttribute("aria-pressed", SIMPLE);
-  $("btnVideo").disabled = SIMPLE;
   // 간단 (user request 2026-11-15): 노래방 · 노래방 모드 buttons off and icon only (CSS) — a mode left on is turned off · the filter folds
   for (const b of [$("btnKara"), $("btnKaraMode"), document.querySelector('#mNav [data-nav="kara"]')]) if (b) b.disabled = SIMPLE;
   if (SIMPLE && typeof KARA !== "undefined") { if (KARA.mode) KARA.setMode(false); if ($("karaDlg").open) $("karaDlg").close(); }
   if (SIMPLE) plfFold = true;  // 간단 on folds it; 간단 off leaves it as it is
   renderPlFilter();
-  $("btnVideo").title = SIMPLE ? "간단 표시 중에는 영상을 접습니다 (왼쪽 위 '간단'을 끄면 보임)" : "원곡 영상 보기 · 숨기기 (인터넷 필요) · 끌면 영상 높이 조절";
 }
-$("btnSimple").onclick = () => { SIMPLE = !SIMPLE; store.set("simple", SIMPLE); applySimple(); showVideo(); renderRows(true); SHELL.notify(); };  // 썸네일이 빠져 줄 높이가 바뀜 → 다시 잼 · 오버레이 글자색도 바로
+$("btnSimple").onclick = () => { SIMPLE = !SIMPLE; store.set("simple", SIMPLE); if (SIMPLE) { VID.on = false; store.set("video", false); } applySimple(); showVideo(); renderRows(true); SHELL.notify(); };  // 썸네일이 빠져 줄 높이가 바뀜 → 다시 잼 · 오버레이 글자색도 바로
 applySimple();
 /* 화면 밝기 (제목 줄 오른쪽 끝 버튼): html[data-theme] 로 색 토큰을 바꿈 — 기억함 (첫 그림 전 적용은 player_screen.html <head>).
    4 steps (user request 2026-11-19): light · dim (between light and dark) · dark (the default, no attribute) · black; a click
@@ -36,8 +35,8 @@ $("btnTheme").onclick = () => {
 };
 applyTheme(store.get("theme", "dark"));
 function showVideo() {
-  const guide = audio.biliGuide;  // Bilibili volume guide: the video shows even when folded / 간단 (play_engine.js)
-  const on = (VID.on || guide) && !!cur && (!SIMPLE || guide), playing = !!cur && !!SHELL.now && keyOf(SHELL.now) === keyOf(cur);
+  const guide = audio.biliGuide;  // Bilibili volume guide: the video shows even when folded (play_engine.js)
+  const on = (VID.on || guide) && !!cur, playing = !!cur && !!SHELL.now && keyOf(SHELL.now) === keyOf(cur);
   const live = on && playing && audio.bridged && !audio.error;
   $("btnVideo").classList.toggle("on", VID.on);
   $("videoBox").hidden = !on;
@@ -64,7 +63,7 @@ const VID_F = f => { f = Math.min(.85, Math.max(.1, f)); document.documentElemen
   const tab = $("btnVideo");
   let drag = null;
   tab.addEventListener("pointerdown", e => {
-    if (SIMPLE || e.button !== 0) return;
+    if (e.button !== 0) return;
     drag = {y: e.clientY, h: $("videoFrame").getBoundingClientRect().height, moved: false};
     tab.setPointerCapture(e.pointerId); e.preventDefault();
   });
@@ -84,7 +83,7 @@ const VID_F = f => { f = Math.min(.85, Math.max(.1, f)); document.documentElemen
   };
   tab.addEventListener("pointerup", e => end(e, false));
   tab.addEventListener("pointercancel", e => end(e, true));
-  tab.addEventListener("keydown", e => { if (e.key === "Enter" && !SIMPLE) { e.preventDefault(); VID.on = !VID.on; store.set("video", VID.on); showVideo(); } });
+  tab.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); VID.on = !VID.on; store.set("video", VID.on); showVideo(); } });
 }
 $("btnCmt").onclick = () => { audio.comments = !audio.comments; showVideo(); };
 /* SKIP (user request 2026-11-23, LOCAL only): the recommended playlists' front / end skip on or off — play_engine skipOf */
