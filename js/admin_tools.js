@@ -156,7 +156,7 @@ async function admApplySync() {
     const pj = await LOCAL.readJson(LOCAL.pendingPath(it), null).catch(() => null);
     const rid = pj && pj.pending && pj.pending.report;
     // a version sharing another's lyrics: applied only on the manage screen (user request 2026-11-23 — admins apply on the original)
-    const doc = rid && it.lyrics ? await LOCAL.readJson(`${LOCAL.out}/db/lyrics/${it.vocadb}.json`, null).catch(() => null) : null;
+    const doc = rid && it.lyrics ? await LOCAL.lyricsDoc(it).catch(() => null) : null;
     if (rid && !(doc && doc.shared)) { rids.push(String(rid)); songs.push({vocadb: String(it.vocadb), title: it.title || it.name || ""}); }
   });
   const skip = ADM.sel.size - rids.length;

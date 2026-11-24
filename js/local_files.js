@@ -357,7 +357,7 @@ const LOCAL = {
      싱크: 그 파일 안의 싱크 (가사와 맞을 때만) — 플레이어에서 고친 싱크가 확인을 기다리면 그것 */
   async lyrics(site, name) {
     const it = this.item(site, name);
-    let d = it.lyrics && it.vocadb ? await this.readJson(`${this.out}/db/lyrics/${it.vocadb}.json`, null) : null, vErr = "";
+    let d = it.lyrics && it.vocadb ? await this.lyricsDoc(it) : null, vErr = "";
     if (d) d = {site, name, title: it.title, artist: it.artist, sync_fail: null, lyrics_file: "", link: null, ...d};
     else if (it.vocadb) {
       const v = await VDB.lyricsDoc(it.vocadb).catch(e => { vErr = e.message; return null; });  // nothing of ours → VocaDB's own lyrics (API)
@@ -381,6 +381,36 @@ const LOCAL = {
       }
     }
     return d;
+  },
+  /* our lyrics doc of a song (export/db/lyrics/<id>.json) → the whole doc, null when there is none.
+     가사·싱크 나눔 (user 2026-11-24: "공유받으면 원본 파일을 가져다가 보여주면 된다" — the original's lyrics are not copied into
+     each version): a version has no file — its list cell names the donor (it.lfrom) and the donor's file is shown, in
+     this version's singer colors where they differ (it.lvc: lines with no part · it.lvp: {part name: colors}, a nameless
+     합창). Same rule as music_backend
+     table_export._linked. A version with something of its own (a sync edited on it, its own 가사편집 · 파트분리) keeps a
+     file holding only what differs from the donor's (`over`: 1, table_export._doc_text) — laid over the donor's here. */
+  async lyricsDoc(it) {
+    const dir = `${this.out}/db/lyrics/`;
+    if (it.lfrom) {
+      const id = String(it.lfrom), base = await this.readJson(`${dir}${id}.json`, null);
+      if (!base || base.over || !Array.isArray(base.groups)) return null;
+      await VDB.ensure([+id]).catch(() => {});  // the donor's row: its title for '원곡 [제목] 에서 … 공유받습니다' (it.lft: the server's, when the list shows another name)
+      const o = VDB.itemById(id), vc = it.lvc, vp = it.lvp || {};
+      const plain = x => { const c = x.part ? vp[x.part.name] : vc; return c ? {...x, vc: c} : x; };
+      return {...base, vocadb: String(it.vocadb), shared: {id, title: it.lft || (o && o.def) || id, original: !!o && o.type === "Original", sync: !!base.sync},
+        groups: base.groups.map(g => g.cols ? {...plain(g), cols: g.cols.map(plain)} : plain(g))};
+    }
+    const d = await this.readJson(`${dir}${it.vocadb}.json`, null);
+    if (!d || !d.over) return d;
+    const base = d.shared && d.shared.id ? await this.readJson(`${dir}${d.shared.id}.json`, null) : null;
+    if (!base || base.over) return null;
+    const {over, vc, ...own} = d, doc = {...base, ...own};
+    // same lines in this version's singer colors: vc = one per group ({vc, cols} for a group sung at once) or {all}
+    if (vc) doc.groups = base.groups.map((g, i) => {
+      const x = Array.isArray(vc) ? vc[i] : vc.all;
+      return x && !Array.isArray(x) ? {...g, vc: x.vc, cols: (g.cols || []).map((c, j) => ({...c, vc: x.cols[j]}))} : {...g, vc: x};
+    });
+    return doc;
   },
   /* 가사·싱크 나눔 + 확인 대기 (user request 2026-11-23): a version that shares the donor's lyrics and has no sync of its own
      also plays the donor's waiting sync edit, not only its confirmed sync */
@@ -459,7 +489,7 @@ const LOCAL = {
       const v = await this.readJson(this.vsyncPath(it), null);
       return {sj: v && Array.isArray(v.times) ? v : null, pend: null};
     }
-    const d = await this.readJson(`${this.out}/db/lyrics/${it.vocadb}.json`, null);
+    const d = await this.lyricsDoc(it);
     const dp = await this.donorPending(d);  // the donor's waiting edit is what this version plays — edits start from it
     if (dp && Array.isArray(dp.times)) { const s = {...dp}; delete s.pending; return {sj: s, pend: null}; }
     return {sj: d && d.sync ? {...d.sync} : null, pend: null};
@@ -474,7 +504,7 @@ const LOCAL = {
     const path = this.pendingPath(it), lpath = `${this.out}/db/lyrics/${it.vocadb}.json`;
     await this.locked(path, async () => {
       const old = await this.readJson(path, null);
-      const doc = it.lyrics ? await this.readJson(lpath, null) : null;
+      const doc = it.lyrics ? await this.lyricsDoc(it) : null;  // a version (doc.shared) never gets here as an admin apply
       // 가사·싱크 나눔 (user request 2026-11-23): an admin applies a sync only on the donor (original) — on a version that
       // shares its lyrics the edit waits for 확인 like anyone's
       if (typeof isAdmin === "function" && isAdmin() && !(doc && doc.shared)) {
@@ -515,7 +545,7 @@ const LOCAL = {
     const it = this.item(d.site, d.name), lpath = `${this.out}/db/lyrics/${it.vocadb}.json`;
     let has = false;
     await this.locked(lpath, async () => {
-      const doc = it.lyrics && it.vocadb ? await this.readJson(lpath, null) : null;
+      const doc = it.lyrics && it.vocadb ? await this.lyricsDoc(it) : null;  // a version: written whole, the server makes it small again
       if (!doc || !Array.isArray(d.parts) || doc.groups.length !== d.parts.length)
         throw new Error("우리 가사가 있는 곡만 파트를 나눌 수 있습니다 (가사가 바뀌었으면 곡을 다시 열어 주세요).");
       doc.groups.forEach((g, i) => {
@@ -532,6 +562,8 @@ const LOCAL = {
         songs: [{vocadb: String(it.vocadb), title: it.title || it.name || ""}]}, null, 1) + "\n", who);
       await this.oursCell(it, o => {  // list badge 파트분리 — the server's cell (2026-11-22)
         const c = {...(o || {})};
+        // a version that showed its donor's file now has a file of its own (the server decides again when it applies the request)
+        delete c.from; delete c.vc; delete c.vp; delete c.ft;
         if (has) c.parts = 1; else delete c.parts;
         c.ly = has ? "parts" : "ours";
         return c;
@@ -547,7 +579,7 @@ const LOCAL = {
     if (!(typeof isAdmin === "function" && isAdmin())) throw new Error("관리자 토큰만 가사를 고칠 수 있습니다.");
     const it = this.item(d.site, d.name), lpath = `${this.out}/db/lyrics/${it.vocadb}.json`;
     await this.locked(lpath, async () => {
-      const doc = it.lyrics && it.vocadb ? await this.readJson(lpath, null) : null;
+      const doc = it.lyrics && it.vocadb ? await this.lyricsDoc(it) : null;  // a version: written whole, the server makes it small again
       const groups = (Array.isArray(d.groups) ? d.groups : []).map(cleanGroup).filter(Boolean);
       if (!doc || !groups.length) throw new Error("우리 가사가 있는 곡만 가사를 고칠 수 있습니다.");
       const was = await lyricsHash(doc.groups), now = await lyricsHash(groups);
@@ -563,6 +595,8 @@ const LOCAL = {
       const parted = groups.some(g => g.part || g.cols);
       await this.oursCell(it, o => {  // list badges — the server's cell (2026-11-22): new lyrics drop the sync
         const c = {...(o || {})};
+        // a version that showed its donor's file now has a file of its own (the server decides again when it applies the request)
+        delete c.from; delete c.vc; delete c.vp; delete c.ft;
         if (parted) c.parts = 1; else delete c.parts;
         c.ly = parted ? "parts" : "ours";
         if (was !== now) { delete c.method; delete c.score; c.sync = c.sync === "fail" ? "fail" : "none"; }

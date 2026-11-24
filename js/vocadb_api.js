@@ -149,6 +149,12 @@ const VSONG_GET = {
   st() { const s = vours(this).sync; return s === "ok" || s === "fail" || s === "stale" || s === "resync" ? s : "none"; },
   sync_fail() { return vours(this).fail || undefined; },  // the auto sync's reason (tooltip of 싱크 실패)
   vsync() { return vours(this).vsync ? 1 : undefined; },  // sync made on VocaDB's lyrics (export/db/vsync/<id>.json, 2026-11-17)
+  // 가사·싱크 나눔 (2026-11-24): a version with no lyrics file of its own — the donor's id whose file it shows · its own
+  // singer colors where they differ from the donor's: lines with no part · {part name: colors} (local_files.js lyricsDoc)
+  lfrom() { return vours(this).from || undefined; },
+  lvc() { return vours(this).vc || undefined; },
+  lvp() { return vours(this).vp || undefined; },
+  lft() { return vours(this).ft || undefined; },  // the donor's title where the list shows another name
   parts() { return vours(this).parts ? 1 : undefined; },  // lyrics name the vocal of some groups — list badge 파트분리 (2026-11-21)
   files() { const f = vcol(this, "files"); return Array.isArray(f) && f.length ? f : undefined; },  // 파일 포맷 태그 [[종류, 주소, 설명], …]
   flags() {  // 곡 상태 (song_filter.js FLAGS) — worked out once (q)
