@@ -7,7 +7,10 @@
 const BRIDGE_URL = store.get("bridgeUrl", "") || "https://ailee126.github.io/music-bridge/";  // 시험할 때만 브라우저 저장값 player.bridgeUrl 로 다른 주소
 /* 영상 주소 → {kind: yt|nico|sc|vimeo|bili|file, id, url}
    sc · vimeo · bili · file (user request 2026-11-18): the song's other links (SoundCloud · Vimeo · Bilibili · an mp3 file on
-   VocaDB) play too, after Niconico/YouTube — for songs whose original was deleted. Bandcamp · Piapro have no player to drive. */
+   VocaDB) play too, after Niconico/YouTube — for songs whose original was deleted. Bandcamp has no player to drive.
+   Piapro (user request 2026-11-24: the most original link is the one to play — ハートビート・クロックタワー has only Piapro):
+   no embed either, but its audio file is public. The server adds the upload stamp to the link ('…/content/<id>#<stamp>',
+   music_backend table_export.piapro_urls) and the file's address follows from it — played as a plain file. */
 function vidRef(url) {
   url = url || "";
   let m = url.match(/(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
@@ -20,6 +23,8 @@ function vidRef(url) {
   if (m) return {kind: "vimeo", id: m[1], url};
   m = url.match(/bilibili\.com\/video\/(av\d+|BV\w{10})/i);
   if (m) return {kind: "bili", id: m[1], url};
+  m = url.match(/^https?:\/\/piapro\.jp\/content\/(\w+)#(\d{14})$/);
+  if (m) return {kind: "file", id: `https://cdn.piapro.jp/mp3_a/${m[1].slice(0, 2)}/${m[1]}_${m[2]}_audition.mp3`, url};
   // https only: the bridge page is https (an http file would be blocked as mixed content)
   return /^https:\/\/[^?#]+\.(?:mp3|m4a|ogg|opus|wav)(?:[?#]|$)/i.test(url) ? {kind: "file", id: url, url} : null;
 }

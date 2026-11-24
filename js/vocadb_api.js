@@ -37,9 +37,10 @@ function vocalColor(name) {
 }
 
 /* playable links in play order: Niconico/YouTube in the server's order (원본 → 니코니코 → 유튜브, unchanged), then the other
-   platforms the player can drive (user request 2026-11-18: SoundCloud · Vimeo · Bilibili · mp3 file — when the original is gone) */
+   platforms the player can drive (user request 2026-11-18: SoundCloud · Vimeo · Bilibili · mp3 file — when the original is gone;
+   2026-11-24: Piapro links that carry their upload stamp — play_engine.js vidRef) */
 const MAIN_URL = /nicovideo\.jp|nico\.ms|youtube\.com|youtu\.be/;
-const OTHER_URL = /soundcloud\.com\/[\w-]+\/[\w-]+|vimeo\.com\/(?:video\/)?\d+|bilibili\.com\/video\/(?:av\d|BV)|^https:\/\/[^?#]+\.(?:mp3|m4a|ogg|opus|wav)(?:[?#]|$)/i;
+const OTHER_URL = /soundcloud\.com\/[\w-]+\/[\w-]+|vimeo\.com\/(?:video\/)?\d+|bilibili\.com\/video\/(?:av\d|BV)|piapro\.jp\/content\/\w+#\d{14}$|^https:\/\/[^?#]+\.(?:mp3|m4a|ogg|opus|wav)(?:[?#]|$)/i;
 const vdbSources = urls => [...urls.filter(u => MAIN_URL.test(u || "")), ...urls.filter(u => u && !MAIN_URL.test(u) && OTHER_URL.test(u))];
 
 /* 100만 곡 메모리 (user request 2026-11-19: sized for 1M songs, not today's count): the same text (tag · name · date · type)
