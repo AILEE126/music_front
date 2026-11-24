@@ -849,7 +849,7 @@ function makePlayer(el) {
   // user request: no YouTube/Niconico buttons on hover — a clear layer over the video takes the mouse; click = play/pause
   const shield = document.createElement("div");
   shield.className = "vshield";
-  shield.title = "누르면 재생 / 일시정지 · 왼쪽 / 오른쪽 두 번 누르면 10초 뒤로 / 앞으로";
+  // no title here (user request 2026-11-24): the hover text box came up over the video, in full screen too
   // like YouTube (user request 2026-11-23): a double click / tap on the left / right half = 10 s back / on — so a single
   // click waits a moment before play / pause
   let tap = null;
