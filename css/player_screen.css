@@ -736,7 +736,10 @@ body.simple .mnav [data-nav="kara"]{font-size:0}
 html[data-theme=light] .vname{color:color-mix(in srgb,var(--vc) 62%,#000)}
 body.simple .vname{filter:saturate(.6)}  /* 간단: like the chips */
 body.simple #searchDlg .sitem .thumb{display:none}  /* 간단: no thumbnails in 곡 검색 either (user request 2026-11-22) */
-body.simple #searchDlg{filter:saturate(.6)}  /* 간단: every color in 곡 검색 (chips · vocal names · marks) like the playlist (2026-11-22) */
+/* 간단: every color in 곡 검색 (chips · vocal names · marks) like the playlist (2026-11-22). On the window's parts, not the
+   window itself (user report 2026-11-24): a filter on #searchDlg made its lists (추천 · 저장 필터 · category lists — fixed to
+   the screen) count from the window's corner and cut them at its edge, so they opened far off the button */
+body.simple #searchDlg>*{filter:saturate(.3)}
 body.simple #searchDlg .vname{filter:none}  /* already lowered by the window */
 .prod.voc{color:var(--vc)}  /* vocal names: their vocal chip's color (user request 2026-11-22) */
 html[data-theme=light] .prod.voc{color:color-mix(in srgb,var(--vc) 62%,#000)}
