@@ -528,12 +528,21 @@ const LOCAL = {
         return;
       }
       let rid = old && old.pending && old.pending.report;
-      if (!rid) {  // first edit since the last confirm → one report for it
-        rid = (await this.saveReport({kind: "싱크 수정", text: `플레이어에서 싱크를 고쳤습니다 (${what}). 음원 관리에서 반영하거나 버리세요.`,
+      // someone else's edit is waiting (user request 2026-11-24): this edit gets a report of its own and the pending file
+      // names it — the server then marks the earlier report '다른 신고로 덮어씀' (error_reports._sync_settled).
+      // The same person editing again keeps the one report. An old pending file has no name → the report's sender.
+      const who = this.gh ? await this.ghWho() : String(store.get("reportWho", "") || "").trim();
+      let was = rid ? old.pending.who : "";
+      if (rid && was === undefined) was = ((await this.readJson(`${this.data}reports/${rid}.json`, null).catch(() => null)) || {}).who;
+      const over = rid && who && was && String(was).trim() !== who ? rid : "";
+      if (!rid || over) {  // first edit since the last confirm, or over another person's waiting edit → one report for it
+        rid = (await this.saveReport({kind: "싱크 수정", who,
+          text: `플레이어에서 싱크를 고쳤습니다 (${what}). 음원 관리에서 반영하거나 버리세요.`
+            + (over ? ` ${String(was).trim()} 님의 수정이 확인을 기다리던 곡입니다 — 그 수정 위에 고친 것 (앞 신고 ${over}).` : ""),
           song: {site: it.site, name: it.name, title: it.title, artist: it.artist || "", vocadb: String(it.vocadb)},
           sync: {vocadb: it.vocadb, pending: `sync_pending/vocadb/${it.vocadb}.json`}})).id;
       }
-      sj.pending = {report: rid, at: nowText(), what};
+      sj.pending = {report: rid, at: nowText(), what, who};
       await this.writeText(path, pyJson(sj));
     });
   },

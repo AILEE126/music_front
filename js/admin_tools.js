@@ -36,8 +36,12 @@ async function admLoad() {
     const was = ADM.ok;
     if (!await admCheck()) { if (was) { if (ADM.sel) admSelEnd(); ADM.byVid = new Map(); ADM.syncRid = new Map(); ADM.repAt = new Map(); admChanged(); } return; }
     const d = LOCAL.data;
-    const [idx, names, reqs] = await Promise.all([LOCAL.readJson(`${d}report_index.json`, {}),
-      LOCAL.listDir(`${d}reports`), LOCAL.listDir(`${d}sync_apply`)]);
+    // pend: the songs whose edited sync really waits (Server/data/sync_pending/vocadb/<id>.json — 반영 · 버리기 delete it).
+    // User report 2026-11-24: syncs applied long ago kept showing as 확인대기 — the list's 'done' is one PC's record, so a
+    // report handled on the other PC came back as open. A 싱크 수정 report counts only while its song's file is there.
+    const [idx, names, reqs, pendNames] = await Promise.all([LOCAL.readJson(`${d}report_index.json`, {}),
+      LOCAL.listDir(`${d}reports`), LOCAL.listDir(`${d}sync_apply`), LOCAL.listDir(`${d}sync_pending/vocadb`).catch(() => null)]);
+    const pend = pendNames && new Set(pendNames.filter(n => n.endsWith(".json")).map(n => n.slice(0, -5)));
     const known = (idx && idx.items) || {}, cache = store.get(ADM_CACHE, {}) || {};
     const ids = names.filter(n => n.endsWith(".json")).map(n => n.slice(0, -5)).sort();
     await admEach(ids.filter(id => !known[id] && !cache[id]), async id => {
@@ -55,7 +59,7 @@ async function admLoad() {
     const by = new Map(), sync = new Map(), at = new Map();
     for (const id of ids) {
       const k = known[id], [kind, vid] = k ? [k.kind, k.vocadb] : cache[id] || ["", ""];
-      if ((k && k.done) || queued.has(id) || !kind || !vid || (kind === "싱크 수정" && fixed.has(vid))) continue;
+      if ((k && k.done) || queued.has(id) || !kind || !vid || (kind === "싱크 수정" && (fixed.has(vid) || (pend && !pend.has(vid))))) continue;
       (by.get(vid) || by.set(vid, new Set()).get(vid)).add(kind);
       const ka = at.get(vid) || at.set(vid, new Map()).get(vid);
       if (!ka.has(kind)) ka.set(kind, id);  // ids are in time order → per kind the oldest (신고 들어온 순, filter_panel.js repAt)
