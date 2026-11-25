@@ -10,7 +10,8 @@
 var APP = (() => {
   const C = window.Capacitor;
   const on = !!(C && C.isNativePlatform && C.isNativePlatform());
-  const A = {on, platform: on ? C.getPlatform() : "", publicUrl: "https://raw.githack.com/AILEE126/music_front/main/html/player_screen.html"};
+  // Share links open here: the address users open daily, so the saved token (per site) is found (user request 2026-11-25)
+  const A = {on, platform: on ? C.getPlatform() : "", publicUrl: "https://ailee126.github.io/music_front/html/player_screen.html"};
   if (!on) return A;
   const M = C.Plugins.MusicApp;
   A.native = M;
