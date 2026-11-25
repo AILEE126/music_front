@@ -268,12 +268,13 @@ function renderSyncChip() {
   if (fail) { $("failChip").textContent = `자동 싱크 실패: ${fail.reason}`; $("failChip").title = `${fail.at} · 모델 ${fail.model || "?"}`; }
   $("btnEdit").disabled = !has;
   partsBtn();
-  $("offMinus").disabled = $("offPlus").disabled = !times && !editing;
+  offOff(!times && !editing);
 }
 function showOff() {
   const v = editing ? editShift : offset;
-  $("offVal").textContent = (v > 0 ? "+" : v < 0 ? "−" : "±") + Math.abs(v).toFixed(1) + "초";
+  $("offVal").textContent = (v > 0 ? "+" : v < 0 ? "−" : "±") + Math.abs(v).toFixed(2) + "초";
 }
+function offOff(off) { for (const id of ["offMinus", "offMinusS", "offPlusS", "offPlus"]) $(id).disabled = off; }
 /* 가사 출처 (user request 2026-11-16, PC · mobile): 원문 · 발음 · 번역 rows above the lyrics.
    Ours: the wiki the lyrics file came from (its reading / translation lines come with it). VocaDB: each row's own lyric
    (language · source); 발음 made by the server = 자동 생성 (lines it had no reading for keep VocaDB's romaji). Lines marked
@@ -322,7 +323,7 @@ function renderLyrics() {
   box.innerHTML = lyricsSources(song) + notes + song.groups.map((g, i) => `<div class="g${times && song.sync.method !== "manual" && matched[i] === false ? " guess" : ""}" data-i="${i}">
       ${lyring && i === lyrEdit ? lyrEditor(g) : g.cols ? lyrCols(g, p => partTag(p) || '<div class="part">&nbsp;</div>') : partTag(g.part) + g.lines.map(l => lyrLine(l.role + (l.auto ? " auto" : "") + (l.lang ? ` xl-${l.lang}` : ""), l.text, g.vc)).join("")}
       <div class="prog"><i></i></div>
-      <div class="stamp"><button data-d="-1" title="1초 앞으로">&lt;&lt;</button><button data-d="-0.2" title="0.2초 앞으로">&lt;</button><span class="tv"></span><button data-d="0.2" title="0.2초 뒤로">&gt;</button><button data-d="1" title="1초 뒤로">&gt;&gt;</button></div>
+      <div class="stamp"><button data-d="-0.1" title="0.1초 앞으로">&lt;&lt;</button><button data-d="-0.01" title="0.01초 앞으로">&lt;</button><span class="tv" title="눌러서 시간을 직접 고침"></span><button data-d="0.01" title="0.01초 뒤로">&gt;</button><button data-d="0.1" title="0.1초 뒤로">&gt;&gt;</button></div>
       ${lyring && i !== lyrEdit ? lyrTools(g) : ""}
     </div>`).join("");
   box.className = (times && !editing ? "" : "nosync ") + (editing ? {sync: "editing ", parts: "parting ", lyrics: "lyring "}[editMode] : "") + ($("showR").checked ? "" : "hide-r ") + ($("showT").checked ? "" : "hide-t ") + ($("showP").checked ? "" : "hide-p ");
@@ -337,6 +338,7 @@ $("lyrics").addEventListener("click", e => {
   const i = +g.dataset.i;
   if (editing) {  // 싱크 (파트분리 · 가사편집 clicks are taken before this — capture listener below)
     const d = e.target.closest("button[data-d]");
+    if (e.target.closest(".tv")) { if (!e.target.closest("input")) stampType(i, e.target.closest(".tv")); return; }
     if (d) { if (editTimes[i] != null) { editTimes[i] = Math.max(0, +(editTimes[i] + +d.dataset.d).toFixed(2)); editOk[i] = true; audio.currentTime = Math.max(0, editTimes[i] - 0.5); } }
     else { cursor = i; if (editTimes[i] != null) audio.currentTime = Math.max(0, editTimes[i] - 1); }
     renderStamps(); return;
@@ -456,33 +458,49 @@ for (const [id, cls] of [["showR", "hide-r"], ["showT", "hide-t"], ["showP", "hi
   $(id).checked = store.get(id, true);
   $(id).addEventListener("change", () => { store.set(id, $(id).checked); $("lyrics").classList.toggle(cls, !$(id).checked); SHELL.notify(); });  // 오버레이의 발음·번역 줄도
 }
+/* 가사 글자 크기 (user request 2026-11-25): 가− 가+ on the lyrics tool bar — 60–200 %, remembered on this device */
+function lyrSize(d) {
+  const v = Math.min(200, Math.max(60, (+store.get("lyrSize", 100) || 100) + d));
+  store.set("lyrSize", v);
+  $("lyrics").style.setProperty("--lyr-scale", v / 100);
+  $("lyrSmaller").disabled = v <= 60; $("lyrBigger").disabled = v >= 200;
+  $("lyrSmaller").parentNode.title = `가사 글자 크기 ${v}%`;
+}
+$("lyrSmaller").onclick = () => lyrSize(-10);
+$("lyrBigger").onclick = () => lyrSize(10);
+lyrSize(0);
 let offTimer = null;
 function nudge(d) {
   // +/− now live in the 직접 맞추기 guide (user request): they shift every stamped time; kept only by 저장
   if (editing) {
     if (!editTimes.some(x => x != null)) return;
     editTimes = editTimes.map(x => x == null ? x : Math.max(0, +(x + d).toFixed(2)));
-    editShift = Math.round((editShift + d) * 10) / 10;
+    editShift = Math.round((editShift + d) * 100) / 100;
     showOff(); renderStamps(); tick(true);
     return;
   }
   if (!times) return;
-  offset = Math.round((offset + d) * 10) / 10;
+  offset = Math.round((offset + d) * 100) / 100;
   renderSyncChip(); tick(true);
   if (SHELL.now && keyOf(SHELL.now) === keyOf(cur)) SHELL.setOffset(offset);  // 위 고정 가사도 같이
   clearTimeout(offTimer);
   const s = song;
   offTimer = setTimeout(() => SHELL.sending(() => post("/api/sync/save", {site: s.site, name: s.name, offset})).catch(e => uiAlert(e.message)), 600);
 }
-$("offMinus").onclick = () => nudge(-0.2);
-$("offPlus").onclick = () => nudge(0.2);
+// − + 0.1 s (was 0.2 — too coarse to set a sync by, user 2026-11-25) · the small arrows 0.01 s, the smallest time a sync keeps
+// (<< < here = the whole song earlier — the same way round as a group's own buttons)
+$("offMinus").onclick = () => nudge(-0.1);
+$("offPlus").onclick = () => nudge(0.1);
+$("offMinusS").onclick = () => nudge(-0.01);
+$("offPlusS").onclick = () => nudge(0.01);
 
 /* ================= 직접 맞추기 · 파트분리 · 가사편집 ================= */
 // user request 2026-11-22: 싱크 opens one edit — admins get 파트분리 · 가사편집 next to it and switch between the three freely;
 // what was changed in one stays while in the others, 저장 keeps all three at once and 취소 drops all three
 var editMode = "sync", editBase = null, editStart = null;  // the groups · times the edit began with (취소 · what changed)
 const EDIT_GUIDE = {
-  sync: "재생하면서 각 묶음이 시작될 때 <kbd>Space</kbd> 또는 <kbd>↓</kbd> — 점선 묶음에 지금 시간을 찍습니다. <kbd>↑</kbd> 한 묶음 뒤로, 묶음을 누르면 그 묶음부터.",
+  // user request 2026-11-25: Space no longer stamps (it did the same as ↓) — it plays / pauses like everywhere else
+  sync: "점선 묶음에 시간을 찍음, 묶음을 누르면 이동, 시간 숫자를 직접 고칠 수 있음.<br><kbd>Space</kbd> 곡 재생 · 정지, <kbd>↓</kbd> 찍기, <kbd>↑</kbd> 한 묶음 뒤로, <kbd>←</kbd> <kbd>→</kbd> 곡 5초 이동.",
   parts: "보컬을 고르고 가사 묶음을 누르면 그 묶음의 파트가 됩니다. <kbd>Shift</kbd> 누르고 누르면 앞에 누른 묶음부터 여기까지.",
   lyrics: "묶음마다 위·아래에 행 추가 · 편집 · 삭제. 편집 칸에서 <kbd>Enter</kbd> 확인, <kbd>Esc</kbd> 되돌리기. 저장 · 취소는 싱크 · 파트분리 · 가사편집 모두에 한 번에.",
 };
@@ -508,7 +526,8 @@ function startEdit() {
   editBase = JSON.parse(JSON.stringify(song.groups)); editStart = JSON.stringify([editTimes, editOk]);
   lyrEdit = -1; lyrNew = false; parting = null;
   $("editbar").classList.add("show");
-  $("offMinus").disabled = $("offPlus").disabled = false; showOff();
+  offOff(false); showOff();
+  $("btnEditDraft").hidden = !(typeof isAdmin === "function" && isAdmin());
   partsBtn();
   setEditMode("sync");
 }
@@ -521,7 +540,7 @@ function stopEdit() {
   $("editbar").classList.remove("show", "sync"); $("partNew").hidden = true;
   for (const id of ["btnEdit", "btnParts", "btnLyrEdit"]) $(id).classList.remove("on");
   partsBtn();
-  showOff(); $("offMinus").disabled = $("offPlus").disabled = !times;
+  showOff(); offOff(!times);
   $("lyrics").classList.remove("editing", "parting", "lyring");
   $("lyrics").classList.toggle("nosync", !times);
   $("lyrics").querySelectorAll(".g.cursor").forEach(el => el.classList.remove("cursor"));
@@ -542,10 +561,27 @@ function renderStamps() {
   $("lyrics").querySelectorAll(".g").forEach((el, i) => {
     el.classList.toggle("cursor", i === cursor);
     el.classList.toggle("guess", !editOk[i]);
-    el.querySelector(".tv").textContent = editTimes[i] == null ? "—" : fmt(editTimes[i]) + "." + String(Math.floor((editTimes[i] % 1) * 10));
+    el.querySelector(".tv").textContent = editTimes[i] == null ? "—" : fmt(editTimes[i]) + "." + String(Math.round(editTimes[i] * 100) % 100).padStart(2, "0");  // hundredths: the small arrows move by 0.01 s
   });
   const el = $("lyrics").querySelectorAll(".g")[cursor];
   if (el) { const box = $("lyrics"); box.scrollTop = el.offsetTop - box.clientHeight * 0.35; }
+}
+/* a group's time typed in (user request 2026-11-25: 숫자 구역을 누르면 수정) — '1:23.45' or seconds; Enter / leaving the box
+   takes it, Esc leaves it as it was */
+function stampType(i, el) {
+  const inp = document.createElement("input");
+  inp.type = "text"; inp.inputMode = "decimal";
+  inp.value = editTimes[i] == null ? "" : el.textContent;
+  el.textContent = ""; el.appendChild(inp); inp.focus(); inp.select();
+  let done = false;
+  const end = keep => {
+    if (done) return; done = true;
+    const m = /^\s*(?:(\d+)\s*:)?\s*(\d+(?:\.\d*)?)\s*$/.exec(inp.value);
+    if (keep && m) { editTimes[i] = Math.max(0, +((+(m[1] || 0)) * 60 + +m[2]).toFixed(2)); editOk[i] = true; cursor = i; }
+    renderStamps(); tick(true);
+  };
+  inp.onkeydown = e => { e.stopPropagation(); if (e.key === "Enter") end(true); else if (e.key === "Escape") end(false); };
+  inp.onblur = () => end(true);
 }
 function stamp() {
   if (cursor >= editTimes.length) return;
@@ -601,31 +637,36 @@ function fillTimes(src) {
   }
   return T;
 }
-$("btnEditSave").onclick = async () => {
+/* 임시저장 (user request 2026-11-25, admin): the sync is kept like anyone else's edit — '확인 대기', not made the song's sync
+   (the admin has not settled it yet; the 확인 대기 filter still finds the song). 저장 = as before (an admin's is final). */
+$("btnEditDraft").onclick = () => saveEdit(true);
+$("btnEditSave").onclick = () => saveEdit(false);
+async function saveEdit(draft) {
   if (lyrEdit >= 0 && !lyrApply()) return;
   const ch = editChanges();
   if (!ch.lyr && !ch.prt && !ch.syn) { stopEdit(); renderLyrics(); return; }
   const T = ch.syn ? fillTimes(editTimes) : null;
   if (ch.syn && !T) { uiAlert("찍은 시간이 없습니다."); return; }
   // user request 2026-11-17: spinner + "서버에 전송중..." on 저장, 취소 locked, the song doesn't move on until it's sent
-  const lock = on => { for (const id of ["btnEditCancel", "btnEdit", "btnParts", "btnLyrEdit"]) $(id).disabled = on; };
-  sendingBtn($("btnEditSave"), true); lock(true);
+  const btn = $(draft ? "btnEditDraft" : "btnEditSave");
+  const lock = on => { for (const id of ["btnEditCancel", "btnEdit", "btnParts", "btnLyrEdit", draft ? "btnEditSave" : "btnEditDraft"]) $(id).disabled = on; };
+  sendingBtn(btn, true); lock(true);
   await SHELL.sending(async () => {
     const s = song, groups = s.groups, ok = editOk.slice(), from = await lyricsHash(editBase);
     // in this order: new lyrics first, then the parts and times of those lyrics
     try {
       if (ch.lyr) song = await post("/api/lyrics/save", {site: s.site, name: s.name, from, groups});
       if (ch.prt) song = await post("/api/parts/save", {site: s.site, name: s.name, parts: groups.map(g => g.cols ? null : g.part || null), vc: groups.map(g => g.vc)});
-      if (ch.syn) song = await post("/api/sync/save", {site: s.site, name: s.name, times: T, matched: ok, offset: 0});
+      if (ch.syn) song = await post("/api/sync/save", {site: s.site, name: s.name, times: T, matched: ok, offset: 0, draft});
     } catch (e) {
       if (song === s) { uiAlert(e.message); return; }  // nothing kept yet — the edit stays open
       uiAlert(e.message + "\n(앞 단계까지는 저장됐습니다)");
-    } finally { sendingBtn($("btnEditSave"), false); lock(false); }
+    } finally { sendingBtn(btn, false); lock(false); }
     editBase = null; stopEdit(); songTimes(); syncShell();
     // the song's list mark is already updated (admin: LOCAL.oursCell) — re-downloading the whole list (MBs on GitHub) left the load bar up
     rerenderKeepScroll(); renderSyncChip(); renderList();
   });
-};
+}
 
 /* ================= 파트분리 (관리자) ================= */
 // user request 2026-11-21: admin token only — pick a vocal, click lyrics groups to give them that part

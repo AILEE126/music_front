@@ -123,6 +123,9 @@
 
       <span class="grow"></span>
       <select id="xLang" title="VocaDB 의 다른 언어 번역 (영어·중국어 등) 줄 — 곡에 있는 언어만 고를 수 있음"><option value="">다른 언어 끔</option></select><!-- user request 2026-11-14: a select left of the toggles, not a 4th toggle -->
+      <div class="seg lsize" title="가사 글자 크기"><!-- user request 2026-11-25 -->
+        <button id="lyrSmaller" aria-label="가사 글자 작게">가−</button><button id="lyrBigger" aria-label="가사 글자 크게">가+</button>
+      </div>
       <div class="seg" title="가사 줄 보이기 · 숨기기"><!-- user request: three joined on/off buttons instead of checkboxes -->
         <label><input type="checkbox" id="showR" checked hidden>발음</label><label><input type="checkbox" id="showT" checked hidden>번역</label><label title="이 줄을 부르는 보컬 (나무위키 가사에 보컬별 색 구분이 있는 곡)"><input type="checkbox" id="showP" checked hidden>파트</label>
       </div>
@@ -144,11 +147,12 @@
         <button class="primary" id="partNewAdd">추가</button><button id="partNewClose">닫기</button>
       </div>
       <div class="editrow">
-        <div class="offset" id="offBox" title="가사가 노래보다 빠르면 +, 느리면 − (찍은 시간 전체를 밂 · 저장해야 남음)"><!-- user request: moved to the sync guide's bottom-left -->
-          <button id="offMinus">−</button><span id="offVal">±0.0초</span><button id="offPlus">+</button>
+        <div class="offset" id="offBox" title="찍은 시간 전체를 밂 (저장해야 남음) — 가사가 노래보다 늦게 뜨면 &lt; 쪽, 먼저 뜨면 &gt; 쪽"><!-- user request: moved to the sync guide's bottom-left -->
+          <!-- user request 2026-11-25: 0.2 s steps were too coarse, and the buttons look like each group's own (<< < time > >>): << >> 0.1 s, < > 0.01 s -->
+          <button id="offMinus" title="전체 0.1초 앞으로">&lt;&lt;</button><button id="offMinusS" title="전체 0.01초 앞으로">&lt;</button><span id="offVal">±0.00초</span><button id="offPlusS" title="전체 0.01초 뒤로">&gt;</button><button id="offPlus" title="전체 0.1초 뒤로">&gt;&gt;</button>
         </div>
         <span style="flex:1"></span>
-        <button class="primary" id="btnEditSave">저장</button><button id="btnEditCancel">취소</button>
+        <button class="primary" id="btnEditSave">저장</button><button id="btnEditDraft" title="확정하지 않고 저장 — 싱크는 '확인 대기'로 남음 (관리자)" hidden>임시저장</button><button id="btnEditCancel">취소</button><!-- 임시저장: user request 2026-11-25, admin only -->
       </div>
     </div>
 

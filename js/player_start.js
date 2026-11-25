@@ -162,7 +162,8 @@ $("btnSettings").onclick = e => { e.stopPropagation(); openPlayerSettings(); };
 /* ================= 키보드 ================= */
 document.addEventListener("keydown", e => {
   if (e.target.closest("input[type=text],input[type=search],textarea,select") || $("coverDlg").open || $("reportDlg").open || $("searchDlg").open || $("karaDlg").open || document.querySelector("dialog.uidlg[open]")) return;
-  if (editing && editMode === "sync" && (e.code === "Space" || e.key === "ArrowDown")) { e.preventDefault(); editDown(); return; }
+  // ↓ stamps; Space plays / pauses also here (user request 2026-11-25 — it used to stamp too, the same as ↓)
+  if (editing && editMode === "sync" && e.key === "ArrowDown") { e.preventDefault(); editDown(); return; }
   if (editing && editMode === "sync" && e.key === "ArrowUp") { e.preventDefault(); editUp(); return; }
   if (e.code === "Space") { e.preventDefault(); $("btnPlay").click(); }
   else if (e.key === "ArrowRight") audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 5);

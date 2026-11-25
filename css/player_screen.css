@@ -832,7 +832,9 @@ body.barfold .toolbar{display:none}
 .chip{background:var(--chip);border-radius:999px;padding:3px 10px;font-size:12px;white-space:nowrap}
 .chip.ok{color:var(--ok)}.chip.warn{color:var(--warn)}.chip.err{color:var(--err)}
 .offset{display:flex;align-items:center;gap:4px}
-.offset span{font-variant-numeric:tabular-nums;min-width:58px;text-align:center;font-size:13px}
+.offset{font-size:12px}  /* the same look as a group's own << < time > >> (.stamp) */
+.offset button{padding:0 6px;font-size:12px}
+.offset span{font-variant-numeric:tabular-nums;color:var(--muted);min-width:56px;text-align:center}
 label.inline{display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer}
 /* 발음·번역·파트: three joined on/off buttons (user request) — label wraps a hidden checkbox, so the checkbox code stays */
 .seg{display:flex}
@@ -901,11 +903,11 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
 .g.past{opacity:.38}
 /* one size for every lyric line (user request 2026-11-19): Japanese was 20px over 14–15px Korean, and a Korean- or English-only
    song showed its words bigger than the Korean of a 3-line Japanese song — lines differ by weight · color only */
-.g .o{font-size:18px;font-weight:600;line-height:1.45}
+.g .o{font-size:calc(18px*var(--lyr-scale,1));font-weight:600;line-height:1.45}  /* --lyr-scale: 가사 글자 크기 (가− 가+) */
 .g.cur .o{color:var(--accent)}
-.g .r{font-size:18px;color:var(--muted)}
+.g .r{font-size:calc(18px*var(--lyr-scale,1));color:var(--muted)}
 .g .r.vc{opacity:.8}
-.g .t{font-size:18px}
+.g .t{font-size:calc(18px*var(--lyr-scale,1))}
 .g .x{display:none;font-size:18px;color:var(--muted);font-style:italic}  /* VocaDB other-language translation — shown for the language picked in #xLang (#xlStyle) */
 .hide-r .g .r,.hide-t .g .t,.hide-p .g .part{display:none}
 #xLang{max-width:150px;align-self:stretch}  /* same height · font as the toolbar buttons (user request 2026-11-15) */
@@ -1074,7 +1076,11 @@ body.simple #lyrics .vcm{background:none;-webkit-text-fill-color:currentColor}
 .fprev .g,.fprev .g:hover{opacity:1;cursor:default;margin:0;padding:4px 2px;max-width:none;background:none}  /* no focus / hover look (user request 2026-11-19) */
 .fprev .g .o,.fprev .g .r,.fprev .g .t{font-size:17px}
 .stamp button{padding:0 6px;font-size:12px}
-.stamp .tv{font-variant-numeric:tabular-nums;color:var(--muted);min-width:46px;text-align:center}
+.stamp .tv{font-variant-numeric:tabular-nums;color:var(--muted);min-width:46px;text-align:center;cursor:text}
+.stamp .tv input{width:64px;font:inherit;text-align:center;padding:0 2px;border:1px solid var(--accent);border-radius:4px;background:var(--bg);color:var(--text)}
+.seg.lsize button{padding:7px 9px;font-size:13px;border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:0;margin-left:-1px}
+.seg.lsize button:first-child{margin-left:0;border-radius:6px 0 0 6px}
+.seg.lsize button:last-child{border-radius:0 6px 6px 0}
 /* 대화상자 */
 .dlg-body{padding:14px 16px}
 .dlg-body textarea{width:100%;height:52vh;font:13px/1.55 ui-monospace,Consolas,"Malgun Gothic",monospace;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);resize:vertical}

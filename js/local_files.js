@@ -500,14 +500,14 @@ const LOCAL = {
      it replaces is removed. The request sync_apply/admin_<VocaDB id>.json (one per song, overwritten by the next nudge)
      lets the server put the sync into its table when it runs and mark the song's 싱크 수정 reports up to then handled
      (error_reports.apply_player_requests; also at server start, before the export that would write the old sync back). */
-  async savePending(it, sj, what) {
+  async savePending(it, sj, what, draft) {  // draft: an admin's 임시저장 — kept waiting like anyone's edit (2026-11-25)
     const path = this.pendingPath(it), lpath = `${this.out}/db/lyrics/${it.vocadb}.json`;
     await this.locked(path, async () => {
       const old = await this.readJson(path, null);
       const doc = it.lyrics ? await this.lyricsDoc(it) : null;  // a version (doc.shared) never gets here as an admin apply
       // 가사·싱크 나눔 (user request 2026-11-23): an admin applies a sync only on the donor (original) — on a version that
       // shares its lyrics the edit waits for 확인 like anyone's
-      if (typeof isAdmin === "function" && isAdmin() && !(doc && doc.shared)) {
+      if (typeof isAdmin === "function" && isAdmin() && !(doc && doc.shared) && !draft) {
         const who = this.gh ? await this.ghWho() : String(store.get("reportWho", "") || "").trim();
         const s = {...sj}; delete s.pending; delete s.lyrics;
         if (doc) {
@@ -676,7 +676,7 @@ const LOCAL = {
     Object.assign(cur, {version: 2, synced_at: now});
     // the list row is not touched here (user request 2026-11-22: it shows only the server's data — an admin's save writes
     // that data itself, oursCell; anyone else's edit waits for the manage screen)
-    await this.savePending(it, cur, `직접 맞추기 — 찍은 묶음 ${ok.filter(Boolean).length}/${ok.length}`);
+    await this.savePending(it, cur, `직접 맞추기 — 찍은 묶음 ${ok.filter(Boolean).length}/${ok.length}${d.draft ? " (임시저장)" : ""}`, !!d.draft);
     return this.lyrics(d.site, d.name);
   },
 };
