@@ -7,7 +7,11 @@
    · 재생목록 선택 모드: right-click a song → '선택 모드' (that song picked); click picks/unpicks, shift-click a range;
      right-click again → 선택한 곡 싱크 반영. The player has no server: it leaves Server/data/sync_apply/<id>.json
      {ids, who, at} on the data branch and the server applies it in its next upload round (error_reports.apply_player_requests)
-     — every player already plays the pending sync meanwhile. Songs with no waiting sync edit are left out. */
+     — every player already plays the pending sync meanwhile. Songs with no waiting sync edit are left out.
+   · 자동 싱크 대상 (user request 2026-11-25: "자동 싱크 대상을 프론트에 있는 필터 기능으로 넣을 수 있게"): filter the playlist,
+     선택 모드 → 모두 고르기 → '선택한 곡을 자동 싱크 대상으로' leaves the picked songs' ids in
+     Server/data/auto_sync_targets.json; the server's 자동 싱크 job then runs those songs (music_backend vocadb/auto_sync.py
+     — it leaves out hand-made syncs, waiting edits … itself). '자동 싱크 대상 비우기' empties the list. */
 const ADM = {byVid: new Map(), syncRid: new Map(), repAt: new Map(), fixed: new Map(), busy: false, last: 0, sel: null, anchor: -1, ok: false, tok: ""};
 const ADM_CACHE = "adm.reports", ADM_EVERY = 10 * 60 * 1000;
 const isAdmin = () => ADM.ok && typeof LOCAL !== "undefined" && LOCAL.ready && LOCAL.canWrite;
@@ -91,7 +95,7 @@ function admChanged() {
 /* ---- 선택 모드 ---- */
 function admMenu(it) {
   if (!isAdmin()) return [];
-  if (!ADM.sel) return [{label: "선택 모드 (관리자 — 여러 곡 싱크 반영)", fn: () => admSelStart(it)}];
+  if (!ADM.sel) return [{label: "선택 모드 (관리자 — 여러 곡 싱크 반영 · 자동 싱크 대상)", fn: () => admSelStart(it)}];
   return [];  // in 선택 모드 the right-click opens admSelMenu instead (below)
 }
 function admSelStart(it) {
@@ -122,6 +126,8 @@ function admSelMenu(e) {
   const n = ADM.sel.size;
   ctxMenu(e, [
     n ? {label: `선택한 곡 싱크 반영 (${n.toLocaleString()}곡)`, fn: admApplySync} : {label: "선택한 곡 싱크 반영 (고른 곡 없음)"},
+    n ? {label: `선택한 곡을 자동 싱크 대상으로 (${n.toLocaleString()}곡)`, fn: () => admTargets(true)} : {label: "선택한 곡을 자동 싱크 대상으로 (고른 곡 없음)"},
+    {label: "자동 싱크 대상 비우기", fn: () => admTargets(false)},
     {label: "모두 고르기", fn: () => { ADM.sel = new Set(view.map(keyOf)); admSelRender(); }},
     {label: "수정 대기만 고르기", fn: () => { ADM.sel = new Set(view.filter(admSyncWaits).map(keyOf)); admSelRender(); }},
     ...(n ? [{label: "고른 것 모두 풀기", fn: () => { ADM.sel.clear(); admSelRender(); }}] : []),
@@ -151,6 +157,24 @@ $("list").addEventListener("contextmenu", e => {
   admSelMenu(e);
 }, true);
 addEventListener("keydown", e => { if (e.key === "Escape" && ADM.sel && !document.querySelector("dialog[open]")) admSelEnd(); });
+
+/* 자동 싱크 대상: the picked songs' VocaDB ids → Server/data/auto_sync_targets.json (set: the list is replaced · else emptied) */
+async function admTargets(set) {
+  if (!isAdmin()) return;
+  const ids = set ? [...new Set(admPicked().filter(it => it.vocadb).map(it => String(it.vocadb)))] : [];
+  if (set && !ids.length) { uiAlert("고른 곡 중 자동 싱크를 돌릴 수 있는 곡이 없습니다."); return; }
+  if (!await uiConfirm(set
+    ? `${ids.length.toLocaleString()}곡을 자동 싱크 대상으로 넣을까요? (전에 넣은 대상은 이 목록으로 바뀝니다)\n\n`
+      + "서버의 수집 › 자동 싱크를 실행하면 이 곡들만 돕니다 — 이미 자동 싱크가 있는 곡도 지금 방식으로 다시 맞춥니다.\n"
+      + "직접 맞춘 싱크 · 확인 대기 · 가사를 공유받는 곡은 서버가 알아서 뺍니다."
+    : "자동 싱크 대상을 비울까요? 서버의 자동 싱크가 원래 순서대로 돕니다.", set ? "넣기" : "비우기")) return;
+  try {
+    const who = LOCAL.gh ? await LOCAL.ghWho() : String(store.get("reportWho", "") || "").trim();
+    await LOCAL.writeText(`${LOCAL.data}auto_sync_targets.json`, JSON.stringify({at: nowText(), who, ids}) + "\n", who);
+  } catch (e) { uiAlert("자동 싱크 대상을 못 올렸습니다 — " + (e.message || e)); return; }
+  uiAlert(set ? `자동 싱크 대상 ${ids.length.toLocaleString()}곡을 넣었습니다. 서버의 수집 › 자동 싱크를 실행하세요.` : "자동 싱크 대상을 비웠습니다.");
+  if (set) admSelEnd();
+}
 
 /* 선택한 곡 싱크 반영: each picked song's waiting sync edit (its pending file names the report) → one request file */
 async function admApplySync() {
