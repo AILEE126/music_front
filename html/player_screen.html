@@ -147,12 +147,16 @@
         <button class="primary" id="partNewAdd">추가</button><button id="partNewClose">닫기</button>
       </div>
       <div class="editrow">
+        <!-- user request 2026-11-26: 되돌리기 · 다시 하기 left of the whole shift — every change of the times since 싱크 was opened -->
+        <div class="offset" id="undoBox"><button id="editUndo" title="되돌리기 (Ctrl+Z)" disabled>↶</button><button id="editRedo" title="다시 하기 (Ctrl+X)" disabled>↷</button></div>
         <div class="offset" id="offBox" title="찍은 시간 전체를 밂 (저장해야 남음) — 가사가 노래보다 늦게 뜨면 &lt; 쪽, 먼저 뜨면 &gt; 쪽"><!-- user request: moved to the sync guide's bottom-left -->
           <!-- user request 2026-11-25: 0.2 s steps were too coarse, and the buttons look like each group's own (<< < time > >>): << >> 0.1 s, < > 0.01 s -->
           <button id="offMinus" title="전체 0.1초 앞으로">&lt;&lt;</button><button id="offMinusS" title="전체 0.01초 앞으로">&lt;</button><span id="offVal">±0.00초</span><button id="offPlusS" title="전체 0.01초 뒤로">&gt;</button><button id="offPlus" title="전체 0.1초 뒤로">&gt;&gt;</button>
         </div>
         <span style="flex:1"></span>
+        <div class="editend"><div><!-- thin buttons: user request 2026-11-26 -->
         <button class="primary" id="btnEditSave">저장</button><button id="btnEditDraft" title="확정하지 않고 저장 — 싱크는 '확인 대기'로 남음 (관리자)" hidden>임시저장</button><button id="btnEditCancel">취소</button><!-- 임시저장: user request 2026-11-25, admin only -->
+        </div></div>
       </div>
     </div>
 

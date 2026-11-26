@@ -161,14 +161,32 @@ $("btnSettings").onclick = e => { e.stopPropagation(); openPlayerSettings(); };
 
 /* ================= 키보드 ================= */
 document.addEventListener("keydown", e => {
+  // Ctrl+S while editing = 저장 after a question (lyrics_view.js editSaveAsk) — also from a text box; never the browser's own save
+  if (editing && (e.ctrlKey || e.metaKey) && /^s$/i.test(e.key)) { e.preventDefault(); editSaveAsk(); return; }
   if (e.target.closest("input[type=text],input[type=search],textarea,select") || $("coverDlg").open || $("reportDlg").open || $("searchDlg").open || $("karaDlg").open || document.querySelector("dialog.uidlg[open]")) return;
   // ↓ stamps; Space plays / pauses also here (user request 2026-11-25 — it used to stamp too, the same as ↓)
-  if (editing && editMode === "sync" && e.key === "ArrowDown") { e.preventDefault(); editDown(); return; }
-  if (editing && editMode === "sync" && e.key === "ArrowUp") { e.preventDefault(); editUp(); return; }
+  // Ctrl held: ↑ ↓ only move · Shift held: ↑ ↓ pick several groups (then ↓ spreads their times, ↑ · Esc drop the pick)
+  // (lyrics_view.js editSel — user request 2026-11-26, keyboard only)
+  if (editing && editMode === "sync" && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+    const d = e.key === "ArrowDown" ? 1 : -1;
+    e.preventDefault();
+    if (e.shiftKey) editPick((editSel ? editSelEnd : cursor) + d);
+    else if (e.ctrlKey || e.metaKey) editStep(d);
+    else if (d > 0) editDown(); else editUp();
+    return;
+  }
+  if (editing && editMode === "sync" && e.key === "Escape" && editSel) { e.preventDefault(); editPickDrop(); return; }
+  // Ctrl+Z back · Ctrl+X forward again (lyrics_view.js editUndo — user request 2026-11-26: fixed to these two)
+  if (editing && editMode === "sync" && (e.ctrlKey || e.metaKey) && /^[zx]$/i.test(e.key)) { e.preventDefault(); editUndo(/^x$/i.test(e.key) ? 1 : -1); return; }
   if (e.code === "Space") { e.preventDefault(); $("btnPlay").click(); }
   else if (e.key === "ArrowRight") audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 5);
   else if (e.key === "ArrowLeft") audio.currentTime = Math.max(0, audio.currentTime - 5);
 });
+// Ctrl held shows in the dashed group (dots: ↑ ↓ will not stamp); leaving the window counts as letting it go (the
+// keyup would never come)
+document.addEventListener("keyup", e => { if (e.key === "Control" || e.key === "Meta") $("lyrics").classList.remove("nostamp"); });
+document.addEventListener("keydown", e => { if ((e.key === "Control" || e.key === "Meta") && editing && editMode === "sync") $("lyrics").classList.add("nostamp"); });
+window.addEventListener("blur", () => $("lyrics").classList.remove("nostamp"));
 
 /* 가사 도구 줄 접기 · 펴기 (user request) — always opens unfolded, the fold is not remembered (user request 2026-11-19) */
 function applyBar(fold) { document.body.classList.toggle("barfold", fold); $("btnBar").title = fold ? "가사 도구 펴기" : "가사 도구 접기"; }

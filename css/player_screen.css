@@ -602,8 +602,8 @@ html[data-theme=light] :is(.fcat.own,.fdd-opt.own){--own:#7c3aed}
 a.disabled{color:var(--muted);pointer-events:none;text-decoration:none;opacity:.6}
 .ctrl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 #btnReport{order:99;margin-left:auto}
-#btnReport,#sReport{padding:0;border:0;background:none;color:var(--muted);font-size:11px;font-weight:400;text-decoration:underline;text-underline-offset:2px;cursor:pointer}  /* user request: small underlined text, right end (곡 검색 창에도 같은 모양 — 2026-11-15) */
-#btnReport:hover,#sReport:hover{color:var(--text)}
+#btnReport,#sReport,#btnEditHelp{padding:0;border:0;background:none;color:var(--muted);font-size:11px;font-weight:400;text-decoration:underline;text-underline-offset:2px;cursor:pointer}  /* user request: small underlined text, right end (곡 검색 창에도 같은 모양 — 2026-11-15) */
+#btnReport:hover,#sReport:hover,#btnEditHelp:hover{color:var(--text)}
 /* 이전 · 재생/일시정지 · 다음: sharp SVG icons on one centre line (playIcon, user request 2026-11-19 — the letters were too
    big and not lined up); play a little bigger and brighter, no circle */
 .ctrl .skip,.ctrl .play{width:30px;height:30px;padding:0}
@@ -865,6 +865,9 @@ label.inline{display:flex;align-items:center;gap:4px;font-size:13px;cursor:point
 #lyrics.parting .g{cursor:pointer}
 #lyrics.parting .g:hover{outline:2px dashed var(--accent);outline-offset:-2px}
 .editrow[hidden],.offset[hidden]{display:none}
+.editend{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.editend>div{display:flex;gap:6px}
+.editend>div button{padding:1px 10px;font-size:12px}  /* user request 2026-11-26: thin — with the link above them the row took too much room */
 /* 가사편집 (admin, user request 2026-11-22): row buttons under each group, the open row edited in place */
 #lyrics.lyring .g{cursor:default}
 .g .ltools{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;margin-top:6px}
@@ -887,6 +890,13 @@ body.m .main:has(#editbar.show.sync) .editkeys{display:flex;flex-direction:colum
 .editkeys button svg{width:28px;height:28px}
 .editkeys button:active{background:var(--accent-soft);color:var(--accent)}
 kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:12px;background:var(--card)}
+/* 싱크 모든 동작 (user request 2026-11-26): short rows — keys in boxes on the left, what they do on the right; two columns of sections on a wide screen */
+.synchelp .dlg-body{white-space:normal;max-height:76vh;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px 24px;font-size:13px}
+.synchelp section{min-width:0}
+.synchelp h4{margin:0 0 6px;font-size:12px;font-weight:700;color:var(--muted)}
+.synchelp p{margin:0;display:flex;align-items:baseline;gap:10px;line-height:1.9}
+.synchelp .k{flex:none;min-width:112px;white-space:nowrap}
+.synchelp .note{display:block;margin-top:4px;font-size:11px;line-height:1.5;color:var(--muted)}
 /* 가사 */
 /* kana · kanji from one Japanese font (user request 2026-11-19): with the stack below Malgun Gothic drew kana tiny and
    only Korean hanja, the other kanji fell to another font — kanji and hiragana had different sizes. Range = font_setting.js FONT_RANGE.ja */
@@ -1062,6 +1072,7 @@ body.simple #lyrics .vcm{background:none;-webkit-text-fill-color:currentColor}
 .editing .g .stamp{display:flex}
 .editing .g{opacity:1}
 .g.cursor{outline:2px dashed var(--warn);outline-offset:-2px}
+.nostamp .g.cursor{outline-style:dotted;outline-color:var(--muted)}  /* Ctrl held: ↑ ↓ move without stamping */
 /* '추정' · '자동' badges: their own font and box (user report 2026-11-19 — with a ⚙ 글꼴 font they took the lyrics' font, its
    line height and baseline, and went out of shape; on a several-vocal line they also took its see-through letters) */
 .g.guess .o::after,.g .auto::after{display:inline-block;font:400 10px/14px -apple-system,"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",sans-serif;

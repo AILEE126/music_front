@@ -340,11 +340,13 @@ $("lyrics").addEventListener("click", e => {
     const d = e.target.closest("button[data-d]");
     if (e.target.closest(".tv")) { if (!e.target.closest("input")) stampType(i, e.target.closest(".tv")); return; }
     if (d) { if (editTimes[i] != null) { editTimes[i] = Math.max(0, +(editTimes[i] + +d.dataset.d).toFixed(2)); editOk[i] = true; audio.currentTime = Math.max(0, editTimes[i] - 0.5); } }
-    else { cursor = i; if (editTimes[i] != null) audio.currentTime = Math.max(0, editTimes[i] - 1); }
+    else if (e.shiftKey) { editPick(i); return; }  // Shift held: the pick reaches from the dashed group to this one (editPick)
+    else { editSel = null; cursor = i; if (editTimes[i] != null) audio.currentTime = Math.max(0, editTimes[i] - 1); }
     renderStamps(); return;
   }
   if (times) { audio.currentTime = Math.max(0, times[i] + offset); if (audio.paused) audio.play(); }
 });
+$("lyrics").addEventListener("mousedown", e => { if (editing && editMode === "sync" && e.shiftKey && !e.target.closest("input")) e.preventDefault(); });  // shift-click picks groups, not text
 $("lyrics").addEventListener("wheel", () => userScrollAt = Date.now(), {passive: true});
 $("lyrics").addEventListener("touchmove", () => userScrollAt = Date.now(), {passive: true});
 
@@ -498,6 +500,43 @@ $("offPlusS").onclick = () => nudge(0.01);
 // user request 2026-11-22: 싱크 opens one edit — admins get 파트분리 · 가사편집 next to it and switch between the three freely;
 // what was changed in one stays while in the others, 저장 keeps all three at once and 취소 drops all three
 var editMode = "sync", editBase = null, editStart = null;  // the groups · times the edit began with (취소 · what changed)
+// Keyboard-only extras of 싱크 (user request 2026-11-26, hidden — "설명 문구에는 안 넣어도 됨", not for phones):
+//  · Ctrl held: ↑ ↓ move the dashed group without stamping (the dashes turn to dots while it is held)
+//  · Shift + ↑ ↓ (or Shift + click): a pick of several groups [first, last] from the dashed group to where the keys
+//    went (editSelEnd) — the dashes take all of them; it stays when Shift is let go. On a pick: ↓ lays the picked
+//    groups at even steps between the first one's time — never changed — and the time of the group after the pick
+//    (the song's end after the last group), then goes on with that group: lines sung at a steady pace need one stamp,
+//    not one each. ↑ · Esc · a plain click drop the pick, nothing changed. (The version before spread at every key
+//    press and kept the times when Shift was let go — user 2026-11-26: "초기처럼 바꾸자 … 어차피 되돌리기 다시 하기 있으니까".)
+var editSel = null, editSelEnd = -1;
+// 되돌리기 · 다시 하기 (user request 2026-11-26: "싱크 수동으로 찍는 동안은 다 기억해서 되돌리거나 할 수 있게 — 되돌리기의 되돌리기"):
+// every state of the times since 싱크 was opened [times, ok, whole shift], editAt = the one shown. A stamp, a typed time,
+// a << < > >> of one group or of all, a spread pick (one step, when Shift is let go) each add one; a change after going
+// back drops what was ahead. Rows added · deleted in 가사편집 start it anew (the times no longer line up). ↶ ↷ left of
+// the whole shift, Ctrl+Z back · Ctrl+X forward again (user 2026-11-26: "되돌리기는 CTRL Z, 다시 하기는 CTRL X 로 픽스").
+var editHist = [], editAt = -1;
+function editMark() {
+  if (!editing || !editTimes) return;
+  const now = JSON.stringify([editTimes, editOk, editShift]), was = editHist[editAt];
+  if (was && was.s === now) return;
+  if (was && was.n !== editTimes.length) { editHist = []; editAt = -1; }
+  editHist.length = editAt + 1;
+  editHist.push({s: now, n: editTimes.length});
+  editAt++;
+  editUndoBtns();
+}
+function editUndoBtns() { $("editUndo").disabled = !(editing && editAt > 0); $("editRedo").disabled = !(editing && editAt < editHist.length - 1); }
+/* d −1 back · +1 forward again; the dashed group goes to the first group whose time changed */
+function editUndo(d) {
+  if (!editing || editMode !== "sync" || !editHist[editAt + d]) return;
+  editSel = null;
+  const before = editTimes;
+  editAt += d;
+  [editTimes, editOk, editShift] = JSON.parse(editHist[editAt].s);
+  const i = editTimes.findIndex((t, k) => t !== before[k]);
+  if (i >= 0) cursor = i;
+  editUndoBtns(); showOff(); renderStamps(); tick(true);
+}
 const EDIT_GUIDE = {
   // user request 2026-11-25: Space no longer stamps (it did the same as ↓) — it plays / pauses like everywhere else
   sync: "점선 묶음에 시간을 찍음, 묶음을 누르면 이동, 시간 숫자를 직접 고칠 수 있음.<br><kbd>Space</kbd> 곡 재생 · 정지, <kbd>↓</kbd> 찍기, <kbd>↑</kbd> 한 묶음 뒤로, <kbd>←</kbd> <kbd>→</kbd> 곡 5초 이동.",
@@ -521,7 +560,7 @@ function startEdit() {
   // 묶음마다 믿을 만한 시간인지: 인식으로 맞았거나 손으로 찍음 → 안 고친 '추정' 묶음은 저장해도 추정으로 남음
   const m = (song.sync && song.sync.matched) || [];
   editOk = song.groups.map((_, i) => !!times && (song.sync.method === "manual" || m[i] !== false));
-  cursor = 0;
+  cursor = 0; editSel = null; editHist = []; editAt = -1;
   if (times) { const t = audio.currentTime; cursor = Math.max(0, editTimes.findIndex(x => x > t)); }
   editBase = JSON.parse(JSON.stringify(song.groups)); editStart = JSON.stringify([editTimes, editOk]);
   lyrEdit = -1; lyrNew = false; parting = null;
@@ -534,32 +573,35 @@ function startEdit() {
 /* ends the edit — whatever was not saved goes (취소 · another song) */
 function stopEdit() {
   if (editBase && song) song.groups = editBase;
-  editing = false; editTimes = null; editOk = null; editBase = editStart = null; parting = null; lyrEdit = -1; SHELL.editing = false;
+  editing = false; editTimes = null; editOk = null; editBase = editStart = null; parting = null; lyrEdit = -1; editSel = null; editHist = []; editAt = -1; SHELL.editing = false;
   if (editFoldedVid) { editFoldedVid = false; VID.on = true; showVideo(); }
   if (editFoldedBar) { editFoldedBar = false; applyBar(false); }
   $("editbar").classList.remove("show", "sync"); $("partNew").hidden = true;
   for (const id of ["btnEdit", "btnParts", "btnLyrEdit"]) $(id).classList.remove("on");
   partsBtn();
   showOff(); offOff(!times);
-  $("lyrics").classList.remove("editing", "parting", "lyring");
+  $("lyrics").classList.remove("editing", "parting", "lyring", "nostamp");
   $("lyrics").classList.toggle("nosync", !times);
   $("lyrics").querySelectorAll(".g.cursor").forEach(el => el.classList.remove("cursor"));
 }
 function setEditMode(m) {
   if (m !== "sync" && !parting) m = "sync";
   if (m !== "lyrics" && lyrEdit >= 0 && !lyrApply()) return;  // a row open in 가사편집 is taken as it is first
-  editMode = m;
+  editMode = m; editSel = null;  // rows may be added · deleted in 가사편집: a pick does not outlive the switch
   for (const [id, k] of [["btnEdit", "sync"], ["btnParts", "parts"], ["btnLyrEdit", "lyrics"]]) $(id).classList.toggle("on", m === k);
-  $("editGuide").innerHTML = EDIT_GUIDE[m];
-  $("offBox").hidden = m !== "sync";
+  // 싱크: '싱크 모든 동작 확인' right after the guide text, like a "more" link (user request 2026-11-26 — it was a line of
+  // its own above 저장 · 취소 and took too much room)
+  $("editGuide").innerHTML = EDIT_GUIDE[m] + (m === "sync" ? ' <button id="btnEditHelp">싱크 모든 동작 확인</button>' : "");
+  $("offBox").hidden = $("undoBox").hidden = m !== "sync";
   $("partRow").hidden = m !== "parts";
   if (m !== "parts") $("partNew").hidden = true;
   $("editbar").classList.toggle("sync", m === "sync");  // phone ↑ ↓ keys: 싱크 only
   rerenderKeepScroll();
 }
 function renderStamps() {
+  editMark();
   $("lyrics").querySelectorAll(".g").forEach((el, i) => {
-    el.classList.toggle("cursor", i === cursor);
+    el.classList.toggle("cursor", editSel ? i >= editSel[0] && i <= editSel[1] : i === cursor);
     el.classList.toggle("guess", !editOk[i]);
     el.querySelector(".tv").textContent = editTimes[i] == null ? "—" : fmt(editTimes[i]) + "." + String(Math.round(editTimes[i] * 100) % 100).padStart(2, "0");  // hundredths: the small arrows move by 0.01 s
   });
@@ -590,9 +632,31 @@ function stamp() {
   cursor = Math.min(cursor + 1, editTimes.length - 1);
   renderStamps(); tick(true);
 }
-// ↓ / Space: stamp (paused → play first) · ↑: one group back — keyboard and the phone's floating buttons
-function editDown() { if (audio.paused) audio.play(); else stamp(); }
-function editUp() { cursor = Math.max(0, cursor - 1); renderStamps(); }
+/* Shift + ↑ ↓ (to = where the pick's moving end goes) · Shift + click: the pick is the groups from the dashed one to
+   `to`; back on the dashed one = no pick. No time changes here. */
+function editPick(to) {
+  editSelEnd = Math.max(0, Math.min(editTimes.length - 1, to));
+  editSel = editSelEnd === cursor ? null : [Math.min(cursor, editSelEnd), Math.max(cursor, editSelEnd)];
+  renderStamps();
+}
+function editPickDrop() { if (!editSel) return false; editSel = null; renderStamps(); return true; }
+/* ↓ on a pick: its groups at even steps from the first one's time to the time of the group after the pick, then on
+   with that group. Without those two times (or with the later one not later) the pick is only dropped. */
+function editSpread() {
+  const [a, b] = editSel, from = editTimes[a], to = b + 1 < editTimes.length ? editTimes[b + 1] : audio.duration;
+  if (from != null && to > from) {
+    for (let i = a + 1; i <= b; i++) { editTimes[i] = +(from + (to - from) * (i - a) / (b - a + 1)).toFixed(2); editOk[i] = true; }
+    cursor = Math.min(b + 1, editTimes.length - 1);
+  }
+  editSel = null;
+  renderStamps(); tick(true);
+}
+/* Ctrl + ↑ ↓: the dashed group moves, nothing is stamped */
+function editStep(d) { editSel = null; cursor = Math.max(0, Math.min(editTimes.length - 1, cursor + d)); renderStamps(); }
+// ↓: stamp (paused → play first; a pick → spread it) · ↑: one group back (a pick → only dropped) — keyboard and the
+// phone's floating buttons
+function editDown() { if (editSel) editSpread(); else if (audio.paused) audio.play(); else stamp(); }
+function editUp() { if (editPickDrop()) return; cursor = Math.max(0, cursor - 1); renderStamps(); }
 // pointerdown, not click: the stamp lands when the finger touches, and the button never takes focus
 for (const [id, fn] of [["editDown", editDown], ["editUp", editUp]])
   $(id).addEventListener("pointerdown", e => { e.preventDefault(); if (editing && editMode === "sync") fn(); });
@@ -609,6 +673,66 @@ $("btnEdit").onclick = async () => {
   }
   startEdit();
 };
+/* 싱크 모든 동작 확인 (user request 2026-11-26: "모든 기능 설명한 팝업" — then: "가독성 너무 떨어짐 — 앞에 가이드처럼 뭐는
+   뭐다 이런 식으로 적어 주고 버튼들은 박스로 감싸서 구별되게"): short lines like the guide — the keys · buttons in boxes
+   (kbd), then what they do in a few words. Also the keys the guide line leaves out; a new key or button of the sync
+   edit is added here. [title, [[keys, what it does] …]] */
+function editHelp() {
+  const admin = typeof isAdmin === "function" && isAdmin();
+  const rows = [
+    ["찍기", [
+      [["↓"], "찍기"],
+      [["↑"], "한 묶음 뒤로"],
+      [["Space"], "곡 재생 · 정지"],
+      [["←", "→"], "곡 5초 이동"],
+      [["묶음 클릭"], "그 묶음으로 이동"],
+    ]],
+    ["시간 고치기", [
+      [["<<", ">>"], "0.1초씩"],
+      [["<", ">"], "0.01초씩"],
+      [["시간 숫자 클릭"], "직접 입력"],
+      [["아래 줄 << < > >>"], "찍은 시간 전체 밀기"],
+    ]],
+    ["찍지 않고 이동", [
+      [["Ctrl", "↑"], "위로 이동만"],
+      [["Ctrl", "↓"], "아래로 이동만"],
+    ]],
+    ["여러 묶음 같은 간격으로", [
+      [["Shift", "↑"], "묶음 여러 개 고르기"],
+      [["Shift", "↓"], "묶음 여러 개 고르기"],
+      [["Shift", "묶음 클릭"], "그 칸까지 고르기"],
+      [["↓"], "나누고 다음 칸으로"],
+      [["↑"], "고르기 풀기"],
+      [["Esc"], "고르기 풀기"],
+    ], "첫 칸 시간 ~ 고른 칸 다음 칸 시간 사이를 나눔 (두 시간이 있어야 함)"],
+    ["되돌리기 · 저장", [
+      [["Ctrl", "Z"], "되돌리기"],
+      [["Ctrl", "X"], "다시 하기"],
+      [["Ctrl", "S"], "저장 (물어봄)"],
+      ...(admin ? [[["임시저장"], "확인 대기로 저장"]] : []),
+      [["취소"], "고친 것 버리기"],
+    ]],
+  ];
+  const d = document.createElement("dialog");
+  d.className = "uidlg synchelp";
+  d.innerHTML = `<div class="dlg-head">싱크 모든 동작</div><div class="dlg-body">${rows.map(([title, list, note]) =>
+    `<section><h4>${esc(title)}</h4>${list.map(([keys, what]) => `<p><span class="k">${keys.map(k => `<kbd>${esc(k)}</kbd>`).join(" ")}</span>${esc(what)}</p>`).join("")}${note ? `<p class="note">${esc(note)}</p>` : ""}</section>`).join("")}</div>
+    <div class="dlg-foot"><button class="primary" data-v="1">확인</button></div>`;
+  d.addEventListener("click", e => { if (e.target.closest("button[data-v]") || e.target === d) d.close(); });
+  d.addEventListener("close", () => d.remove());
+  document.body.appendChild(d);
+  d.showModal();
+  d.querySelector(".primary").focus();
+}
+$("editGuide").addEventListener("click", e => { if (e.target.closest("#btnEditHelp")) editHelp(); });
+/* Ctrl+S (user request 2026-11-26: "저장 전에 저장하시겠습니까? 물어보는 창") — the 저장 button itself saves at once as before */
+async function editSaveAsk() {
+  if (!editing || document.querySelector("dialog.uidlg[open]") || $("btnEditSave").disabled) return;
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();  // a time being typed is taken first
+  if (await uiConfirm("저장하시겠습니까?", "저장")) saveEdit(false);
+}
+$("editUndo").onclick = () => editUndo(-1);
+$("editRedo").onclick = () => editUndo(1);
 $("btnParts").onclick = () => { if (editing) setEditMode("parts"); };
 $("btnLyrEdit").onclick = () => { if (editing) setEditMode("lyrics"); };
 $("btnEditCancel").onclick = () => { stopEdit(); renderLyrics(); };
