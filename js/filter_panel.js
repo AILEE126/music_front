@@ -42,7 +42,7 @@ const FE = makeFilterEditor({
     $("btnFilter").classList.toggle("on", !!n);
     $("btnFilter").classList.toggle("open", !$("fPanel").hidden);
     $("btnFilter").querySelector(".cnt").textContent = n || "";
-    fPlayBtn();
+    fPlayBtn(); fSaveBox();
   },
 });
 /* 재생가능 | 재생불가능 (user request 2026-11-23, admin token only): right of the 원곡만 switch — narrows the results to the
@@ -68,6 +68,40 @@ function fPlayBtn() {
   const orig = bar.querySelector(".forig:not(.fplay)");
   orig ? orig.after(b) : bar.prepend(b);
 }
+/* 필터 저장 (user request 2026-11-26 — "플레이어 관리자모드에서 재생목록 만들기 옆에 필터 프리셋 · 오픈채널 · 2x 오픈채널 중
+   선택해서 저장"; the server's OPEN CHANNEL card only showed the song count of a list a player made). Admin token only.
+   The player has no server: like an admin's sync save it writes the player file (export/db/filter.json) at once and leaves
+   sync_apply/admin_filter_<time>.json — the server puts it into its tables (error_reports.apply_player_requests) in its next
+   upload round / at start. A channel's song list is made again here (listen_together.js ltChRefresh) */
+function fSaveBox() { $("sSaveTo").hidden = !(typeof isAdmin === "function" && isAdmin()); }
+async function fSaveTo() {
+  const where = $("sSaveWhere").value, f = FE.filter(), flt = VDB.filter;
+  if (!isAdmin()) return;
+  if (!flt) return uiAlert("filter.json 을 읽지 못해 저장할 수 없습니다.");
+  if (!f.groups.some(g => !g.x)) return uiAlert("포함(＋) 그룹이 하나 이상 있어야 합니다.");
+  let req;
+  if (where === "preset") {
+    const name = await uiPrompt("새 필터 프리셋 이름 (플레이어 프리셋 목록에 보임)", "", "프리셋 이름");
+    if (!name) return;
+    const p = {name, ...f};
+    flt.presets = [...(flt.presets || []), p];
+    req = {preset: p};
+  } else {
+    const key = "channel" + where, old = flt[key];
+    if (!await uiConfirm(`${ltChName(where === "2")} 재생목록을 지금 필터로 바꿀까요?`, "바꾸기")) return;
+    flt[key] = {title: (old && old.title) || "", ...f};
+    req = {[key]: flt[key]};
+  }
+  const who = LOCAL.gh ? await LOCAL.ghWho() : String(store.get("reportWho", "") || "").trim();
+  try {
+    await LOCAL.writeText(`${LOCAL.out}/db/filter.json`, JSON.stringify(flt) + "\n", who);
+    await LOCAL.writeText(`${LOCAL.data}sync_apply/admin_filter_${Date.now()}.json`, JSON.stringify({at: nowText(), who, filter: req}, null, 1) + "\n", who);
+  } catch (e) { return uiAlert(`저장하지 못했습니다 — ${e.message || e}`); }
+  if (where !== "preset") ltChRefresh();  // the channel's song list for the new filter (background)
+  uiAlert(where === "preset" ? `필터 프리셋 '${req.preset.name}' 을 저장했습니다.`
+    : `${ltChName(where === "2")} 재생목록을 바꿨습니다. 곡 목록은 뒤에서 새로 만듭니다.`);
+}
+$("sSaveBtn").onclick = fSaveTo;
 const fDefault = FE.def, fReal = FE.real, renderFilterOptions = FE.render, closeDD = FE.closeDD, placePop = filterPlacePop;
 samePlayable = it => canPlay(it);  // 같은 곡 정렬 '재생 가능' = 재생목록에 넣을 수 있는 곡
 /* 곡 조건 (user request 2026-11-14: 검색 결과의 '현재 필터에 추가'): 지금 결과에 이 곡'도' 더함 — 곡만 모은 포함 그룹 하나

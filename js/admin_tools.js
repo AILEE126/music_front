@@ -90,6 +90,7 @@ function admChanged() {
   if ($("searchDlg").open) catsLater();
   renderRows(true);
   partsBtn();  // 파트분리 button: admin only (lyrics_view.js)
+  fSaveBox();  // 곡 검색 필터 저장: admin only (filter_panel.js)
 }
 
 /* ---- 선택 모드 ---- */

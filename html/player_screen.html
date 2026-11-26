@@ -231,6 +231,7 @@
     <div class="sinfo"><span id="sInfo">찾을 곡을 넣고 Enter</span><span class="grow"></span>
       <!-- 정렬 · 몇 번째부터 · 몇 곡 — part of the filter, drawn by filter_editor.js (user request 2026-11-22: was 상위 N곡 + 정렬) -->
       <span id="sSortBox"></span>
+      <span class="ssave" id="sSaveTo" hidden><select id="sSaveWhere" title="관리자: 지금 필터를 저장할 곳"><option value="preset">필터 프리셋으로 추가</option><option value="">OPEN CHANNEL</option><option value="2">OPEN CHANNEL 2x!!</option></select><button id="sSaveBtn" title="관리자: 지금 필터(정렬 · 범위 포함)를 고른 곳에 저장">필터 저장</button></span><!-- user request 2026-11-26: admin only, filter_panel.js fSaveTo -->
       <button id="sMakePl" disabled title="지금 결과의 재생할 수 있는 곡으로 재생목록을 새로 만듦 — 지금 재생목록은 바뀜">재생목록 만들기</button></div><!-- user request 2026-11-14: replaces '결과 모두 재생목록에' -->
     <div class="slistw"><div class="slist" id="sList"></div><div class="sbusy" id="sBusy" hidden></div></div><!-- sBusy: 검색 중 도는 표시 (2026-11-16) -->
   </div>
