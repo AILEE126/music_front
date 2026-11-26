@@ -118,12 +118,18 @@ function gameStepTime(ch, step) {
      ⑨ a rest after a line at 쉬움 · ⑩ gameNotes' last pass places every note and moves / drops what breaks a limit
      (GAME.lint = what it did). */
 const GAME_FIT = [                               // a level's limits: notes ≥ gap steps apart · ≤ max notes in any win steps ·
-  {gap: 3, win: 8, max: 2, rest: 4},             // ≥ rest steps between two phrases (a step = a quarter beat)
-  {gap: 2, win: 16, max: 5, rest: 2},
-  {gap: 1, win: 8, max: 4, rest: 0},
-  {gap: 1, win: 8, max: 7, rest: 0}];            // (the top level was every note while the notes were the syllables)
+  {gap: 3, win: 8, max: 3, rest: 4},             // ≥ rest steps between two phrases (a step = a quarter beat)
+  {gap: 2, win: 8, max: 4, rest: 2},
+  {gap: 1, win: 8, max: 6, rest: 0},
+  {gap: 1, win: 8, max: 8, rest: 0}];
+/* 난이도는 간격과 패턴 (user 2026-11-27: "하이라이트가 아닌 부분도 노트가 너무 부실하다고 함 — 난이도는 노트 갯수보다는 간격이나 패턴이
+   결정하는 거임"): the levels had been told apart by how MANY notes a stretch may hold (2 · 5 in 4 beats · 4 · 7 in 2
+   beats), and a part that is not the highlight got 30 % of that — thin everywhere but the chorus. Now a level is its
+   spacing: EASY 3/4 beat apart · NORMAL half a beat · HARD and SUPER HARD a quarter (HARD: 6 notes in 2 beats at
+   most, so quarter runs stay short) — `max` only says that; and the calm parts keep GAME_SOFT (0.7) of it, with their
+   notes half a beat apart at the least. What sets the upper levels apart is the patterns (GAME_RUNS · GAME_PAIRS). */
 const GAME_MUSIC = 0.3;                          // the music: the steps where most comes in — this share of all steps
-const GAME_STRONG = 0.75, GAME_CALM = 0.45, GAME_SOFT = 0.3;  // 강약: a part's strength (0–1) → the share of the level's notes it gets
+const GAME_STRONG = 0.6, GAME_CALM = 0.2, GAME_SOFT = 0.7;    // 강약: a part's strength (0–1) → the share of the level's notes it gets
 const GAME_LONG = [[1, 1.5, 2, 3], [0, 1, 2, 4]];  // by level: a long note lasts at least · comes at least this long after the one before (beats)
 const GAME_BURST = 4;                            // single notes within 2 beats = a burst (폭타): no long note next to one
 const GAME_PAIR = 0.4;                           // two keys at once only where the song is at least this strong
@@ -219,10 +225,18 @@ function gameNotes(level) {
     }
     const texts = ((song && song.groups) || []).map(g => String(g.orig || "").replace(/\s+/g, "")), seen = {};
     for (const t of texts) if (t) seen[t] = (seen[t] || 0) + 1;
-    for (const [st, line, , pitch] of ch.notes) {
-      const b = beatOf(st);
-      if (pitch) { hi[b] += pitch; hn[b]++; }
-      if (seen[texts[line]] > 1) back[b] = 1;
+    // … or half as much when only some words of the line do: 4 letters in a row it shares with a line 4 or more lines away
+    // (ヒビカセ's hook is 'この息と音とヒビカセ' · '重ねた息と音をヒビカセ' · 'オトヒビカセ' — never the same line twice)
+    const grams = texts.map(t => { const g = new Set(); for (let k = 0; k + 4 <= t.length; k++) g.add(t.slice(k, k + 4)); return g; });
+    const part = texts.map((t, i) => grams.some((g, k) => Math.abs(k - i) >= 4 && [...grams[i]].some(x => g.has(x))));
+    // a line is sung from its first syllable to the end of its last — a held note counts for as long as it is held
+    // (ヒビカセ's hook is a few long notes: counted by syllables it was "nobody sings" and went by loudness alone)
+    const inLine = new Array(nb).fill(0), lineEnd = {};
+    for (const [st, line, , pitch, len] of ch.notes) {
+      const b = beatOf(st), e = beatOf(st + (len || 0)), from = line in lineEnd ? lineEnd[line] : b;
+      for (let k = b; k <= e; k++) if (pitch) { hi[k] += pitch; hn[k]++; }
+      for (let k = Math.min(from, b); k <= e; k++) { inLine[k] = 1; if (seen[texts[line]] > 1) back[k] = 1; else if (part[line]) back[k] = Math.max(back[k], 0.5); }
+      lineEnd[line] = e;
     }
     const W = 8;  // beats either side: 4 bars
     const over = (v, ok) => v.map((_, b) => { let x = 0, n = 0; for (let k = Math.max(0, b - W); k <= Math.min(nb - 1, b + W); k++) if (!ok || ok(k)) { x += v[k]; n++; } return n ? x / n : NaN; });
@@ -230,8 +244,30 @@ function gameNotes(level) {
     const rank = v => { const u = v.filter((x, b) => heardAt(b) && !isNaN(x)).sort((x, y) => x - y); return v.map(x => { if (isNaN(x) || !u.length) return 0.5; let lo = 0, top = u.length; while (lo < top) { const m = (lo + top) >> 1; if (u[m] < x) lo = m + 1; else top = m; } return lo / u.length; }); };
     if (e.filter((_, b) => heardAt(b)).length < 16) return null;
     const rE = rank(over(e)), rP = rank(over(hi.map((x, b) => hn[b] ? x / hn[b] : 0), b => hn[b] > 0)), rB = over(back);
-    const sung = over(hn.map(n => n ? 1 : 0));  // (where nobody sings the voice says nothing: loudness alone)
-    return rank(rE.map((x, b) => sung[b] > 0.2 ? 0.5 * x + 0.3 * rP[b] + 0.2 * Math.min(1, rB[b] * 2) : 0.6 * x));
+    const sung = over(inLine);  // (where nobody sings the voice says nothing: loudness alone)
+    /* ヒビカセ (user 2026-11-27: "하이라이트 구간에 노트가 오히려 더 안 나오는 문제"): its chorus is a wall of sound — nothing
+       stands out of it, so "how busy" (the drums that stand out) is LOWER there than in the verse, and loudness is at
+       the top of its scale all through the song; with half the weight on those two the chorus came out as the calm
+       part (0.14–0.23). What does mark it: the voice is 3–5 semitones higher and its lines come back. So where
+       somebody sings: the voice's height half, the lines coming back three tenths, loud + busy two tenths. */
+    const sc = rE.map((x, b) => sung[b] > 0.2 ? 0.2 * x + 0.5 * rP[b] + 0.3 * Math.min(1, rB[b] * 2) : 0.6 * x);
+    /* not a share of the song (user 2026-11-27, ヒビカセ: "처음 하이라이트만 노트가 잘 나왔고 이후 하이라이트는 너무 부실 — 노트 총량
+       같은 걸 정해 놓고 하는 거 아님?"): the strength was the beat's RANK in the song, so only a fixed part of every song
+       — its top quarter — could be strong; a song that is half chorus had the rest of its choruses thinned. Now the
+       sung beats are split into the two kinds they fall into by themselves (two means): the strength is where a beat
+       lies between the calmer kind (0) and the stronger kind (1) — as much of the song as is like its chorus is
+       strong. A song with no two kinds (the means nearly the same) is the same all through. */
+    const u = sc.filter((_, b) => heardAt(b) && sung[b] > 0.2).sort((x, y) => x - y);
+    if (u.length < 16) return rank(sc);
+    let c0 = u[u.length >> 2], c1 = u[u.length * 3 >> 2];
+    for (let k = 0; k < 12; k++) {
+      let s0 = 0, n0 = 0, s1 = 0, n1 = 0;
+      for (const x of u) if (Math.abs(x - c0) <= Math.abs(x - c1)) { s0 += x; n0++; } else { s1 += x; n1++; }
+      if (n0) c0 = s0 / n0;
+      if (n1) c1 = s1 / n1;
+    }
+    if (c1 - c0 < 0.08) return sc.map(() => 0.7);
+    return sc.map(x => Math.max(0, Math.min(1, (x - c0) / (c1 - c0))));
   })();
   const strong = st => inten ? inten[beatOf(st)] : 1;
   const ease = st => { const v = strong(st); return v >= GAME_STRONG ? 1 : v <= GAME_CALM ? GAME_SOFT : GAME_SOFT + (1 - GAME_SOFT) * (v - GAME_CALM) / (GAME_STRONG - GAME_CALM); };
@@ -262,6 +298,7 @@ function gameNotes(level) {
     const lineAt = st => { while (sp < spans.length - 1 && spans[sp][1] < st) sp++; return spans[sp] && spans[sp][0] <= st + S && st <= spans[sp][1] + S ? spans[sp][2] : -1; };
     for (const [st, len, p] of ch.longs || []) {  // held sounds and long notes of the tune where nobody sings
       if (!len) continue;
+      if (p && len < 2 * S) { if (st >= 0 && st < top) at.set(st, {st, len: 0, p, kind: 3, line: -1, ok: true, fill: false, w: 6}); continue; }  // (a short one: a single note)
       at.set(st, {st, len, p, kind: 2, line: -1, ok: true, fill: false, w: 60});
       for (let k = Math.max(0, st - 2); k <= Math.min(top, st + len + 1); k++) held[k] = 1;
     }
@@ -273,33 +310,47 @@ function gameNotes(level) {
       if (a - pe >= GAME_GAP * S && hi > lo) { gaps.push([lo, hi]); gap.fill(1, lo, hi + 1); }
       pe = b;
     }
-    for (const [lo, hi] of gaps) {  // … their long notes after the tune
-      const pts = ch.mel.filter(m => m[0] >= lo && m[0] <= hi && !held[m[0]] && !silent(m[0]));
-      let cur = null;
-      const long = to => {
-        const e = Math.min(to, cur[0] + 4 * S);
-        let ok = e - cur[0] >= S;
-        for (let k = cur[0]; ok && k <= e; k++) if (held[k]) ok = false;
-        if (ok) { at.set(cur[0], {st: cur[0], len: e - cur[0], p: cur[2], kind: 2, line: -1, ok: true, fill: false, w: 60}); held.fill(1, cur[0], e + 2); }
-      };
-      for (const m of pts) {
-        if (!cur) { cur = m; continue; }
-        if (m[0] - cur[0] < S + 2) continue;  // too close for a long note of its own: the one before goes on
-        long(m[0] - 2); cur = m;
+    /* 간주 · 도입부 (user 2026-11-27: "간주 구간이나 초반 멜로디만 있는 구간 노트가 너무 많이 빔"): a stretch without singing had
+       only long notes — one from each note of the tune to the next — and no notes of the drums, which left it nearly
+       empty above EASY (the upper levels turn most long notes into single ones, and the long notes had kept their
+       stretch clear). There the tune leads now: every note of it is a note, one held for 2 beats or more a long
+       note (4 beats at most); the drums come in as everywhere else. */
+    for (const [lo, hi] of gaps) {
+      for (const m of ch.mel) {
+        if (m[0] < lo || m[0] > hi || held[m[0]] || at.has(m[0]) || silent(m[0])) continue;
+        const len = m[1] >= 2 * S ? Math.min(m[1], 4 * S, hi - m[0]) : 0;
+        at.set(m[0], {st: m[0], len: len >= 2 * S ? len : 0, p: m[2], kind: 3, line: -1, ok: true, fill: false, w: 6 + 2 * (+hit[m[0]] || 0)});
+        if (len >= 2 * S) held.fill(1, m[0] + 1, Math.min(top, m[0] + len) + 1);
       }
-      if (cur) long(Math.min(hi, cur[0] + Math.max(cur[1], 2 * S)));
     }
+    /* 상위 난이도 (user 2026-11-27: "상위 난이도는 롱노트에 일반 노트 빈도를 좀 많이 올려 줘야", "슈퍼하드 노트 총량 한 1.2배 정도로"):
+       · HARD and SUPER HARD play on while a key is held — the notes that fall inside a long note are no longer left
+         out there (the other hand takes them; no two keys at once meanwhile)
+       · SUPER HARD takes the melody everywhere, not only in the strong parts: every sung syllable and every note of the
+         tune that has a little of the drums on it, after the drums' own notes */
+    const upper = level >= 2;
     const digits = [...hit].map(Number).sort((x, y) => y - x), need = Math.max(2, digits[Math.floor(digits.length * GAME_MUSIC)] || 2);
     let nMusic = 0;
     for (let st = 0; st < top; st++) {
       const h = +hit[st], m = melAt.get(st);
-      if (held[st] || gap[st] || at.has(st) || silent(st) || h < need) continue;
+      if ((held[st] && !upper) || at.has(st) || silent(st) || h < (level === 3 && mod(st, S / 2) === 0 ? Math.max(1, need - 1) : need)) continue;  // (SUPER HARD: the drums' weaker hits on the beat and the half beat too)
       const s = sung.get(st);
       // a note of the tune held for two beats or more with nothing sung in it = a long note
       let len = m && m[0] >= 2 * S ? m[0] : 0;
       for (let k = st + 1; len && k < st + len; k++) if (sung.has(k)) len = 0;
       at.set(st, {st, len, p: (m && m[1]) || tuneP[st] || (s && s[3]) || 0, kind: 3, line: lineAt(st), ok: true, fill: false, w: 2 * h + (m ? 2 : 0) + (s ? 2 : 0)});
       nMusic++;
+    }
+    /* a strong part has every note of the level — but the drums alone may not give that many (ヒビカセ's chorus: 1.3–2.8
+       places a second, its verse 4): there the song's own melody fills up, after the drums — the syllables sung and
+       the notes of the tune, with less weight than a drum hit, so the level's limit takes the drums first */
+    for (const [st, line, ok, pitch, len] of ch.notes) {
+      if (st < 0 || st >= top || at.has(st) || (held[st] && !upper) || (strong(st) < GAME_STRONG && level < 3)) continue;
+      at.set(st, {st, len: len || 0, p: pitch || tuneP[st] || 0, kind: 1, line, ok: !!ok, fill: false, w: 5});
+    }
+    for (const [st, , p] of ch.mel) {
+      if (st < 0 || st >= top || at.has(st) || (held[st] && !upper) || gap[st] || silent(st) || (strong(st) < GAME_STRONG && level < 3) || +hit[st] < 1) continue;
+      at.set(st, {st, len: 0, p, kind: 3, line: lineAt(st), ok: true, fill: false, w: 3});
     }
     // the lyrics' share: the syllables that stand out most
     const act = [], lead = [];
@@ -418,8 +469,9 @@ function gameNotes(level) {
       let a = i - 1, b = i + 1;
       while (a >= 0 && !on[a]) a--;
       while (b < all.length && !on[b]) b++;
-      const k = ease(n.st), gap = k < 0.6 ? Math.max(C.gap, S / 2) : C.gap, max = Math.max(1, Math.round(C.max * k));  // 강약
-      if (a >= 0) { const d = n.st - all[a].st - all[a].len; if (d < gap || (all[a].g !== n.g && d < C.rest)) return false; }
+      const k = ease(n.st), gap = strong(n.st) <= GAME_CALM ? Math.max(C.gap, S / 2) : C.gap, max = Math.max(1, Math.round(C.max * k));  // 강약
+      // (HARD · SUPER HARD: a note may come while the note before is held — half a beat after it began at the least)
+      if (a >= 0) { const d = lv >= 2 && all[a].len ? Math.min(n.st - all[a].st - S / 2 + gap, n.st - all[a].st) : n.st - all[a].st - all[a].len; if (d < gap || (all[a].g !== n.g && d < C.rest)) return false; }
       if (b < all.length) { const d = all[b].st - n.st - n.len; if (d < gap || (all[b].g !== n.g && d < C.rest)) return false; }
       for (let j = a; j >= 0 && n.st - all[j].st < C.win; j--) if (on[j]) near.unshift(all[j].st);
       for (let j = b; j < all.length && all[j].st - n.st < C.win; j++) if (on[j]) near.push(all[j].st);
@@ -566,13 +618,15 @@ function gameNotes(level) {
       if (n.st - prevEnd > 2 * S || prevKind !== 2) heldN = 0;  // each stretch starts the round again
       lane = HELD_LANE[heldN++ % 4];
     } else lane = n.rl != null ? n.rl : laneOf(n);
+    const hl = !n.len && !n.fill ? last.findIndex(L => L.end > n.st) : -1;  // a key is being held: the other hand plays this note
+    if (hl >= 0 && (lane < 2) === (hl < 2)) lane = 3 - lane;
     if (n.over) {  // during a long note: the other hand's two keys in turn
       const h = last.findIndex(L => L.end >= n.st);
       lane = (h >= 0 && h < 2 ? [2, 3] : [1, 0])[mod(Math.floor(n.st / S), 2)];
     }
     const t = gameStepTime(ch, n.st) + off;
     if (n.kind !== 2 && !n.len && !n.over) {  // two keys at once (GAME_PAIRS)? — on the beats the song hits hardest
-      let two2 = music ? n.two : (n.head && level > 0) || (feel ? accOf(n.st) >= acc2 : two && mod(n.st, two) === 0);
+      let two2 = hl >= 0 ? false : music ? n.two : (n.head && level > 0) || (feel ? accOf(n.st) >= acc2 : two && mod(n.st, two) === 0);
       if (two2 && !n.head && !music) {
         const next = i + 1 < kept.length ? kept[i + 1].st : 1e9;
         if (feel && lvlOf(n.st) <= 5) two2 = false;  // a quiet beat
