@@ -157,6 +157,7 @@ const VSONG_GET = {
   lvp() { return vours(this).vp || undefined; },
   lft() { return vours(this).ft || undefined; },  // the donor's title where the list shows another name
   parts() { return vours(this).parts ? 1 : undefined; },  // lyrics name the vocal of some groups — list badge 파트분리 (2026-11-21)
+  chart() { return vours(this).chart ? 1 : undefined; },  // the sync has a rhythm-game chart — 곡 상태 '리듬게임' (2026-11-27)
   files() { const f = vcol(this, "files"); return Array.isArray(f) && f.length ? f : undefined; },  // 파일 포맷 태그 [[종류, 주소, 설명], …]
   flags() {  // 곡 상태 (song_filter.js FLAGS) — worked out once (q)
     let q = this.q;
@@ -164,9 +165,9 @@ const VSONG_GET = {
       const ko = vcol(this, "title_ko");
       let m = 0;
       for (const f of songFlags(this, vcol(this, "lyrics") === "Y", !!(ko && ko !== vcol(this, "title_ja") && ko !== this.def))) m |= 1 << FLAGS.indexOf(f);
-      this.q = q = q | 512 | m << 10;
+      this.q = q = q | 512 | (m & 4095) << 10;  // (12 bits kept here; the 13th flag, 리듬게임, is read from the cell below)
     }
-    return flagsOf(q >> 10 & 4095);
+    return flagsOf(q >> 10 & 4095 | (vours(this).chart ? 4096 : 0));
   },
   // playable (1) or not (0) — canPlay reads only > 0. Worked out once (q); was ~5 µs a song every time (4.6 s over 98만 곡)
   _pn() {

@@ -37,6 +37,16 @@
                        beats where much comes in · more notes while a key is held
    all: every long note · from 어려움 up two keys on a line's first note and the beats the song hits while a key is
    held (the other hand) · the bare beat where nothing else is (beat · beat · half · half)
+   멜로디 위주 (user 2026-11-27: "너무 가사만 쫓아간다는 후기가 많아서 — 멜로디 80% 가사 20% 정도로 로직 다 갈아엎어야", "가사 20%도
+   잔잔한 부분 · 말하듯이 하는 부분 · 소리 지르는 부분 같은 특징적인 부분만"): with a chart v7 the notes are the music's (where
+   something comes in · the tune's notes), the lyrics' own only where they stand out — GAME_MUSIC in gameNotes. What is
+   said above about syllables is how a chart made before v7 still plays. ジッタードール now 392 · 652 · 931 · 1,285 notes; of
+   the notes that are not keys-at-once or the bare beat about a quarter are the lyrics' own. Limits: 쉬움 as above ·
+   어려움 5 notes in any 4 beats · 매우어려움 4 in any 2 beats · the top level 7 in any 2 beats (no longer every note);
+   keys at once on 3 · 14 · 30 · 60 % of the beats (three 0 · 0 · 4 · 20 %, four 3 % at the top).
+   Then (user 2026-11-27, GAME_MUSIC · GAME_PAIRS below): the drums first · long stretches without singing = long notes
+   only, no bare beat · never more than two keys at once, in a fixed round of pairs, joined by a bar.
+   ジッタードール 409 · 652 · 966 · 1,169 notes — with the patterns (GAME_GROUPS below) 409 · 626 · 946 · 1,144.
    A song without a chart (not made yet — 음원 관리 › 수집 › 자동 싱크 › 채보 만들기) plays its sync's line starts only, the same
    at every level; the start screen says so.
    Keys D F J K (lanes left to right) · touch: the lane under the finger · Space pauses · Esc closes. */
@@ -109,9 +119,48 @@ function gameStepTime(ch, step) {
      (GAME.lint = what it did). */
 const GAME_FIT = [                               // a level's limits: notes ≥ gap steps apart · ≤ max notes in any win steps ·
   {gap: 3, win: 8, max: 2, rest: 4},             // ≥ rest steps between two phrases (a step = a quarter beat)
-  {gap: 2, win: 20, max: 6, rest: 2},
-  {gap: 1, win: 8, max: 7, rest: 0},
-  null];                                         // >>매우매우어려움<<: every note
+  {gap: 2, win: 16, max: 5, rest: 2},
+  {gap: 1, win: 8, max: 4, rest: 0},
+  {gap: 1, win: 8, max: 7, rest: 0}];            // (the top level was every note while the notes were the syllables)
+const GAME_MUSIC = 0.3;                          // the music: the steps where most comes in — this share of all steps
+const GAME_STRONG = 0.6, GAME_CALM = 0.15, GAME_SOFT = 0.35;  // 강약: a part's strength (0–1) → the share of the level's notes it gets
+const GAME_PAIR = 0.4;                           // two keys at once only where the song is at least this strong
+const GAME_GAP = 4;                              // beats nobody sings for → that stretch is long notes only
+const GAME_LYRIC = 0.2;                          // the lyrics' own notes: this share of the notes (the syllables that stand out)
+/* 동시에 치는 키 (user 2026-11-27: "모든 난이도에서 3, 4칸 동시 노트는 재미가 없다고 함 — 2, 4 반복 노트가 차라리 재밌을 듯 · 아주
+   어려운 모드에서도 노트의 규칙은 지켜져야 함, 예를 들어 FJ FJ DK DK DJ FK DJ FK 이런 식으로 · 동시에 치는 노트는 줄로 연결"):
+   never more than two keys, one of each hand, and which two is not worked out note by note any more — the pairs come in
+   this round, the same at every level; a new round starts after 2 bars without one. The two notes are joined by a bar. */
+const GAME_PAIRS = [[1, 2], [1, 2], [0, 3], [0, 3], [0, 2], [1, 3], [0, 2], [1, 3]];
+/* 패턴 (user 2026-11-27: "계단 같은 패턴도 활용해야 하고 … 공개적으로 올라와 있는 채보 정보 다 습득해서 문서화 — 그것도 활용해서
+   규칙 로직 너가 더 추가해 봐"; music_backend docs/rhythm_chart_guide.md §12 — its rule numbers in brackets). With a chart
+   v7+ the key of a single note is not worked out note by note from the pitch any more, it comes from the pattern the
+   note is part of (gameNotes › GAME_RUNS):
+   · a run = single notes half a beat or closer, between two-key notes · long notes · longer waits
+   · a run whose tune clearly goes one way is a stair — up D F J K, down K J F D, on round as a roll; up and down again
+     a spiral with its top on K; two pitches to and fro a two-hand trill F J [4]. A tune that does none of these, or
+     moves within 2 semitones, counts as no tune [5]
+   · a run without a tune is laid in fours from GAME_GROUPS — trill · bent stair · stair, so one four in three is a
+     whole stair [8] and the shape only changes on the four [7]; every other run left ↔ right [11]; no turn that is
+     not one of these [9]
+   · a run that lands on a two-key note ends in the four that fits that pair [12]: before FJ a stair, before DK a
+     folded stair, before DJ the stair up, before FK the stair down
+   · between two two-key notes half a beat apart: nothing in the DJ FK part of the round (any key there would be the
+     same key twice a quarter beat apart) [14], D / K between FJ FJ, F / J between DK DK
+   · a quarter-beat run ends on the beat or the half beat — a last note between them is left out [1]
+   · the notes that are not in a run (the slow ones — all of EASY) walk through GAME_WALK: a set of four keys played
+     twice, then the next set [2]. */
+/* 계단은 이유가 있는 곳에만 (user 2026-11-27: "계단이 너무 뜬금없는 곳에 있는 것 같음"): the first try put a whole stair in every third
+   four of a run and in the slow notes' sets, whatever the music did (the guide's [8] "one four in three" taken without
+   its [6] "where"). Now a whole stair comes only where the song gives the reason: the tune goes one way [4] · the run
+   is a fill — it ends in the last beat of a bar [6]: up when the next bar is as strong or stronger, down when it is
+   calmer · the run lands on a two-key note [12]. Everything else is trills and bent stairs; the slow notes' sets and
+   the runs of three have no stair in them. */
+const GAME_GROUPS = [[1, 2, 1, 2], [0, 1, 2, 1], [2, 1, 2, 1], [3, 2, 1, 2], [0, 3, 0, 3], [1, 2, 3, 2]];
+const GAME_LAND = {"1,2": [0, 1, 2, 3], "0,3": [1, 2, 3, 2], "0,2": [0, 1, 2, 3], "1,3": [3, 2, 1, 0]};  // the four before a pair
+const GAME_WALK = [[1, 2, 0, 3], [2, 1, 3, 0], [0, 2, 1, 3], [3, 1, 2, 0]];
+const GAME_SHORT = [[[1, 2], [0, 1], [2, 3], [2, 1], [3, 2], [1, 0]],                           // runs of two · of three: steps of
+                    [[1, 2, 1], [2, 1, 2], [0, 2, 0], [3, 1, 3], [1, 3, 1], [2, 0, 2]]];     // to and fro
 const GAME_ANCHOR = [2, 4, 99, 99];              // the same key at most this many times in a row half a beat apart
 function gameNotes(level) {
   const sj = song && song.sync, ch = sj && sj.chart, off = offset || 0;
@@ -121,6 +170,8 @@ function gameNotes(level) {
     return {beat: false, notes: (times || []).map((t, i) => ({t: t + off, e: t + off, lane: i % 4, line: i, ok: m[i] !== false, fill: false, long: false}))};
   }
   const S = ch.steps, mod = (a, b) => ((a % b) + b) % b;
+  // the song's bars as the chart counted them (v9 `bar` [beats a bar, the first beat that starts one] — before: 4 from beat 0)
+  const BAR = (ch.bar ? ch.bar[0] : 4) * S, BAR0 = (ch.bar ? ch.bar[1] : 0) * S;
   const fillEvery = [S, S, S / 2, S / 2][level];
   // keys at once — every level, how often is the level: a line's first note always; two keys on every `two`-th beat,
   // three on a line's first note and every `three`-th beat
@@ -139,21 +190,123 @@ function gameNotes(level) {
   // 나게"): 쉬움 fewer notes and keys at once only on the few hardest beats (not on every line's first note); the top
   // level keys at once on nearly every beat, three on four beats of ten, all four on the hardest, and two between the
   // beats where much comes in
-  const acc2 = hard([0.03, 0.18, 0.45, 0.9][level]), acc3 = hard([0, 0, 0.06, 0.4][level]), acc4 = hard([0, 0, 0, 0.06][level]);
+  // (GAME_MUSIC: the notes sit on the song's hits now, so fewer of the beats are needed for as many keys at once;
+  // three and four keys at once are gone — GAME_PAIRS)
+  const acc2 = hard([0.03, 0.14, 0.3, 0.6][level]);
   const accOf = st => mod(st, S) === 0 ? +feel.acc[beatOf(st)] : -1, silent = st => !!feel && +feel.lvl[beatOf(st)] < 2;
   const lvlOf = st => feel ? +feel.lvl[beatOf(st)] : 9, movOf = st => feel && feel.mov ? +feel.mov[beatOf(st)] : 9;
+  /* 강약 (user 2026-11-27: "슈퍼하드도 채보 떨어지는 강약 조절이 필요 — 잔잔한 부분까지 노트가 많이 떨어지면 게임이 아니라 노동 · 악보
+     만드는 거랑 똑같다"): how many notes a part gets follows how strong the song is there, at every level. A beat's
+     strength = how loud it is + how much of the drums comes in, over the 2 bars round it, as its place among the
+     song's own beats (0 the calmest … 1) — so every song has its calm and its strong parts, a loud one too.
+     `ease`: the share of the level's notes a part may have — all from GAME_STRONG up, GAME_SOFT of them at GAME_CALM and
+     under; a calm part also has no notes closer than half a beat and no two keys at once. */
+  const inten = (() => {
+    if (!feel) return null;
+    const nb = feel.lvl.length, dr = feel.drum || feel.hit, e = [];
+    for (let b = 0; b < nb; b++) {
+      let a = 0;
+      if (dr) for (let k = 0; k < S; k++) a += +dr[b * S + k] || 0; else a = +feel.acc[b] * 2;
+      e.push(+feel.lvl[b] / 9 + a / (4.5 * S));
+    }
+    const sm = e.map((_, b) => { let v = 0, n = 0; for (let k = Math.max(0, b - 4); k <= Math.min(nb - 1, b + 4); k++) { v += e[k]; n++; } return v / n; });
+    const heard = sm.filter((_, b) => +feel.lvl[b] >= 2).sort((x, y) => x - y);
+    if (heard.length < 16) return null;
+    return sm.map(v => { let lo = 0, hi = heard.length; while (lo < hi) { const m = (lo + hi) >> 1; if (heard[m] < v) lo = m + 1; else hi = m; } return lo / heard.length; });
+  })();
+  const strong = st => inten ? inten[beatOf(st)] : 1;
+  const ease = st => { const v = strong(st); return v >= GAME_STRONG ? 1 : v <= GAME_CALM ? GAME_SOFT : GAME_SOFT + (1 - GAME_SOFT) * (v - GAME_CALM) / (GAME_STRONG - GAME_CALM); };
 
-  // 1. every note the chart holds = the top level: kind 1 a sung note · 2 the tune where nobody sings
-  const all = [];
+  // 1. every note there can be = the top level: kind 1 a sung note · 2 the tune where nobody sings · 3 the music
+  const all = [], phr = new Map();
+  const hit = feel && (feel.drum || feel.hit), music = !!(hit && ch.mel);  // (drum: chart v8 — v7 has `hit` only)
+  if (music) {
+    /* GAME_MUSIC — 멜로디 위주 (user 2026-11-27: "너무 가사만 쫓아간다는 후기가 많아서 가사보다는 멜로디 위주로 — 멜로디 80% 가사
+       20% 정도로 로직 다 갈아엎어야", "가사 20%도 잔잔한 부분 · 말하듯이 하는 부분 · 소리 지르는 부분 같은 특징적인 부분만"):
+       a note is first of all something of the music coming in (chart v7 feel.hit: a digit a step) and a note of the tune
+       (chart.mel — the pitch gives the key); a syllable sung on such a step only makes it matter a little more.
+       The lyrics lead only where they are the point — the GAME_LYRIC share of the notes, taken from the syllables that
+       are most so: a held one (아~~~ · a shout), a run on one pitch or without one (spoken), one sung over a calm
+       stretch (quiet · little coming in). Where nobody sings the chart's held sounds stay long notes as before.
+       After the first melody-led play (user 2026-11-27): "멜로디 중 드럼에 중점으로" → the strength is the drums'
+       (feel.drum, chart v8: how many bands of the sound rise at once) and a note of the tune is no reason for a note
+       by itself any more, it only gives the key · "가사가 없는 멜로디 구간에도 억지로 노트를 끼워 넣은 것 같은 느낌 — 공백이 긴
+       구간은 노트로 채우는 것보다 롱노트로" → where nobody sings for GAME_GAP beats or more there are no notes of the
+       drums and no bare beat: only long notes — the chart's own (a held sound · a held note of the tune) and, where
+       the tune moves, one from each of its notes to the next (a beat at least, 4 beats at most). */
+    const top = hit.length, sung = new Map(ch.notes.map(n => [n[0], n]));
+    const melAt = new Map(), tuneP = new Int16Array(top + 1), held = new Uint8Array(top + 1), at = new Map();
+    for (const [st, len, p] of ch.mel) { melAt.set(st, [len, p]); for (let k = Math.max(0, st); k <= Math.min(top, st + Math.max(len, 1)); k++) tuneP[k] = p; }
+    const spans = [];  // [first step, last step, line] of every sung line → the line a note of the music belongs to (its colour)
+    for (const [st, line, , , len] of ch.notes) { const e = st + (len || 0); if (spans.length && spans[spans.length - 1][2] === line) spans[spans.length - 1][1] = e; else spans.push([st, e, line]); }
+    let sp = 0;
+    const lineAt = st => { while (sp < spans.length - 1 && spans[sp][1] < st) sp++; return spans[sp] && spans[sp][0] <= st + S && st <= spans[sp][1] + S ? spans[sp][2] : -1; };
+    for (const [st, len, p] of ch.longs || []) {  // held sounds and long notes of the tune where nobody sings
+      if (!len) continue;
+      at.set(st, {st, len, p, kind: 2, line: -1, ok: true, fill: false, w: 60});
+      for (let k = Math.max(0, st - 2); k <= Math.min(top, st + len + 1); k++) held[k] = 1;
+    }
+    // the long stretches without singing: [from, to] — a beat free after the last sung note and before the next
+    const gap = new Uint8Array(top + 1), gaps = [];
+    let pe = -1e9;
+    for (const [a, b] of [...spans, [1e9, 1e9]]) {
+      const lo = Math.max(0, pe + S), hi = Math.min(top, a - S);
+      if (a - pe >= GAME_GAP * S && hi > lo) { gaps.push([lo, hi]); gap.fill(1, lo, hi + 1); }
+      pe = b;
+    }
+    for (const [lo, hi] of gaps) {  // … their long notes after the tune
+      const pts = ch.mel.filter(m => m[0] >= lo && m[0] <= hi && !held[m[0]] && !silent(m[0]));
+      let cur = null;
+      const long = to => {
+        const e = Math.min(to, cur[0] + 4 * S);
+        let ok = e - cur[0] >= S;
+        for (let k = cur[0]; ok && k <= e; k++) if (held[k]) ok = false;
+        if (ok) { at.set(cur[0], {st: cur[0], len: e - cur[0], p: cur[2], kind: 2, line: -1, ok: true, fill: false, w: 60}); held.fill(1, cur[0], e + 2); }
+      };
+      for (const m of pts) {
+        if (!cur) { cur = m; continue; }
+        if (m[0] - cur[0] < S + 2) continue;  // too close for a long note of its own: the one before goes on
+        long(m[0] - 2); cur = m;
+      }
+      if (cur) long(Math.min(hi, cur[0] + Math.max(cur[1], 2 * S)));
+    }
+    const digits = [...hit].map(Number).sort((x, y) => y - x), need = Math.max(2, digits[Math.floor(digits.length * GAME_MUSIC)] || 2);
+    let nMusic = 0;
+    for (let st = 0; st < top; st++) {
+      const h = +hit[st], m = melAt.get(st);
+      if (held[st] || gap[st] || at.has(st) || silent(st) || h < need) continue;
+      const s = sung.get(st);
+      // a note of the tune held for two beats or more with nothing sung in it = a long note
+      let len = m && m[0] >= 2 * S ? m[0] : 0;
+      for (let k = st + 1; len && k < st + len; k++) if (sung.has(k)) len = 0;
+      at.set(st, {st, len, p: (m && m[1]) || tuneP[st] || (s && s[3]) || 0, kind: 3, line: lineAt(st), ok: true, fill: false, w: 2 * h + (m ? 2 : 0) + (s ? 2 : 0)});
+      nMusic++;
+    }
+    // the lyrics' share: the syllables that stand out most
+    const act = [], lead = [];
+    for (let b = 0; b * S < top; b++) { let v = 0; for (let k = 0; k < S; k++) v += +hit[b * S + k] || 0; act.push(v); }
+    const calmAt = [...act].sort((x, y) => x - y)[Math.floor(act.length * 0.25)];
+    ch.notes.forEach((n, i) => {
+      const [st, line, ok, pitch, len] = n, a = ch.notes[i - 1], b = ch.notes[i + 1];
+      const near = x => x && x[1] === line && Math.abs(x[0] - st) <= 2 && (!pitch || !x[3] || Math.abs(x[3] - pitch) <= 1);
+      const c = (len ? 3 : 0) + (near(a) && near(b) ? 2 : 0) + Math.max(0, 7 - lvlOf(st)) / 2 + (act[beatOf(st)] <= calmAt ? 1.5 : 0);
+      if (c > 0 && !held[Math.max(0, Math.min(top, st))]) lead.push({c, n: {st, len: len || 0, p: pitch || 0, kind: 1, line, ok: !!ok, fill: false, w: 6 + 2.5 * c}});
+    });
+    lead.sort((x, y) => y.c - x.c || x.n.st - y.n.st);
+    for (const {n} of lead.slice(0, Math.round(nMusic * GAME_LYRIC / (1 - GAME_LYRIC)))) at.set(n.st, n);
+    all.push(...at.values());
+    all.sort((x, y) => x.st - y.st);
+    for (const n of all) { n.g = "m"; if (n.kind !== 2 || n.p) { if (!phr.has(n.g)) phr.set(n.g, []); phr.get(n.g).push(n); } }
+  } else {  // a chart made before v7 (no music in it): the sung notes and the tune where nobody sings, as before
   for (const [st, line, ok, pitch, len] of ch.notes) all.push({st, len: len || 0, p: pitch || 0, kind: 1, line, ok: !!ok, fill: false});
   for (const [st, len, p] of ch.longs || []) all.push({st, len, p, kind: 2, line: -1, ok: true, fill: false});
   all.sort((x, y) => x.st - y.st);
   // phrases: a sung line · the tune notes that follow one another within 2 beats (a held sound, no pitch, is in none)
-  const phr = new Map();
   let grp = 0, gEnd = -1e9;
   for (const n of all) {
     if (n.kind === 2) { if (n.st - gEnd > 2 * S) grp++; gEnd = n.st + n.len; n.g = "t" + grp; } else n.g = "l" + n.line;
     if (n.kind === 1 || n.p) { if (!phr.has(n.g)) phr.set(n.g, []); phr.get(n.g).push(n); }
+  }
   }
   /* 2. the keys and how much each note matters — by the bar (4 beats of a phrase; a whole line never came back note for
      note on ジッタードール, bars do), worked out once for a bar's shape (where its notes fall + whether each is higher /
@@ -166,11 +319,11 @@ function gameNotes(level) {
      half beat > quarter; a line's last note, its highest and lowest a little more; a note in a silent beat less. */
   const seen = new Map(), bars = [];
   for (const ns of phr.values()) {
-    ns[0].h = ns[0].kind === 1; ns[ns.length - 1].z = true;  // a line's first syllable · the phrase's last note
-    for (const n of ns) { const b = Math.floor(n.st / (4 * S)); if (!bars.length || bars[bars.length - 1].b !== b || bars[bars.length - 1].g !== n.g) bars.push({b, g: n.g, ns: []}); bars[bars.length - 1].ns.push(n); }
+    if (!music) { ns[0].h = ns[0].kind === 1; ns[ns.length - 1].z = true; }  // a line's first syllable · the phrase's last note
+    for (const n of ns) { const b = Math.floor((n.st - BAR0) / BAR); if (!bars.length || bars[bars.length - 1].b !== b || bars[bars.length - 1].g !== n.g) bars.push({b, g: n.g, ns: []}); bars[bars.length - 1].ns.push(n); }
   }
   for (const {b, ns} of bars) {
-    const st0 = b * 4 * S;
+    const st0 = b * BAR + BAR0;
     const fp = ns.map((n, i) => (n.st - st0) + (n.len ? "L" : "") + (n.h ? "H" : "") + (n.z ? "Z" : "") + (!i || !n.p || !ns[i - 1].p ? "?" : "-=+"[Math.sign(n.p - ns[i - 1].p) + 1])).join(",");
     let e = seen.get(fp);
     if (!e) {
@@ -200,7 +353,8 @@ function gameNotes(level) {
         prev2 = prev; prev = lane; prevSt = n.st; prevP = n.p;
         return lane;
       });
-      const score = ns.map((n, i) => (n.h ? 100 : 0) + (n.len ? 50 : 0)
+      // (GAME_MUSIC: how hard the music comes in there · a note of the tune · the lyrics' own notes — n.w — and its place in the beat)
+      const score = music ? ns.map(n => n.w + (n.len ? 50 : 0) + (mod(n.st, S) === 0 ? 4 : mod(n.st, S / 2) === 0 ? 2 : 0)) : ns.map((n, i) => (n.h ? 100 : 0) + (n.len ? 50 : 0)
         + (mod(n.st, S) === 0 ? 6 + (feel ? accOf(n.st) / 2 : 0) : mod(n.st, S / 2) === 0 ? 3 : 0)
         + (n.z ? 3 : 0) + (n.p && u.length > 2 && (n.p === hi || n.p === lo) ? 2 : 0) - (lvlOf(n.st) < 2 ? 3 : 0));
       seen.set(fp, e = {lanes, score, k: 0, inv: false, all: []});
@@ -231,11 +385,12 @@ function gameNotes(level) {
       let a = i - 1, b = i + 1;
       while (a >= 0 && !on[a]) a--;
       while (b < all.length && !on[b]) b++;
-      if (a >= 0) { const d = n.st - all[a].st - all[a].len; if (d < C.gap || (all[a].g !== n.g && d < C.rest)) return false; }
-      if (b < all.length) { const d = all[b].st - n.st - n.len; if (d < C.gap || (all[b].g !== n.g && d < C.rest)) return false; }
+      const k = ease(n.st), gap = k < 0.6 ? Math.max(C.gap, S / 2) : C.gap, max = Math.max(1, Math.round(C.max * k));  // 강약
+      if (a >= 0) { const d = n.st - all[a].st - all[a].len; if (d < gap || (all[a].g !== n.g && d < C.rest)) return false; }
+      if (b < all.length) { const d = all[b].st - n.st - n.len; if (d < gap || (all[b].g !== n.g && d < C.rest)) return false; }
       for (let j = a; j >= 0 && n.st - all[j].st < C.win; j--) if (on[j]) near.unshift(all[j].st);
       for (let j = b; j < all.length && all[j].st - n.st < C.win; j++) if (on[j]) near.push(all[j].st);
-      for (let j = 0; j + C.max < near.length; j++) if (near[j + C.max] - near[j] < C.win) return false;
+      for (let j = 0; j + max < near.length; j++) if (near[j + max] - near[j] < C.win) return false;
       return true;
     };
     for (const n of order) if (!on[n.i] && fits(n.i)) on[n.i] = 1;
@@ -243,7 +398,7 @@ function gameNotes(level) {
   const kept = all.filter(n => on[n.i]);
   let ln = -1;  // the first note played of its line gets the line's two keys
   for (const n of kept) if (n.kind === 1) { n.head = n.line !== ln; ln = n.line; }
-  if (kept.length) {  // the beat itself where there is nothing else (no note and no long note within a beat)
+  if (kept.length && !music) {  // the beat itself where there is nothing else (no note and no long note within a beat) — not with GAME_MUSIC
     const a = Math.max(0, kept[0].st - 16 * S), b = Math.min(kept[kept.length - 1].st + 8 * S, (ch.beats.length - 1) * S), fill = [];
     /* inside a long note too (user 2026-11-26: "롱노트 구간 안에 다른 키 겹쳐도 돼 — 그런 채보가 얼마나 많은데"): while a key is
        held, the beats the song hits (feel.acc ≥ 4 — a held noise has none, a held voice over the band has) are played
@@ -268,20 +423,90 @@ function gameNotes(level) {
      run, 어려움 a beat apart, 매우어려움 half a beat. The beat itself: a fixed round of the four keys; a held sound
      without a pitch: its own round; a note while a key is held: the other hand. */
   const BEAT_LANE = [0, 3, 1, 2], OFF_LANE = [2, 1, 3, 0], HELD_LANE = [1, 2, 0, 3];
-  const notes = [], lint = {moved: 0, cut: 0, kept: 0, lanes: [0, 0, 0, 0]};
-  const last = [0, 1, 2, 3].map(() => ({end: -1e9, a: 0, q: 0}));
-  const bad = (l, st) => {
+  const notes = [], lint = {moved: 0, cut: 0, kept: 0, lanes: [0, 0, 0, 0], by: [0, 0, 0, 0]};  // by: the beat · sung · where nobody sings · the music
+  const last = [0, 1, 2, 3].map(() => ({end: -1e9, a: 0, q: 0, two: false}));
+  const bad = (l, st) => {  // (two: a key of two at once is never played again a quarter beat later — guide §12 [12])
     const L = last[l], d = st - L.end;
-    return d <= 0 || (d < 2 && (level < 3 || L.q >= 2)) || (d <= 2 && L.a >= GAME_ANCHOR[level]);
+    return d <= 0 || (d < 2 && (level < 3 || L.q >= 2 || L.two)) || (d <= 2 && (L.a >= GAME_ANCHOR[level] || (L.two && level < 2)));
   };
-  const put = (n, lane, t) => {
+  const put = (n, lane, t, pair = -1) => {  // pair: the other key of two at once
     const L = last[lane], d = n.st - L.end;
-    L.a = d <= 2 ? L.a + 1 : 1; L.q = d < 2 ? L.q + 1 : 1; L.end = n.st + n.len;
+    L.a = d <= 2 ? L.a + 1 : 1; L.q = d < 2 ? L.q + 1 : 1; L.end = n.st + n.len; L.two = pair >= 0;
     lint.lanes[lane]++;
-    notes.push({t, e: n.len ? gameStepTime(ch, n.st + n.len) + off : t, lane, line: n.line, ok: n.ok, fill: n.fill, long: !!n.len});
+    notes.push({t, e: n.len ? gameStepTime(ch, n.st + n.len) + off : t, lane, line: n.line, ok: n.ok, fill: n.fill, long: !!n.len, pair});
   };
-  let heldN = 0, prevSt = -1e9, prevEnd = -1e9, prevKind = -1, chordSt = -1e9;
+  if (music) {  // GAME_RUNS: which notes are two keys at once, then the key of every single note by its pattern
+    let cSt = -1e9, pSt = -1e9, cN = 0;
+    kept.forEach((n, i) => {
+      n.two = false;
+      if (n.kind !== 2 && !n.len) {
+        const next = i + 1 < kept.length ? kept[i + 1].st : 1e9;
+        let t2 = accOf(n.st) >= acc2 && lvlOf(n.st) > 5 && strong(n.st) >= GAME_PAIR;
+        if (t2 && (level === 0 ? n.st - pSt < S && next - n.st < S : level < 3 && n.st - cSt < [S, S, S / 2][level])) t2 = false;
+        if (t2) { if (n.st - cSt > 8 * S) cN = 0; n.two = true; n.ci = cN++ % GAME_PAIRS.length; cSt = n.st; }
+      }
+      pSt = n.st;
+    });
+    const single = n => n && !n.two && !n.len && n.kind !== 2 && !n.drop;
+    kept.forEach((n, i) => {  // a single note between two pairs half a beat apart [14]
+      const a = kept[i - 1], b = kept[i + 1];
+      if (!single(n) || !a || !b || !a.two || !b.two || b.st - a.st > S / 2) return;
+      if (a.ci >= 4) n.drop = true; else n.rl = (a.ci < 2 ? [0, 3] : [1, 2])[mod(Math.floor(n.st / S), 2)];
+    });
+    const runs = [];
+    let run = [];
+    for (let i = 0; i <= kept.length; i++) {
+      const n = kept[i];
+      if (n && n.drop) continue;
+      if (n && single(n) && n.rl == null && run.length && n.st - run[run.length - 1].st <= S / 2) { run.push(n); continue; }
+      if (run.length) runs.push({ns: run, next: n && n.two && n.st - run[run.length - 1].st <= S / 2 ? n : null});
+      run = n && single(n) && n.rl == null ? [n] : [];
+    }
+    let walk = 0, grp = 0, rn = 0;
+    const short = [0, 0];
+    let trill = 0;
+    for (const r of runs) {
+      let ns = r.ns;
+      // a quarter-beat run ends on the beat or the half beat [1]
+      if (ns.length > 2 && ns[ns.length - 1].st - ns[ns.length - 2].st === 1 && mod(ns[ns.length - 1].st, 2) === 1 && ns[ns.length - 1].kind === 3 && !r.next) {
+        ns[ns.length - 1].drop = true; ns = ns.slice(0, -1);
+      }
+      if (ns.length === 1) { ns[0].rl = GAME_WALK[Math.floor(walk / 8) % GAME_WALK.length][walk % 4]; walk++; continue; }
+      const L = ns.length, ps = ns.map(n => n.p), has = ps.filter(Boolean).length;
+      let lanes = null;
+      if (L >= 3 && has >= L * 0.75) {  // the tune: one way · up and down · two pitches to and fro [4] — else it counts as none [5]
+        const q = ps.map((p, i) => p || ps.slice(0, i).reverse().find(Boolean) || ps.find(Boolean));
+        const d = q.slice(1).map((p, i) => Math.sign(p - q[i])), u = [...new Set(q)].sort((x, y) => x - y);
+        const wide = u[u.length - 1] - u[0] > 2, ups = d.filter(x => x > 0).length, downs = d.filter(x => x < 0).length;
+        const top = q.indexOf(u[u.length - 1]);
+        if (u.length === 2 && d.every(x => x)) { const tr = trill++ % 2 ? [0, 3] : [1, 2]; lanes = q.map(p => tr[p === u[0] ? 0 : 1]); }  // F J · D K in turn
+        else if (wide && ups >= 2 && !downs) lanes = q.map((_, i) => mod(i + (L <= 4 ? 4 - L : 0), 4));
+        else if (wide && downs >= 2 && !ups) lanes = q.map((_, i) => mod(3 - i - (L <= 4 ? 4 - L : 0), 4));
+        else if (wide && top > 0 && top < L - 1 && d.slice(0, top).every(x => x >= 0) && d.slice(top).every(x => x <= 0)) lanes = q.map((_, i) => mod(3 - Math.abs(i - top), 4));
+      }
+      if (!lanes) {  // no tune: fours of GAME_GROUPS; the four that lands on a pair fits it [12]; every other run left ↔ right [11]
+        const flip = rn++ % 2 === 1, land = r.next ? GAME_LAND[GAME_PAIRS[r.next.ci].join(",")] : null;
+        lanes = [];
+        if (L < 4) lanes = land ? land.slice(4 - L) : GAME_SHORT[L - 2][short[L - 2]++ % GAME_SHORT[L - 2].length];  // (its own round: every key gets its share)
+        else {
+          const tail = land ? ((L - 1) % 4) + 1 : 0;  // notes of the landing four (its last ones)
+          for (let k = 0; k < L - tail; k += 4) { const g = GAME_GROUPS[grp++ % GAME_GROUPS.length]; for (let j = 0; j < 4 && k + j < L - tail; j++) lanes.push(flip ? 3 - g[j] : g[j]); }
+          if (tail) lanes.push(...land.slice(4 - tail));
+        }
+        // a fill: the run ends in the last beat of a bar → its last notes are a stair into the next bar [6]
+        const end = ns[L - 1].st, m = Math.min(4, L);
+        if (!land && L >= 3 && mod(end - BAR0, BAR) >= BAR - S) {
+          const up = strong(end + S) >= strong(ns[0].st);
+          for (let j = 0; j < m; j++) lanes[L - m + j] = up ? 4 - m + j : m - 1 - j;
+        }
+      }
+      ns.forEach((n, i) => { n.rl = lanes[i]; });
+    }
+  }
+  let heldN = 0, prevSt = -1e9, prevEnd = -1e9, prevKind = -1, chordSt = -1e9, chordN = 0;
   kept.forEach((n, i) => {
+    if (n.drop) return;  // left out by its pattern (GAME_RUNS)
+    if (n.st === prevSt) return;  // (never a third key on a step)
     let lane;
     if (n.fill) {
       const b = mod(Math.floor(n.st / S), 4);
@@ -289,10 +514,31 @@ function gameNotes(level) {
     } else if (n.kind === 2 && !n.p) {
       if (n.st - prevEnd > 2 * S || prevKind !== 2) heldN = 0;  // each stretch starts the round again
       lane = HELD_LANE[heldN++ % 4];
-    } else lane = laneOf(n);
+    } else lane = n.rl != null ? n.rl : laneOf(n);
     if (n.over) {  // during a long note: the other hand's two keys in turn
       const h = last.findIndex(L => L.end >= n.st);
       lane = (h >= 0 && h < 2 ? [2, 3] : [1, 0])[mod(Math.floor(n.st / S), 2)];
+    }
+    const t = gameStepTime(ch, n.st) + off;
+    if (n.kind !== 2 && !n.len && !n.over) {  // two keys at once (GAME_PAIRS)? — on the beats the song hits hardest
+      let two2 = music ? n.two : (n.head && level > 0) || (feel ? accOf(n.st) >= acc2 : two && mod(n.st, two) === 0);
+      if (two2 && !n.head && !music) {
+        const next = i + 1 < kept.length ? kept[i + 1].st : 1e9;
+        if (feel && lvlOf(n.st) <= 5) two2 = false;  // a quiet beat
+        if (level === 0 ? n.st - prevSt < S && next - n.st < S : level < 3 && n.st - chordSt < [S, S, S / 2][level]) two2 = false;
+      }
+      if (two2) {
+        if (n.st - chordSt > 8 * S) chordN = 0;
+        if (music) chordN = n.ci;  // (worked out with the patterns above)
+        const [l0, l1] = GAME_PAIRS[chordN % GAME_PAIRS.length];
+        if (!bad(l0, n.st) && !bad(l1, n.st) && n.st - last[l0].end >= 2 && n.st - last[l1].end >= 2) {  // (nor right after a note on one of its keys)
+          chordN++; chordSt = n.st;
+          lint.by[n.fill ? 0 : n.kind]++;
+          put(n, l0, t, l1); put({st: n.st, len: 0, line: n.line, ok: n.ok, fill: n.fill}, l1, t, l0);
+          prevSt = n.st; prevEnd = n.st; prevKind = n.kind;
+          return;
+        }
+      }
     }
     if (bad(lane, n.st)) {
       const free = [lane ^ 1, 3 - lane, 3 - (lane ^ 1)].find(l => !bad(l, n.st));
@@ -300,20 +546,8 @@ function gameNotes(level) {
       else if (n.fill) { lint.cut++; return; }
       else lint.kept++;
     }
-    const t = gameStepTime(ch, n.st) + off;
+    lint.by[n.fill ? 0 : n.kind]++;
     put(n, lane, t);
-    if (n.kind !== 2 && !n.len && !n.over) {
-      const c3 = feel ? accOf(n.st) >= acc3 || (level === 3 && n.head) : three && (n.head || mod(n.st, three) === 0);
-      const c2 = c3 || (n.head && level > 0) || (feel ? accOf(n.st) >= acc2 || (level === 3 && mod(n.st, S) === S / 2 && movOf(n.st) >= 7) : two && mod(n.st, two) === 0);
-      let size = feel && accOf(n.st) >= acc4 ? 4 : c3 ? 3 : c2 ? 2 : 1;
-      if (size > 1 && !n.head) {
-        const next = i + 1 < kept.length ? kept[i + 1].st : 1e9;
-        if (feel && lvlOf(n.st) <= 5) size--;
-        if (level === 0 ? n.st - prevSt < S && next - n.st < S : level < 3 && n.st - chordSt < [S, S, S / 2][level]) size = 1;
-      }
-      if (size > 1) chordSt = n.st;
-      for (const l of [3 - lane, lane ^ 1, 3 - (lane ^ 1)].slice(0, size - 1)) { if (bad(l, n.st)) lint.cut++; else put({st: n.st, len: 0, line: n.line, ok: n.ok, fill: n.fill}, l, t); }
-    }
     prevSt = n.st; prevEnd = n.st + n.len; prevKind = n.kind;
   });
   lint.n = notes.length;
@@ -321,8 +555,53 @@ function gameNotes(level) {
   return {beat: true, notes};
 }
 const gameLevel = () => Math.max(0, Math.min(3, +store.get("game.level", 1) || 0));
-const gameSpeed = () => Math.max(0.6, Math.min(3, +store.get("game.speed", 1.4) || 1.4));  // seconds a note is on screen before its line
-const gameLag = () => Math.max(-0.3, Math.min(0.3, +store.get("game.lag", 0) || 0));  // 판정 맞추기: + = the notes come later
+// seconds a note is on screen before its line — 0.2 at the fastest (user 2026-11-27: "최대 속도 더 늘려줘"; it was 0.6)
+const gameSpeed = () => Math.max(0.2, Math.min(3, +store.get("game.speed", 1.4) || 1.4));
+const gameLag = () => Math.max(-0.5, Math.min(0.3, +store.get("game.lag", 0) || 0));  // 판정 맞추기: + = the notes come later
+/* 박자에 맞춰 쳐서 맞추기 (user 2026-11-27: "박자가 판정 라인에 맞춰진 게 아니고 노트가 화면 밖으로 사라지는 거에 맞춰져 있는 거 아님? 뭔가
+   많이 박자가 다른데"). A note is drawn on the line at its own time — but that time is the player's clock, and for a
+   relayed video the clock is what the site's player reports (Niconico: a value every 0.27 s), which runs behind what
+   is heard by an amount this page cannot measure (and a Bluetooth speaker adds its own). So the notes arrived late by
+   that much — at a fast note speed that is the distance from the line to the bottom of the screen. The 판정 setting
+   moves them, and this finds its value: the listener taps GAME_CAL beats of the playing song; where the taps fall in
+   the chart's beats (their mean place round the beat) is the clock's distance from the sound. */
+const GAME_CAL = 16;
+const gameLagShow = () => { $("gameLag").textContent = (gameLag() >= 0 ? "+" : "") + Math.round(gameLag() * 1000) + "ms"; };
+function gameCalShow(text) {
+  $("gameCalBox").hidden = !GAME.cal && !text;
+  $("gameCalText").textContent = text || (GAME.cal ? `곡을 들으며 박자에 맞춰 아래 버튼이나 아무 키를 눌러 주세요 — ${GAME.cal.length} / ${GAME_CAL} (Esc = 그만)` : "");
+  $("gameCalTap").hidden = !GAME.cal;
+}
+function gameCalStart() {
+  const ch = song && song.sync && song.sync.chart;
+  if (GAME.run) return uiAlert("게임 중에는 맞출 수 없습니다.");
+  if (!ch || (ch.beats || []).length < 16) return uiAlert("박자 채보가 있는 곡에서만 맞출 수 있습니다.");
+  GAME.cal = [];
+  if (audio.paused) audio.play();
+  gameCalShow();
+}
+function gameCalTap() {
+  if (!GAME.cal || audio.paused) return;
+  GAME.cal.push(gameNow());
+  if (GAME.cal.length < GAME_CAL) return gameCalShow();
+  const bt = song.sync.chart.beats, off = offset || 0, taps = GAME.cal, per = [];
+  let sx = 0, sy = 0;
+  GAME.cal = null;
+  for (const t of taps) {
+    let i = 0;
+    while (i < bt.length - 2 && bt[i + 1] + off <= t) i++;
+    const p = bt[i + 1] - bt[i], ph = (t - bt[i] - off) / p * 2 * Math.PI;
+    sx += Math.cos(ph); sy += Math.sin(ph); per.push(p);
+  }
+  per.sort((x, y) => x - y);
+  const p = per[per.length >> 1], even = Math.hypot(sx, sy) / taps.length;
+  let d = Math.atan2(sy, sx) / (2 * Math.PI) * p;  // the taps' mean distance from the beat, within half a beat either way
+  if (d > 0.1) d -= p;  // (the clock runs behind the sound, not ahead: a tap "after" the beat is one before the next)
+  if (even < 0.6) return gameCalShow("누른 박자가 고르지 않아 맞추지 못했습니다 — 다시 해 주세요.");
+  store.set("game.lag", Math.round(Math.max(-0.5, Math.min(0.3, d)) * 100) / 100);
+  gameLagShow();
+  gameCalShow(`판정을 ${(gameLag() >= 0 ? "+" : "") + Math.round(gameLag() * 1000)}ms 로 맞췄습니다. 어긋나면 − ＋ 로 조금씩 고치세요.`);
+}
 // in a 같이듣기 room as a guest / in a channel the song can't be moved: the game joins where the song is
 const gameCanSeek = () => !(typeof LT !== "undefined" && LT.role && (LT.role === "guest" || LT.chOn));
 /* the song's time for the game. audio.currentTime of a relayed video comes in reports and is corrected in small jumps
@@ -356,6 +635,7 @@ function gameOpen() {
   GAME.lineColor = (song.groups || []).map(g => hex((g.vc || [])[0]) || GAME.vocal);
   GAME.colors = {a: v("--accent") || "#ccc", ok: v("--ok") || "#4ade80", line: v("--line") || "#333", muted: v("--muted") || "#888", bg: v("--bg") || "#181818", text: v("--text") || "#ccc"};
   GAME.on = true; GAME.song = song;
+  document.body.classList.add("gameon");  // (phone: the video behind is drawn small and enlarged — css)
   $("gameDlg").showModal();
   showVideo();  // the video goes behind the window
   gameComments(false);
@@ -372,7 +652,7 @@ function gameReady(result) {
   $("gameLag").textContent = (gameLag() >= 0 ? "+" : "") + Math.round(gameLag() * 1000) + "ms";
   GAME.keyset = null; gameKeysShow();
   const nl = g.notes.filter(n => n.long).length;
-  const info = g.beat ? `${Math.round(ch.bpm)} BPM · 노트 ${g.notes.length.toLocaleString()}개${nl ? ` (롱노트 ${nl}개)` : ""} · 채보 일치 ${Math.round((ch.score || 0) * 100)}%`
+  const info = g.beat ? `${ch.bpms ? ch.bpms.map(Math.round).join("–") : Math.round(ch.bpm)} BPM · 노트 ${g.notes.length.toLocaleString()}개${nl ? ` (롱노트 ${nl}개)` : ""} · 채보 일치 ${Math.round((ch.score || 0) * 100)}%`
     : `이 곡은 아직 박자 채보가 없어 가사 줄 시작(${g.notes.length}개)만 노트로 나옵니다 — 난이도와 상관없이 같습니다`;
   const s = result, best = (store.get("game.best", {}) || {})[gameSongKey(it) + "|" + lvl];
   $("gameLifeBtn").textContent = gameLifeOn() ? "켬" : "끔";
@@ -487,7 +767,7 @@ function gameStart() {
   GAME.raf = requestAnimationFrame(gameFrame);
 }
 function gameStop() { GAME.run = false; cancelAnimationFrame(GAME.raf); }
-function gameClose() { gameStop(); GAME.on = false; if ($("gameDlg").open) $("gameDlg").close(); showVideo(); gameComments(true); }
+function gameClose() { gameStop(); GAME.on = false; document.body.classList.remove("gameon"); if ($("gameDlg").open) $("gameDlg").close(); showVideo(); gameComments(true); }
 /* 니코니코 영상의 흐르는 코멘트: off while the game is open — it runs over the video behind the notes (user request
    2026-11-26: "배경에 띄운 영상 니코동이면 자동으로 꺼져야"); the player's own setting (💬) is not changed and comes back on close */
 function gameComments(back) { if (audio.kind === "nico" && audio.br) audio.br.comments(back ? audio.comments : false); }
@@ -607,11 +887,11 @@ function gameDraw(now) {
   }
   const ch = GAME.beat && song && song.sync && song.sync.chart;
   if (ch) {  // the beats: thin lines, every 4th a little stronger
-    const off = offset || 0, bt = ch.beats;
+    const off = offset || 0, bt = ch.beats, barN = ch.bar ? ch.bar[0] : 4, bar0 = ch.bar ? ch.bar[1] : 0;  // (the stronger line = a bar's first beat)
     let i = 0;
     while (i < bt.length && bt[i] + off < now - 0.3) i++;
     for (; i < bt.length && bt[i] + off < now + look; i++) {
-      c.globalAlpha = i % 4 ? 0.25 : 0.6; c.fillStyle = C.line; c.fillRect(0, y(bt[i] + off) - dpr / 2, W, dpr);
+      c.globalAlpha = (i - bar0) % barN ? 0.25 : 0.6; c.fillStyle = C.line; c.fillRect(0, y(bt[i] + off) - dpr / 2, W, dpr);
     }
     c.globalAlpha = 1;
   }
@@ -633,6 +913,10 @@ function gameDraw(now) {
       continue;
     }
     const yy = y(n.t) - nh / 2;
+    if (n.pair > n.lane && n.hit !== 1) {  // two keys at once: a bar from this note to the other
+      c.globalAlpha = n.hit === -1 ? 0.2 : 0.75; c.fillStyle = "#fff";
+      c.fillRect(n.lane * lw + lw / 2, yy + nh * 0.36, (n.pair - n.lane) * lw, nh * 0.28);
+    }
     c.globalAlpha = n.hit === -1 ? 0.25 : n.fill ? 0.55 : 1;  // the bare beat (no sung note, no tune): paler
     // (a thin dark edge: a pale vocal colour on the light theme's glass was hard to see)
     if (n.ok) { c.fillStyle = col; gameRound(c, x, yy, w, nh, nh / 2); c.fill(); c.strokeStyle = "rgba(0,0,0,.45)"; c.lineWidth = dpr; c.stroke(); }
@@ -669,7 +953,9 @@ $("btnGame").onclick = gameOpen;
    a first line saying how the game was set (level · speed · 판정 · gauge · the chart) */
 $("gameSetBtn").onclick = () => { gameKeysShow(); $("gameSetDlg").showModal(); };
 $("gameSetClose").onclick = () => $("gameSetDlg").close();
-$("gameSetDlg").addEventListener("close", () => { GAME.keyset = null; gameKeysShow(); });
+$("gameSetDlg").addEventListener("close", () => { GAME.keyset = null; gameKeysShow(); GAME.cal = null; gameCalShow(); });
+$("gameCal").onclick = () => (GAME.cal ? (GAME.cal = null, gameCalShow()) : gameCalStart());
+$("gameCalTap").addEventListener("pointerdown", e => { e.preventDefault(); gameCalTap(); });
 $("gameReport").onclick = () => {
   if (GAME.run && !audio.paused && gameCanSeek()) $("btnPlay").click();  // (the game waits while the report is written)
   const ch = song && song.sync && song.sync.chart, lag = Math.round(gameLag() * 1000);
@@ -678,11 +964,14 @@ $("gameReport").onclick = () => {
 `});
 };
 $("gameClose").onclick = gameClose;
-$("gameDlg").addEventListener("close", () => { if (!$("gameDlg").open) { gameStop(); GAME.on = false; showVideo(); gameComments(true); } });  // (the event comes later: it may be open again)
+$("gameDlg").addEventListener("close", () => { if (!$("gameDlg").open) { gameStop(); GAME.on = false; document.body.classList.remove("gameon"); showVideo(); gameComments(true); } });  // (the event comes later: it may be open again)
 $("gameDlg").addEventListener("click", e => {
   const l = e.target.closest("#gameLevels button"), sp = e.target.closest("[data-sp]"), lag = e.target.closest("[data-lag]");
   if (l) { store.set("game.level", +l.dataset.l); return gameReady(); }  // another level: from the start screen again
-  if (sp) { store.set("game.speed", Math.round((gameSpeed() - 0.2 * +sp.dataset.sp) * 10) / 10); $("gameSpeed").textContent = gameSpeed().toFixed(1) + "초"; }
+  if (sp) {  // 0.2 s a press, 0.1 s under 0.6 s (the fast end is felt much more)
+    const cur = gameSpeed(), d = +sp.dataset.sp, step = cur < 0.6 || (cur <= 0.6 && d > 0) ? 0.1 : 0.2;
+    store.set("game.speed", Math.round((cur - step * d) * 10) / 10); $("gameSpeed").textContent = gameSpeed().toFixed(1) + "초";
+  }
   if (lag) { store.set("game.lag", Math.round((gameLag() + 0.01 * +lag.dataset.lag) * 100) / 100); $("gameLag").textContent = (gameLag() >= 0 ? "+" : "") + Math.round(gameLag() * 1000) + "ms"; }
   if (e.target.closest("#gameKeys")) { if (GAME.run) return uiAlert("게임 중에는 키를 바꿀 수 없습니다."); GAME.keyset = GAME.keyset ? null : []; gameKeysShow(); }
   if (e.target.closest("#gameLifeBtn")) { if (GAME.run) return uiAlert("게임 중에는 게이지를 바꿀 수 없습니다."); }
@@ -714,6 +1003,11 @@ window.addEventListener("keydown", e => {
       if (GAME.keyset.length === 4) { store.set("game.keys", GAME.keyset); GAME.keyset = null; gameKeysShow(); return gameReady(); }
     }
     return gameKeysShow();
+  }
+  if ($("gameSetDlg").open && GAME.cal) {  // 박자에 맞춰 치기: every key is a tap
+    e.preventDefault();
+    if (e.key === "Escape") { GAME.cal = null; gameCalShow(); } else if (!e.repeat) gameCalTap();
+    return;
   }
   if ($("gameSetDlg").open) {  // 설정 창: Esc closes it (not the game), no key plays
     if (e.key === "Escape") { e.preventDefault(); $("gameSetDlg").close(); }

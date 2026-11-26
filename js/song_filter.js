@@ -38,7 +38,7 @@ function prepItem(it) {
    규칙은 음원 관리 › 필터 › 하위 태그에 보임 (vocadb/filter_settings.py FLAGS 와 같음) */
 // sync · lyrics flags = the playlist badges (user request 2026-11-22): 싱크 없음 = 싱크X, 가사 없음 = 가사X …
 const FLAGS = ["싱크 있음", "싱크 없음", "싱크 실패", "가사다름", "재싱크 필요", "우리 가사 있음", "파트분리", "VocaDB 가사 있음", "가사 없음",
-               "한글 제목 있음", "한글 제목 없음", "보컬 15명 넘음"];
+               "한글 제목 있음", "한글 제목 없음", "보컬 15명 넘음", "리듬게임"];  // 리듬게임 (user request 2026-11-27: "프리셋이랑 필터랑 태그에 리듬게임 넣어줘"): the song's sync has a chart
 const SYNC_FLAG = {ok: "싱크 있음", none: "싱크 없음", fail: "싱크 실패", stale: "가사다름", resync: "재싱크 필요"};
 /* 보컬이 너무 많은 곡 (user request 2026-11-16, e.g. 合音声大決闘戦): 보컬은 앞 VOCAL_SHOW 명만 보이고 나머지는 '+N' 칩 —
    그 칩은 곡 상태 태그 MANY_VOCALS 의 색 (필터 › 하위 태그에서 색 지정) */
@@ -49,7 +49,7 @@ function songFlags(it, vdbLyrics, koTitle) {
   return [SYNC_FLAG[songSyncState(it)], ...(ly === "ours" || ly === "parts" ? ["우리 가사 있음"] : []), ...(ly === "parts" ? ["파트분리"] : []),
           ...(vdbLyrics ? ["VocaDB 가사 있음"] : []),
           ...(ly === "none" ? ["가사 없음"] : []), koTitle ? "한글 제목 있음" : "한글 제목 없음",
-          ...(people(it.singer).length > VOCAL_SHOW ? [MANY_VOCALS] : [])];
+          ...(people(it.singer).length > VOCAL_SHOW ? [MANY_VOCALS] : []), ...(it.chart ? ["리듬게임"] : [])];
 }
 /* 보컬 종류 (user request 2026-11-16): data.vocal_kind (VocaDB 보컬의 artistType) — 엔진 · 섞임(엔진 + 사람) · 사람 · 정보 없음 (빈칸).
    사람 원곡을 엔진으로 부른 커버와 가르려고 (예: 튜링러브 원곡은 사람, 커버는 엔진). 순서 = 목록 순서 */

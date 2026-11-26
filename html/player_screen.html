@@ -234,6 +234,8 @@
     <span class="gset" title="칠 키 4개 바꾸기 — 누른 뒤 왼쪽 줄부터 차례로 키 4개를 누름 (Esc = 그대로)">키 <button type="button" id="gameKeys"></button></span>
     <span class="gset" title="목숨 게이지 — 놓칠 때마다 줄고, 바닥나면 실패 (끄면 게이지 없이 끝까지)">게이지 <button type="button" id="gameLifeBtn"></button></span>
     <span class="gset" title="판정 맞추기 — 노트가 소리보다 먼저 오면 ＋, 늦게 오면 −">판정 <button type="button" data-lag="-1">−</button><b id="gameLag"></b><button type="button" data-lag="1">＋</button></span>
+    <span class="gset" title="곡을 들으며 박자에 맞춰 16번 누르면 판정 값을 자동으로 맞춤 — 기기 · 스피커마다 소리가 늦는 정도가 달라서 필요"><button type="button" id="gameCal">박자에 맞춰 쳐서 자동으로 맞추기</button></span>
+    <div class="gcal" id="gameCalBox" hidden><span id="gameCalText"></span><button type="button" class="primary" id="gameCalTap">박자에 맞춰 누르기</button></div>
     </div>
   </dialog>
 </dialog>

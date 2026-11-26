@@ -1386,6 +1386,9 @@ dialog.gamedlg::backdrop{background:rgba(0,0,0,.3)}  /* the video behind the win
 .gamedlg .gbar>button{padding:4px 10px;font-size:12px}
 dialog.gsetdlg{width:min(360px,calc(92vw / var(--ui-zoom)));padding:0;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text)}
 dialog.gsetdlg::backdrop{background:rgba(0,0,0,.35)}
+.gamedlg .gcal{display:flex;flex-direction:column;align-items:center;gap:10px;font-size:12.5px;text-align:center;line-height:1.5}
+.gamedlg .gcal[hidden],.gamedlg .gcal button[hidden]{display:none}
+.gamedlg .gcal .primary{padding:18px 28px;font-size:15px;touch-action:manipulation}
 .gamedlg .gsets{display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 14px;font-size:13px}
 .gamedlg .gset{display:inline-flex;align-items:center;gap:4px;color:var(--muted);white-space:nowrap}
 .gamedlg .gset button{padding:2px 7px;font-size:11.5px}
@@ -1466,4 +1469,12 @@ dialog.gsetdlg::backdrop{background:rgba(0,0,0,.35)}
 .gamedlg .ginfo{font-size:13px;line-height:1.5}
 .gamedlg .ginfo.warn{color:var(--warn,#e0b040)}
 .gamedlg .glyric{min-height:2.4em;padding:8px 12px;text-align:center;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* phone: the notes lost frames with the video behind them (user 2026-11-27: "모바일에서 프레임이 너무 떨어지는데 뒤에 배경에 뜨는 영상
+   때문 같음 — 모바일 환경에서만 배경 영상 프레임 아주 많이 낮춰줘"). The sites' players give no way to lower the frame rate, so
+   the video is made cheap another way: its player is a quarter of the screen each way (the sites then send a small
+   picture — a sixteenth of the dots) and is only enlarged on screen, and the window's blur — worked out again for every
+   frame of the video — is off (the enlarged small picture is soft already) */
+body.m.gameon #gameBack{inset:auto;left:0;top:0;width:25%;height:25%}
+body.m.gameon #streamHost:not(.folded){transform:scale(4);transform-origin:0 0}
+body.m dialog.gamedlg{-webkit-backdrop-filter:none;backdrop-filter:none}
 body.m dialog.gamedlg{width:calc(100vw / var(--ui-zoom));height:calc(100dvh / var(--ui-zoom));max-width:none;max-height:none;border-radius:0;border:0;margin:0}
