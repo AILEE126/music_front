@@ -125,6 +125,7 @@ const GAME_FIT = [                               // a level's limits: notes ≥ 
 const GAME_MUSIC = 0.3;                          // the music: the steps where most comes in — this share of all steps
 const GAME_STRONG = 0.75, GAME_CALM = 0.45, GAME_SOFT = 0.3;  // 강약: a part's strength (0–1) → the share of the level's notes it gets
 const GAME_LONG = [[1, 1.5, 2, 3], [0, 1, 2, 4]];  // by level: a long note lasts at least · comes at least this long after the one before (beats)
+const GAME_BURST = 4;                            // single notes within 2 beats = a burst (폭타): no long note next to one
 const GAME_PAIR = 0.4;                           // two keys at once only where the song is at least this strong
 const GAME_GAP = 4;                              // beats nobody sings for → that stretch is long notes only
 const GAME_LYRIC = 0.2;                          // the lyrics' own notes: this share of the notes (the syllables that stand out)
@@ -406,7 +407,9 @@ function gameNotes(level) {
   // 3. the level: from 쉬움 up, each level keeps the one below and takes in the notes that matter most and still fit
   // (a long note is played at every level)
   all.forEach((n, i) => { n.i = i; if (n.score == null) n.score = 50; });
-  const on = Uint8Array.from(all, n => n.len ? 1 : 0), order = [...all].sort((x, y) => y.score - x.score || x.st - y.st);
+  const order = [...all].sort((x, y) => y.score - x.score || x.st - y.st);
+  const thin = () => {
+  const on = Uint8Array.from(all, n => n.len ? 1 : 0);
   for (let lv = 0; lv <= level; lv++) {
     const C = GAME_FIT[lv];
     if (!C) { on.fill(1); break; }
@@ -424,6 +427,24 @@ function gameNotes(level) {
       return true;
     };
     for (const n of order) if (!on[n.i] && fits(n.i)) on[n.i] = 1;
+  }
+  return on;
+  };
+  let on = thin();
+  if (music) {  // 폭타 중 롱노트는 안 나오게 (user 2026-11-27): a long note with GAME_BURST single notes in the 2 beats before it
+    // or after it is in the middle of a burst — there it is a single note too, and the level is worked out again
+    // (a few rounds: the notes that come into a freed stretch can make the next long note one of a burst)
+    for (let round = 0, any = true; any && round < 4; round++) {
+    any = false;
+    all.forEach((n, i) => {
+      if (!on[i] || !n.len || (n.kind === 2 && !n.p)) return;
+      let before = 0, after = 0;
+      for (let j = i - 1; j >= 0 && n.st - all[j].st <= 2 * S; j--) if (on[j] && !all[j].len) before++;
+      for (let j = i + 1; j < all.length && all[j].st - n.st - n.len <= 2 * S; j++) if (on[j] && !all[j].len && all[j].st > n.st + n.len) after++;
+      if (before >= GAME_BURST || after >= GAME_BURST) { n.len = 0; if (n.kind === 2) n.kind = 3; any = true; }
+    });
+    if (any) on = thin();
+    }
   }
   const kept = all.filter(n => on[n.i]);
   let ln = -1;  // the first note played of its line gets the line's two keys
