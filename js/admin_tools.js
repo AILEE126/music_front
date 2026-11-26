@@ -10,7 +10,7 @@
      — every player already plays the pending sync meanwhile. Songs with no waiting sync edit are left out.
    · 자동 싱크 대상 (user request 2026-11-25: "자동 싱크 대상을 프론트에 있는 필터 기능으로 넣을 수 있게"): filter the playlist,
      선택 모드 → 모두 고르기 → '선택한 곡을 자동 싱크 대상으로' leaves the picked songs' ids in
-     Server/data/auto_sync_targets.json; the server's 자동 싱크 job then runs those songs (music_backend vocadb/auto_sync.py
+     Server/data/auto_sync_targets.json; the server's 자동 싱크 run choice 지정 대상 then runs those songs (music_backend vocadb/auto_sync.py
      — it leaves out hand-made syncs, waiting edits … itself). '자동 싱크 대상 비우기' empties the list. */
 const ADM = {byVid: new Map(), syncRid: new Map(), repAt: new Map(), fixed: new Map(), busy: false, last: 0, sel: null, anchor: -1, ok: false, tok: ""};
 const ADM_CACHE = "adm.reports", ADM_EVERY = 10 * 60 * 1000;
@@ -165,9 +165,9 @@ async function admTargets(set) {
   if (set && !ids.length) { uiAlert("고른 곡 중 자동 싱크를 돌릴 수 있는 곡이 없습니다."); return; }
   if (!await uiConfirm(set
     ? `${ids.length.toLocaleString()}곡을 자동 싱크 대상으로 넣을까요? (전에 넣은 대상은 이 목록으로 바뀝니다)\n\n`
-      + "서버의 수집 › 자동 싱크를 실행하면 이 곡들만 돕니다 — 이미 자동 싱크가 있는 곡도 지금 방식으로 다시 맞춥니다.\n"
+      + "서버의 수집 › 자동 싱크에서 '지정 대상' 을 골라 실행하면 이 곡들만 돕니다 — 이미 자동 싱크가 있는 곡도 지금 방식으로 다시 맞춥니다.\n"
       + "직접 맞춘 싱크 · 확인 대기 · 가사를 공유받는 곡은 서버가 알아서 뺍니다."
-    : "자동 싱크 대상을 비울까요? 서버의 자동 싱크가 원래 순서대로 돕니다.", set ? "넣기" : "비우기")) return;
+    : "자동 싱크 대상을 비울까요? 서버의 자동 싱크 '지정 대상' 이 돌릴 곡이 없어집니다.", set ? "넣기" : "비우기")) return;
   try {
     const who = LOCAL.gh ? await LOCAL.ghWho() : String(store.get("reportWho", "") || "").trim();
     await LOCAL.writeText(`${LOCAL.data}auto_sync_targets.json`, JSON.stringify({at: nowText(), who, ids}) + "\n", who);
