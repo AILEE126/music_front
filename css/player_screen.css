@@ -1365,3 +1365,105 @@ body:not(.simple) #btnShare .lb{display:inline}
 .sharedlg .shck .sendspin{position:absolute;display:none;color:var(--err)}
 .sharedlg .shblur.busy .shck input{visibility:hidden}  /* redrawing: spinner in the checkbox's place, same size */
 .sharedlg .shblur.busy .sendspin{display:block}
+
+/* 리듬게임 (user request 2026-11-26, rhythm_game.js): a tall window — level buttons, the lanes, the line being sung */
+dialog.gamedlg{width:min(640px,calc(96vw / var(--ui-zoom)));height:calc(90vh / var(--ui-zoom));max-height:none;overflow:hidden}  /* sizes of the window: ÷ --ui-zoom (the page is drawn smaller) */
+dialog.gamedlg[open]{display:flex;flex-direction:column}
+/* glass (user request 2026-11-26: "게임화면 약간 반투명 — 뒤가 블러처럼, 유리처럼 · 영상 따라 복잡해질 수 있으니 투명도는 너무 올리지 말 것"):
+   the window lets a little of the video through, blurred */
+dialog.gamedlg{background:color-mix(in srgb,var(--card) 46%,transparent);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+dialog.gamedlg::backdrop{background:rgba(0,0,0,.3)}  /* the video behind the window stays visible (user request 2026-11-26) */
+#gameBack{position:fixed;inset:0;z-index:-1;pointer-events:none}
+.gamedlg .grow{flex:1}
+.gamedlg .ghead{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.gamedlg .ghead b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gamedlg .gbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px 10px;padding:8px 12px;font-size:12px}
+.gamedlg .glevel{display:inline-flex}
+.gamedlg .glevel button{padding:4px 9px;font-size:12px;border-radius:0;margin-left:-1px}
+.gamedlg .glevel button:first-child{border-radius:6px 0 0 6px;margin-left:0}
+.gamedlg .glevel button:last-child{border-radius:0 6px 6px 0}
+/* 설정 창 (user request 2026-11-26: every setting but the level in a popup behind one button) */
+.gamedlg .gbar>button{padding:4px 10px;font-size:12px}
+dialog.gsetdlg{width:min(360px,calc(92vw / var(--ui-zoom)));padding:0;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text)}
+dialog.gsetdlg::backdrop{background:rgba(0,0,0,.35)}
+.gamedlg .gsets{display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 14px;font-size:13px}
+.gamedlg .gset{display:inline-flex;align-items:center;gap:4px;color:var(--muted);white-space:nowrap}
+.gamedlg .gset button{padding:2px 7px;font-size:11.5px}
+.gamedlg .gset b{min-width:44px;text-align:center;color:var(--text);font-variant-numeric:tabular-nums}
+.gamedlg .gscore{display:flex;flex-direction:column;align-items:center;gap:0;padding:0 14px 6px}
+.gamedlg .gscore b{font-size:22px;font-variant-numeric:tabular-nums}
+.gamedlg .gscore span{color:var(--ok);font-weight:700;font-size:13px;font-variant-numeric:tabular-nums}
+.gamedlg .gstage{position:relative;flex:1;min-height:0;background:color-mix(in srgb,var(--bg) 28%,transparent);border-top:1px solid var(--line);border-bottom:1px solid var(--line);touch-action:none;user-select:none}
+.gamedlg canvas{position:absolute;inset:0 14px 0 0;width:calc(100% - 14px);height:100%;display:block;touch-action:none}
+.gamedlg.nolife canvas{inset:0;width:100%}
+/* 목숨 게이지 (user request 2026-11-26): a bar up the right edge of the lanes, red when low; hidden when turned off */
+.gamedlg .glife{position:absolute;top:0;right:0;bottom:0;width:14px;display:flex;align-items:flex-end;background:rgba(0,0,0,.35);border-left:1px solid var(--line)}
+.gamedlg .glife i{display:block;width:100%;height:100%;background:linear-gradient(to top,var(--ok),var(--accent));transition:height .15s}
+.gamedlg .glife.low i{background:var(--err)}
+.gamedlg.nolife .glife{display:none}
+.gamedlg .gset button.on{border-color:var(--accent);color:var(--accent)}
+.gamedlg .gjudge{position:absolute;left:0;right:14px;top:36%;min-height:84px;display:flex;flex-direction:column;justify-content:flex-end;text-align:center;font-weight:900;font-size:38px;letter-spacing:.05em;pointer-events:none;opacity:0;text-shadow:0 0 14px currentColor,0 2px 6px rgba(0,0,0,.7)}
+.gamedlg.nolife .gjudge{right:0}
+/* the judgement: name · percent · FAST / SLOW · the combo, one under the other in the middle (user 2026-11-26: "모든 정보
+   중앙정렬 — 오른쪽이나 왼쪽에 배치하지 말고 퍼센트랑 FAST 다 가운데로") */
+.gamedlg .gj1{display:flex;flex-direction:column;align-items:center;gap:2px;line-height:1.05}
+.gamedlg .gj1 i{font-style:normal;font-size:22px;letter-spacing:0;font-variant-numeric:tabular-nums}
+.gamedlg .gj1 em{font-style:normal;font-size:13px;letter-spacing:.08em;color:var(--warn,#e0b040)}
+.gamedlg .gj1 em.fast{color:#6cb6ff}
+.gamedlg .gj2{display:flex;flex-direction:column;align-items:center;line-height:1;margin-bottom:8px;color:var(--text);text-shadow:0 2px 8px rgba(0,0,0,.8)}
+.gamedlg .gj2 b{font-size:54px;font-variant-numeric:tabular-nums}
+.gamedlg .gj2 span{font-size:12px;letter-spacing:.3em;margin-top:2px}
+.gamedlg .gjudge.pop{animation:gpop .45s ease-out}
+.gamedlg .gjudge.perfect{color:var(--ok)}
+.gamedlg .gjudge.great{color:var(--accent)}
+.gamedlg .gjudge.good{color:var(--muted)}
+.gamedlg .gjudge.miss{color:var(--err)}
+@keyframes gpop{0%{opacity:1;transform:scale(1.5)}25%{opacity:1;transform:scale(1)}70%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1)}}
+.gamedlg .gover{position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:safe center;gap:12px;padding:20px;text-align:center;overflow:auto;background:color-mix(in srgb,var(--card) 76%,transparent)}
+.gamedlg .gover[hidden]{display:none}
+.gamedlg .gover .primary{padding:9px 32px;font-size:15px}
+/* 결과창 · 랭킹 (user request 2026-11-26: DJMAX 같은 느낌으로 디테일하게) */
+.gamedlg .gres{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}
+.gamedlg .gbanner{font-size:20px;font-weight:900;letter-spacing:.25em;color:var(--accent)}
+.gamedlg .gres.failed .gbanner{color:var(--err)}
+.gamedlg .gmain{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
+.gamedlg .gmain>div{display:flex;flex-direction:column;align-items:center;gap:2px}
+.gamedlg .gmain b{font-size:36px;line-height:1.1;font-variant-numeric:tabular-nums}
+.gamedlg .gmain span{font-size:13px;color:var(--muted)}
+.gamedlg .gmain u{text-decoration:none;color:var(--text);font-weight:700}
+.gamedlg .gnew{font-style:normal;font-size:11px;font-weight:800;letter-spacing:.12em;color:var(--warn,#e0b040)}
+.gamedlg .ggrade{font-style:normal;font-weight:900;color:var(--accent)}
+.gamedlg .gmain .ggrade{font-size:72px;line-height:1;min-width:1.2em;text-align:center;text-shadow:0 0 18px currentColor}
+.gamedlg .ggrade.gSS,.gamedlg .ggrade.gS{color:#ffd24a}.gamedlg .ggrade.gA{color:var(--ok)}.gamedlg .ggrade.gB{color:#6cb6ff}
+.gamedlg .ggrade.gC,.gamedlg .ggrade.gD{color:var(--muted)}.gamedlg .ggrade.gF{color:var(--err)}
+.gamedlg .gcnt{display:grid;grid-template-columns:repeat(6,auto);gap:4px 14px;font-size:11px;letter-spacing:.06em;color:var(--muted)}
+.gamedlg .gcnt span{display:flex;flex-direction:column;align-items:center}
+.gamedlg .gcnt b{font-size:17px;letter-spacing:0;color:var(--text);font-variant-numeric:tabular-nums}
+.gamedlg .gcnt .perfect{color:var(--ok)}.gamedlg .gcnt .great{color:var(--accent)}.gamedlg .gcnt .miss{color:var(--err)}
+.gamedlg .gnote,.gamedlg .ghelp,.gamedlg .gre{color:var(--muted);font-size:12px}
+.gamedlg .gbest{font-size:13px;color:var(--muted)}
+.gamedlg .gbest b{color:var(--text)}
+.gamedlg .ghist{width:min(100%,560px)}
+.gamedlg .ghl{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}  /* 5 + 5: two rows */
+.gamedlg .ghc{display:flex;flex-direction:column;align-items:center;gap:1px;padding:6px 2px;border-radius:6px;background:color-mix(in srgb,var(--bg) 55%,transparent);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:0}
+.gamedlg .ghc.now{outline:1px solid var(--accent)}
+.gamedlg .ghc em{font-size:20px;line-height:1.1}
+.gamedlg .ghc b{font-size:13px;color:var(--text)}
+.gamedlg .ghc span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gamedlg .grank{width:min(100%,520px)}
+.gamedlg .grank:empty{display:none}
+.gamedlg .grh{font-size:12px;font-weight:800;letter-spacing:.2em;color:var(--muted);margin-bottom:6px}
+.gamedlg .grt{display:flex;flex-direction:column;gap:3px;font-size:13px}
+.gamedlg .grr{display:grid;grid-template-columns:2.2em minmax(0,1fr) 6.5em 5em 6em 2.4em;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;background:color-mix(in srgb,var(--bg) 55%,transparent);font-variant-numeric:tabular-nums}
+.gamedlg .grr.head{background:none;font-size:11px;color:var(--muted);padding-top:0;padding-bottom:0}
+.gamedlg .grr i{font-style:normal;font-weight:800;text-align:center}
+.gamedlg .grr b{text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gamedlg .grr.head b,.gamedlg .grr.head i,.gamedlg .grr.head em{font-weight:400;font-style:normal}
+.gamedlg .grr span{text-align:center}
+.gamedlg .grr em{text-align:center}
+.gamedlg .grr.me{outline:1px solid var(--accent)}
+.gamedlg .grr.now{background:var(--accent-soft)}
+.gamedlg .ginfo{font-size:13px;line-height:1.5}
+.gamedlg .ginfo.warn{color:var(--warn,#e0b040)}
+.gamedlg .glyric{min-height:2.4em;padding:8px 12px;text-align:center;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.m dialog.gamedlg{width:calc(100vw / var(--ui-zoom));height:calc(100dvh / var(--ui-zoom));max-width:none;max-height:none;border-radius:0;border:0;margin:0}

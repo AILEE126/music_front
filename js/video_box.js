@@ -41,7 +41,9 @@ function showVideo() {
   $("btnVideo").classList.toggle("on", VID.on);
   $("videoBox").hidden = !on;
   $("nowCover").hidden = !cur || !hasCover(cur) || on || SIMPLE;  // 영상 모드에서는 썸네일을 영상 자리에 · 간단 표시는 숨김
-  SHELL.placeVideo(live ? $("videoFrame") : null);
+  // 리듬게임 open: the video plays behind its window, 영상 on or not (user request 2026-11-26 — rhythm_game.js, #gameBack)
+  const game = typeof GAME !== "undefined" && GAME.on && playing && audio.bridged && !audio.error;
+  SHELL.placeVideo(game ? $("gameBack") : live ? $("videoFrame") : null);
   $("btnCmt").hidden = !(live && audio.kind === "nico");  // 니코니코 영상이 보일 때만
   $("btnCmt").classList.toggle("on", audio.comments);
   if (!on || live) { $("videoFrame").innerHTML = ""; return; }

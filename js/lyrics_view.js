@@ -254,8 +254,11 @@ function renderSyncChip() {
   else if (times) {
     const p = Math.round((sj.score || 0) * 100);
     txt = `자동 싱크 · 인식 일치 ${p}%`; cls += p >= 70 ? " ok" : " warn";
+    // 채보 (user request 2026-11-26: made with the sync, its accuracy shown the same way) — notes two hearings agree on
+    if (sj.chart && sj.chart.n) txt += ` · 채보 일치 ${Math.round((sj.chart.score || 0) * 100)}%`;
   }
-  c.title = times && sj.method !== "manual" ? "인식으로 맞춘 묶음의 비율입니다. '추정' 표시 묶음은 앞뒤 묶음 시간으로 채운 것이라 어긋날 수 있습니다." : "";
+  c.title = times && sj.method !== "manual" ? "인식으로 맞춘 묶음의 비율입니다. '추정' 표시 묶음은 앞뒤 묶음 시간으로 채운 것이라 어긋날 수 있습니다."
+    + (sj.chart && sj.chart.n && !sj.edited ? `\n채보: 음절 시작 ${sj.chart.n.toLocaleString()}개 중 목소리만 들은 것과 원래 소리로 들은 것이 ${sj.chart.agree}초 안에서 같은 비율입니다.` : "") : "";
   // edited here, waiting for the manage screen to confirm (반영) — played meanwhile; an admin's edit is applied without one
   if (times && song.sync_pending && !song.sync_pending.admin) {
     txt += " · 확인 대기";
