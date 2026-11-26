@@ -566,6 +566,18 @@ const gameLag = () => Math.max(-0.5, Math.min(0.3, +store.get("game.lag", 0) || 
    moves them, and this finds its value: the listener taps GAME_CAL beats of the playing song; where the taps fall in
    the chart's beats (their mean place round the beat) is the clock's distance from the sound. */
 const GAME_CAL = 16;
+/* 배경 영상이 비치는 정도 (user 2026-11-27: "뒤에 영상 좀 신경 쓰여서 투명도 조절좀"): 0–100 % in steps of 10, 40 % unless set
+   (100 % = the glass as it was before this setting) */
+const gameSee = () => { const v = +store.get("game.see", 0.4); return Math.max(0, Math.min(1, isNaN(v) ? 0.4 : v)); };
+/* 배경: 이미지 (the song's thumbnail blurred, default) | 영상 (the playing video — video_box.js showVideo) */
+const gameBgVideo = () => store.get("game.bg", "image") === "video";
+function gameBgShow() {
+  const it = SHELL.now, url = !gameBgVideo() && it && hasCover(it) ? coverUrl(it) : "";
+  document.body.classList.toggle("gbgimg", !gameBgVideo());
+  $("gameBg").style.backgroundImage = url ? `url("${url.replace(/["\\]/g, "")}")` : "";
+  $("gameBgBtn").textContent = gameBgVideo() ? "영상" : "이미지";
+}
+function gameSeeShow() { $("gameDlg").style.setProperty("--gsee", gameSee()); $("gameSee").textContent = Math.round(gameSee() * 100) + "%"; }
 const gameLagShow = () => { $("gameLag").textContent = (gameLag() >= 0 ? "+" : "") + Math.round(gameLag() * 1000) + "ms"; };
 function gameCalShow(text) {
   $("gameCalBox").hidden = !GAME.cal && !text;
@@ -650,7 +662,7 @@ function gameReady(result) {
   $("gameLevels").innerHTML = GAME_LEVELS.map((l, i) => `<button type="button" data-l="${i}"${i === lvl ? ' class="on"' : ""}>${esc(l)}</button>`).join("");
   $("gameSpeed").textContent = gameSpeed().toFixed(1) + "초";
   $("gameLag").textContent = (gameLag() >= 0 ? "+" : "") + Math.round(gameLag() * 1000) + "ms";
-  GAME.keyset = null; gameKeysShow();
+  GAME.keyset = null; gameKeysShow(); gameSeeShow(); gameBgShow();
   const nl = g.notes.filter(n => n.long).length;
   const info = g.beat ? `${ch.bpms ? ch.bpms.map(Math.round).join("–") : Math.round(ch.bpm)} BPM · 노트 ${g.notes.length.toLocaleString()}개${nl ? ` (롱노트 ${nl}개)` : ""} · 채보 일치 ${Math.round((ch.score || 0) * 100)}%`
     : `이 곡은 아직 박자 채보가 없어 가사 줄 시작(${g.notes.length}개)만 노트로 나옵니다 — 난이도와 상관없이 같습니다`;
@@ -762,11 +774,12 @@ function gameStart() {
   }
   if (audio.paused) audio.play();
   GAME.run = true; GAME.startAt = performance.now(); GAME.ct = null;
+  document.body.classList.add("grun");  // (css: no blur while the notes move)
   GAME.last = g.notes.reduce((m, n) => Math.max(m, n.e), 0);
   cancelAnimationFrame(GAME.raf);
   GAME.raf = requestAnimationFrame(gameFrame);
 }
-function gameStop() { GAME.run = false; cancelAnimationFrame(GAME.raf); }
+function gameStop() { GAME.run = false; cancelAnimationFrame(GAME.raf); document.body.classList.remove("grun"); }
 function gameClose() { gameStop(); GAME.on = false; document.body.classList.remove("gameon"); if ($("gameDlg").open) $("gameDlg").close(); showVideo(); gameComments(true); }
 /* 니코니코 영상의 흐르는 코멘트: off while the game is open — it runs over the video behind the notes (user request
    2026-11-26: "배경에 띄운 영상 니코동이면 자동으로 꺼져야"); the player's own setting (💬) is not changed and comes back on close */
@@ -973,6 +986,9 @@ $("gameDlg").addEventListener("click", e => {
     store.set("game.speed", Math.round((cur - step * d) * 10) / 10); $("gameSpeed").textContent = gameSpeed().toFixed(1) + "초";
   }
   if (lag) { store.set("game.lag", Math.round((gameLag() + 0.01 * +lag.dataset.lag) * 100) / 100); $("gameLag").textContent = (gameLag() >= 0 ? "+" : "") + Math.round(gameLag() * 1000) + "ms"; }
+  if (e.target.closest("#gameBgBtn")) { store.set("game.bg", gameBgVideo() ? "image" : "video"); gameBgShow(); showVideo(); }
+  const see = e.target.closest("[data-see]");
+  if (see) { store.set("game.see", Math.round((gameSee() + 0.1 * +see.dataset.see) * 10) / 10); gameSeeShow(); }
   if (e.target.closest("#gameKeys")) { if (GAME.run) return uiAlert("게임 중에는 키를 바꿀 수 없습니다."); GAME.keyset = GAME.keyset ? null : []; gameKeysShow(); }
   if (e.target.closest("#gameLifeBtn")) { if (GAME.run) return uiAlert("게임 중에는 게이지를 바꿀 수 없습니다."); }
   if (e.target.closest("#gameLifeBtn") && !GAME.run) { store.set("game.life", !gameLifeOn()); return gameReady(); }  // (not in the middle of a game)

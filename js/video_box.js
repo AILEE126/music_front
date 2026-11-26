@@ -42,8 +42,9 @@ function showVideo() {
   $("videoBox").hidden = !on;
   $("nowCover").hidden = !cur || !hasCover(cur) || on || SIMPLE;  // 영상 모드에서는 썸네일을 영상 자리에 · 간단 표시는 숨김
   // 리듬게임 open: the video plays behind its window, 영상 on or not (user request 2026-11-26 — rhythm_game.js, #gameBack)
-  const game = typeof GAME !== "undefined" && GAME.on && playing && audio.bridged && !audio.error;
-  SHELL.placeVideo(game ? $("gameBack") : live ? $("videoFrame") : null);
+  // — only when the game's 배경 is 영상; by default a still, blurred picture is behind it and the video is folded (2026-11-27)
+  const gon = typeof GAME !== "undefined" && GAME.on, game = gon && playing && audio.bridged && !audio.error;
+  SHELL.placeVideo(gon ? (game && gameBgVideo() ? $("gameBack") : null) : live ? $("videoFrame") : null);
   $("btnCmt").hidden = !(live && audio.kind === "nico");  // 니코니코 영상이 보일 때만
   $("btnCmt").classList.toggle("on", audio.comments);
   if (!on || live) { $("videoFrame").innerHTML = ""; return; }

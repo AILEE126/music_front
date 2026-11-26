@@ -1371,9 +1371,15 @@ dialog.gamedlg{width:min(640px,calc(96vw / var(--ui-zoom)));height:calc(90vh / v
 dialog.gamedlg[open]{display:flex;flex-direction:column}
 /* glass (user request 2026-11-26: "게임화면 약간 반투명 — 뒤가 블러처럼, 유리처럼 · 영상 따라 복잡해질 수 있으니 투명도는 너무 올리지 말 것"):
    the window lets a little of the video through, blurred */
-dialog.gamedlg{background:color-mix(in srgb,var(--card) 46%,transparent);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+/* 배경 영상이 비치는 정도 (user 2026-11-27: "반투명 이거 뒤에 영상 좀 신경 쓰여서 투명도 조절"): --gsee 0–1, set from the game's
+   설정 (store game.see, rhythm_game.js gameSeeShow) — 1 = as it was (the window 46 %, the lanes 28 % of their colour) */
+dialog.gamedlg{background:color-mix(in srgb,var(--card) calc(100% - 54% * var(--gsee,.4)),transparent);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
 dialog.gamedlg::backdrop{background:rgba(0,0,0,.3)}  /* the video behind the window stays visible (user request 2026-11-26) */
 #gameBack{position:fixed;inset:0;z-index:-1;pointer-events:none}
+/* 배경 = 이미지 (user 2026-11-27: "반투명한 블러 이미지를 게임창 뒤에 디폴트로 박을 수는 없음?"): the song's thumbnail, blurred once —
+   a still picture costs nothing a frame and does not pull the eye; the default (설정 › 배경 — 영상 for the video) */
+#gameBg{display:none;position:fixed;inset:-48px;z-index:39;pointer-events:none;background:#101014 center/cover no-repeat;filter:blur(24px) brightness(.8)}
+body.gameon.gbgimg #gameBg{display:block}
 .gamedlg .grow{flex:1}
 .gamedlg .ghead{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
 .gamedlg .ghead b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1396,7 +1402,7 @@ dialog.gsetdlg::backdrop{background:rgba(0,0,0,.35)}
 .gamedlg .gscore{display:flex;flex-direction:column;align-items:center;gap:0;padding:0 14px 6px}
 .gamedlg .gscore b{font-size:22px;font-variant-numeric:tabular-nums}
 .gamedlg .gscore span{color:var(--ok);font-weight:700;font-size:13px;font-variant-numeric:tabular-nums}
-.gamedlg .gstage{position:relative;flex:1;min-height:0;background:color-mix(in srgb,var(--bg) 28%,transparent);border-top:1px solid var(--line);border-bottom:1px solid var(--line);touch-action:none;user-select:none}
+.gamedlg .gstage{position:relative;flex:1;min-height:0;background:color-mix(in srgb,var(--bg) calc(100% - 72% * var(--gsee,.4)),transparent);border-top:1px solid var(--line);border-bottom:1px solid var(--line);touch-action:none;user-select:none}
 .gamedlg canvas{position:absolute;inset:0 14px 0 0;width:calc(100% - 14px);height:100%;display:block;touch-action:none}
 .gamedlg.nolife canvas{inset:0;width:100%}
 /* 목숨 게이지 (user request 2026-11-26): a bar up the right edge of the lanes, red when low; hidden when turned off */
@@ -1474,6 +1480,14 @@ dialog.gsetdlg::backdrop{background:rgba(0,0,0,.35)}
    the video is made cheap another way: its player is a quarter of the screen each way (the sites then send a small
    picture — a sixteenth of the dots) and is only enlarged on screen, and the window's blur — worked out again for every
    frame of the video — is off (the enlarged small picture is soft already) */
+/* PC too (user 2026-11-27: "모바일도 아닌데 노트 프레임이 너무 떨어지는데"): drawing the notes costs 0.1 ms a frame (measured) —
+   what is left is putting the screen together: the window's blur is worked out again for every frame of the notes and
+   of the video behind it. While a game runs (body.grun) the blur is off, and whenever the window is open the video's
+   player is a third of the screen each way, enlarged (soft, like the blur was). Not measured: the test pane counts as
+   hidden, where the browser draws no frames. */
+body.gameon #gameBack{inset:auto;left:0;top:0;width:33.334%;height:33.334%}
+body.gameon #streamHost:not(.folded){transform:scale(3);transform-origin:0 0}
+body.grun dialog.gamedlg{-webkit-backdrop-filter:none;backdrop-filter:none}
 body.m.gameon #gameBack{inset:auto;left:0;top:0;width:25%;height:25%}
 body.m.gameon #streamHost:not(.folded){transform:scale(4);transform-origin:0 0}
 body.m dialog.gamedlg{-webkit-backdrop-filter:none;backdrop-filter:none}
