@@ -123,7 +123,8 @@ const GAME_FIT = [                               // a level's limits: notes ≥ 
   {gap: 1, win: 8, max: 4, rest: 0},
   {gap: 1, win: 8, max: 7, rest: 0}];            // (the top level was every note while the notes were the syllables)
 const GAME_MUSIC = 0.3;                          // the music: the steps where most comes in — this share of all steps
-const GAME_STRONG = 0.6, GAME_CALM = 0.15, GAME_SOFT = 0.35;  // 강약: a part's strength (0–1) → the share of the level's notes it gets
+const GAME_STRONG = 0.75, GAME_CALM = 0.45, GAME_SOFT = 0.3;  // 강약: a part's strength (0–1) → the share of the level's notes it gets
+const GAME_LONG = [[1, 1.5, 2, 3], [0, 1, 2, 4]];  // by level: a long note lasts at least · comes at least this long after the one before (beats)
 const GAME_PAIR = 0.4;                           // two keys at once only where the song is at least this strong
 const GAME_GAP = 4;                              // beats nobody sings for → that stretch is long notes only
 const GAME_LYRIC = 0.2;                          // the lyrics' own notes: this share of the notes (the syllables that stand out)
@@ -201,18 +202,35 @@ function gameNotes(level) {
      song's own beats (0 the calmest … 1) — so every song has its calm and its strong parts, a loud one too.
      `ease`: the share of the level's notes a part may have — all from GAME_STRONG up, GAME_SOFT of them at GAME_CALM and
      under; a calm part also has no notes closer than half a beat and no two keys at once. */
+  /* 하이라이트 (user 2026-11-27: "하이라이트가 어디인지 인식이 되고 있음? 하이라이트에 노트 많이 몰아주고 아닌 곳은 레이지하게 — 하이라이트가
+     아닌 곳에 노트가 몰려서 재미가 없는 것 같고"): the strength was loudness + drums over 2 bars — a loud verse counted
+     like the chorus. Now a part's strength is what makes a chorus one, over 4 bars round each beat: how loud and how
+     busy it is (half), how high the voice sings there (three tenths — a chorus sits above its verse) and whether its
+     lines come back in the song (two tenths — the same words sung again). Its place among the song's own beats is the
+     strength; the top GAME_STRONG part gets every note of the level, the bottom GAME_CALM part GAME_SOFT of them. */
   const inten = (() => {
     if (!feel) return null;
-    const nb = feel.lvl.length, dr = feel.drum || feel.hit, e = [];
+    const nb = feel.lvl.length, dr = feel.drum || feel.hit, e = [], hi = new Array(nb).fill(0), hn = new Array(nb).fill(0), back = new Array(nb).fill(0);
     for (let b = 0; b < nb; b++) {
       let a = 0;
       if (dr) for (let k = 0; k < S; k++) a += +dr[b * S + k] || 0; else a = +feel.acc[b] * 2;
       e.push(+feel.lvl[b] / 9 + a / (4.5 * S));
     }
-    const sm = e.map((_, b) => { let v = 0, n = 0; for (let k = Math.max(0, b - 4); k <= Math.min(nb - 1, b + 4); k++) { v += e[k]; n++; } return v / n; });
-    const heard = sm.filter((_, b) => +feel.lvl[b] >= 2).sort((x, y) => x - y);
-    if (heard.length < 16) return null;
-    return sm.map(v => { let lo = 0, hi = heard.length; while (lo < hi) { const m = (lo + hi) >> 1; if (heard[m] < v) lo = m + 1; else hi = m; } return lo / heard.length; });
+    const texts = ((song && song.groups) || []).map(g => String(g.orig || "").replace(/\s+/g, "")), seen = {};
+    for (const t of texts) if (t) seen[t] = (seen[t] || 0) + 1;
+    for (const [st, line, , pitch] of ch.notes) {
+      const b = beatOf(st);
+      if (pitch) { hi[b] += pitch; hn[b]++; }
+      if (seen[texts[line]] > 1) back[b] = 1;
+    }
+    const W = 8;  // beats either side: 4 bars
+    const over = (v, ok) => v.map((_, b) => { let x = 0, n = 0; for (let k = Math.max(0, b - W); k <= Math.min(nb - 1, b + W); k++) if (!ok || ok(k)) { x += v[k]; n++; } return n ? x / n : NaN; });
+    const heardAt = b => +feel.lvl[b] >= 2;
+    const rank = v => { const u = v.filter((x, b) => heardAt(b) && !isNaN(x)).sort((x, y) => x - y); return v.map(x => { if (isNaN(x) || !u.length) return 0.5; let lo = 0, top = u.length; while (lo < top) { const m = (lo + top) >> 1; if (u[m] < x) lo = m + 1; else top = m; } return lo / u.length; }); };
+    if (e.filter((_, b) => heardAt(b)).length < 16) return null;
+    const rE = rank(over(e)), rP = rank(over(hi.map((x, b) => hn[b] ? x / hn[b] : 0), b => hn[b] > 0)), rB = over(back);
+    const sung = over(hn.map(n => n ? 1 : 0));  // (where nobody sings the voice says nothing: loudness alone)
+    return rank(rE.map((x, b) => sung[b] > 0.2 ? 0.5 * x + 0.3 * rP[b] + 0.2 * Math.min(1, rB[b] * 2) : 0.6 * x));
   })();
   const strong = st => inten ? inten[beatOf(st)] : 1;
   const ease = st => { const v = strong(st); return v >= GAME_STRONG ? 1 : v <= GAME_CALM ? GAME_SOFT : GAME_SOFT + (1 - GAME_SOFT) * (v - GAME_CALM) / (GAME_STRONG - GAME_CALM); };
@@ -296,6 +314,18 @@ function gameNotes(level) {
     for (const {n} of lead.slice(0, Math.round(nMusic * GAME_LYRIC / (1 - GAME_LYRIC)))) at.set(n.st, n);
     all.push(...at.values());
     all.sort((x, y) => x.st - y.st);
+    /* 롱노트는 위 난이도일수록 적게 (user 2026-11-27: "롱노트가 상위 난이도 갈수록 더 줄어야 하고 덜 몰리게 — 낮은 난이도보다는 높은
+       난이도에서 나는 문제"): every long note was played at every level, so the upper levels had them all AND their own
+       notes round them. A long note stays long only when it lasts GAME_LONG[0] beats at the level and the long note
+       before it ended GAME_LONG[1] beats ago; else it is a single note there. (A held sound without a pitch — noise,
+       the song's first and last stretch — stays.) */
+    let longEnd = -1e9;
+    for (const n of all) {
+      if (!n.len) continue;
+      if (n.kind === 2 && !n.p) { longEnd = n.st + n.len; continue; }
+      if (n.len < GAME_LONG[0][level] * S || n.st - longEnd < GAME_LONG[1][level] * S) { n.len = 0; if (n.kind === 2) n.kind = 3; n.w = Math.min(n.w, 8); }
+      else longEnd = n.st + n.len;
+    }
     for (const n of all) { n.g = "m"; if (n.kind !== 2 || n.p) { if (!phr.has(n.g)) phr.set(n.g, []); phr.get(n.g).push(n); } }
   } else {  // a chart made before v7 (no music in it): the sung notes and the tune where nobody sings, as before
   for (const [st, line, ok, pitch, len] of ch.notes) all.push({st, len: len || 0, p: pitch || 0, kind: 1, line, ok: !!ok, fill: false});
@@ -574,8 +604,25 @@ const gameBgVideo = () => store.get("game.bg", "image") === "video";
 function gameBgShow() {
   const it = SHELL.now, url = !gameBgVideo() && it && hasCover(it) ? coverUrl(it) : "";
   document.body.classList.toggle("gbgimg", !gameBgVideo());
-  $("gameBg").style.backgroundImage = url ? `url("${url.replace(/["\\]/g, "")}")` : "";
   $("gameBgBtn").textContent = gameBgVideo() ? "영상" : "이미지";
+  // the thumbnail drawn small (first 16 × 9, then that onto the 64 × 36 canvas: softer) and darkened — once a song.
+  // No css blur: a filter on a screen-sized layer is worked out again whenever the notes above it move (css #gameBg)
+  const cv = $("gameBg"), c = cv.getContext("2d");
+  if (cv.dataset.u === url) return;
+  cv.dataset.u = url;
+  c.fillStyle = "#101014"; c.fillRect(0, 0, cv.width, cv.height);
+  if (!url) return;
+  const im = new Image();
+  im.onload = () => {
+    if (cv.dataset.u !== url) return;
+    const s = document.createElement("canvas"), k = Math.max(16 / im.width, 9 / im.height);
+    s.width = 16; s.height = 9;
+    s.getContext("2d").drawImage(im, (16 - im.width * k) / 2, (9 - im.height * k) / 2, im.width * k, im.height * k);
+    c.imageSmoothingEnabled = true; c.imageSmoothingQuality = "high";
+    c.drawImage(s, 0, 0, cv.width, cv.height);
+    c.fillStyle = "rgba(0,0,0,.25)"; c.fillRect(0, 0, cv.width, cv.height);
+  };
+  im.src = url;
 }
 function gameSeeShow() { $("gameDlg").style.setProperty("--gsee", gameSee()); $("gameSee").textContent = Math.round(gameSee() * 100) + "%"; }
 const gameLagShow = () => { $("gameLag").textContent = (gameLag() >= 0 ? "+" : "") + Math.round(gameLag() * 1000) + "ms"; };

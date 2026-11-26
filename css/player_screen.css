@@ -1378,7 +1378,10 @@ dialog.gamedlg::backdrop{background:rgba(0,0,0,.3)}  /* the video behind the win
 #gameBack{position:fixed;inset:0;z-index:-1;pointer-events:none}
 /* 배경 = 이미지 (user 2026-11-27: "반투명한 블러 이미지를 게임창 뒤에 디폴트로 박을 수는 없음?"): the song's thumbnail, blurred once —
    a still picture costs nothing a frame and does not pull the eye; the default (설정 › 배경 — 영상 for the video) */
-#gameBg{display:none;position:fixed;inset:-48px;z-index:39;pointer-events:none;background:#101014 center/cover no-repeat;filter:blur(24px) brightness(.8)}
+/* no css filter on it (user 2026-11-27, after the first try: "이 패치 하기 전이 더 프레임이 안 떨어지는 것 같다" — a blur filter on a
+   screen-sized layer is worked out again every time the notes above it move): a 64 × 36 canvas the thumbnail is drawn
+   into once, stretched over the screen — the stretching is the blur */
+#gameBg{display:none;position:fixed;left:0;top:0;width:100%;height:100%;z-index:39;pointer-events:none;background:#101014}
 body.gameon.gbgimg #gameBg{display:block}
 .gamedlg .grow{flex:1}
 .gamedlg .ghead{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
