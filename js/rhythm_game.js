@@ -878,7 +878,9 @@ function gameNotes(level) {
       const b = mod(Math.floor(n.st / S), 4);
       lane = mod(n.st, S) === 0 ? BEAT_LANE[b] : OFF_LANE[b];
     } else if (n.kind === 2 && !n.p) {
-      if (n.st - prevEnd > 2 * S || prevKind !== 2) heldN = 0;  // each stretch starts the round again
+      // (the round went back to its first key whenever another note came before the long note — at HARD and up that
+      // is always, so 178 of SUPER HARD's 178 long notes of 15 songs sat on the second key: user 2026-11-27 "롱노트가
+      // 전체적으로 앞에서 두 번째 트랙에 많은 것 같은데". The round now goes on through the song.)
       lane = HELD_LANE[heldN++ % 4];
     } else lane = n.rl != null ? n.rl : laneOf(n);
     const hl = !n.len && !n.fill ? last.findIndex(L => L.end > n.st) : -1;  // a key is being held: the other hand plays this note
@@ -1066,8 +1068,14 @@ function gameNow() {
   if (GAME.off == null || audio.paused) return audio.currentTime;
   return performance.now() / 1000 * gameRate() + GAME.off;
 }
+/* the first seconds after the count-in (GAME.grace): the game's time goes on from the count-in by the screen's clock
+   whatever the player says about itself. Logged on a Niconico video: let go at 0 it said "playing", then "paused" for
+   0.8 s while it was in fact playing, then its time came as 1.0 s — the game's time stood still and jumped a second
+   (the notes of that second stood in the lanes at once). The screen's clock had been right all the while. */
+const GAME_GRACE = 3;
+const gameGrace = () => performance.now() < (GAME.grace || 0);
 function gameClock() {
-  if (audio.paused || GAME.rate !== gameRate()) { GAME.off = null; GAME.rate = gameRate(); }
+  if (!gameGrace() && (audio.paused || GAME.rate !== gameRate())) { GAME.off = null; GAME.rate = gameRate(); }
   if (GAME.off == null) {
     if (audio.paused) return audio.currentTime;
     GAME.off = GAME.offTo = audio.currentTime - performance.now() / 1000 * gameRate(); GAME.offs = [GAME.off]; GAME.offJump = 0;
@@ -1088,7 +1096,7 @@ audio.addEventListener("timeupdate", () => {  // one report of the song's time =
   if (GAME.offs.length > 12) GAME.offs.shift();
   GAME.offTo = Math.max(...GAME.offs);
 });
-for (const ev of ["seeked", "pause", "sourcechange"]) audio.addEventListener(ev, () => { GAME.off = null; });
+for (const ev of ["seeked", "pause", "sourcechange"]) audio.addEventListener(ev, () => { if (!gameGrace() || ev === "sourcechange") GAME.off = null; });
 /* 곡이 끝나면 (user 2026-11-27: "리듬게임 모드 중에서는 한 곡 재생 끝나면 그대로 멈추고 다음 곡 넘어가지도 않아야 됨 — 다시 하기 누르면
    방금 했던 곡 다시 시작"): while the game's window is open the player does not go on to the next song at the end of
    one (play_engine.js onEnd asks SHELL.gameHold) — it was the next song that 다시 하기 then started. A game still
@@ -1107,6 +1115,14 @@ function gameOpen() {
   GAME.vocal = hex(voc[0] && voc[0][1]) || v("--accent") || "#ccc";
   GAME.lineColor = (song.groups || []).map(g => hex((g.vc || [])[0]) || GAME.vocal);
   GAME.colors = {a: v("--accent") || "#ccc", ok: v("--ok") || "#4ade80", line: v("--line") || "#333", muted: v("--muted") || "#888", bg: v("--bg") || "#181818", text: v("--text") || "#ccc"};
+  /* 컬러 트랙은 반드시 컬러 (user 2026-11-27: "컬러 트랙은 무조건 컬러만 나오게 해 줘 — 흰색 안 나오게. 이거 트랙 구분용이라 흰색
+     절대 나오면 안 됨"): with 5 · 6 · 7 keys the coloured keys tell the keys apart — a singer whose colour is white or
+     nearly so (pale: every part light, little between them) would make them white like the others. Such a colour is
+     replaced there by the screen's accent colour, or a fixed blue when that is pale too. */
+  const pale = c => { const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(c || ""); if (!m) return false; const q = m.slice(1).map(x => parseInt(x, 16)); return Math.min(...q) >= 150 && Math.max(...q) - Math.min(...q) <= 70; };
+  const toHex = c => { const m = /^rgba?\((\d+)[, ]+(\d+)[, ]+(\d+)/.exec(c || ""); return m ? "#" + m.slice(1).map(x => (+x).toString(16).padStart(2, "0")).join("") : c; };
+  const alt = pale(toHex(GAME.colors.a)) || !toHex(GAME.colors.a) ? "#3d9bff" : GAME.colors.a, seen = new Map();
+  GAME.tintOf = c => { if (!seen.has(c)) seen.set(c, pale(toHex(c)) ? alt : c); return seen.get(c); };
   GAME.on = true; GAME.song = song;
   document.body.classList.add("gameon");  // (phone: the video behind is drawn small and enlarged — css)
   $("gameDlg").showModal();
@@ -1239,8 +1255,8 @@ function gameStart() {
      not it), the song moved to its start, the first frames drawn — so the player's own start-up (a relayed video
      moves and buffers) fell on the first notes. Now the song is stopped at its start, the first screen is drawn for
      GAME_READY seconds (the notes stand still), and it plays once it has got there (GAME_READY_MAX at most). */
-  GAME.wait = 0; GAME.lead = 0;
-  if (gameCanSeek()) { if (!audio.paused) audio.pause(); audio.currentTime = 0; GAME.wait = performance.now(); }
+  GAME.wait = 0; GAME.lead = 0; GAME.holdAt = 0;
+  if (gameCanSeek()) { audio.currentTime = 0; if (!audio.paused) audio.pause(); GAME.wait = performance.now(); }
   else {  // joined mid-song: what is already past is not counted
     const now = audio.currentTime;
     for (let l = 0; l < GAME.K; l++) while (GAME.ptr[l] < GAME.lanes[l].length && GAME.lanes[l][GAME.ptr[l]].t < now + 0.5) GAME.lanes[l][GAME.ptr[l]++].hit = -2;
@@ -1255,7 +1271,7 @@ function gameStart() {
 }
 const GAME_LEAD = 0.5;  // seconds more than a note's way down the screen that the game's time starts before the song
 const GAME_READY = 1.5, GAME_READY_MAX = 4;  // seconds the first screen stands before the song starts · at most (the song has not got to its start)
-function gameStop() { GAME.run = false; GAME.wait = 0; GAME.lead = 0; cancelAnimationFrame(GAME.raf); document.body.classList.remove("grun"); }
+function gameStop() { GAME.run = false; GAME.wait = 0; GAME.lead = 0; GAME.grace = 0; cancelAnimationFrame(GAME.raf); document.body.classList.remove("grun"); }
 function gameClose() { gameStop(); GAME.on = false; document.body.classList.remove("gameon"); if ($("gameDlg").open) $("gameDlg").close(); showVideo(); gameComments(true); }
 /* 니코니코 영상의 흐르는 코멘트: off while the game is open — it runs over the video behind the notes (user request
    2026-11-26: "배경에 띄운 영상 니코동이면 자동으로 꺼져야"); the player's own setting (💬) is not changed and comes back on close */
@@ -1363,10 +1379,27 @@ function gameFrame() {
        다 되면 시작을 하라고 했지"): the first screen showed the song's first notes standing in the lanes. Now nothing is
        on the screen while it gets ready, and then the game's time runs up to the song's start from `lead` seconds
        before it — the first notes come down from the top like every other — and the song plays when it gets to 0. */
-    const dt = (performance.now() - GAME.wait) / 1000, lead = gameCfg().speed + GAME_LEAD;
-    if (!GAME.lead && (dt >= GAME_READY_MAX || (dt >= GAME_READY && audio.currentTime < 0.5))) GAME.lead = performance.now();
+    /* (user 2026-11-27, メズマライザー: "시작할 때 화면에 갑자기 노트가 생기는 현상은 아직도 있는 것 같은데 — 원인 확실하게 잡아내"):
+       seen in a logged run — started while the song was playing (다시 하기 · 시작 during a song), a Niconico video did
+       not stay stopped: moving it to 0 set it playing again, so the song ran on through READY and the count-in (0 →
+       5 s) and when the game's time took the song's it jumped from 0 to 5 s: the notes of that moment stood in the
+       lanes at once. Started from a stopped song it did not happen. Now the song is HELD until the count-in is over:
+       stopped again whenever it is found playing, moved back when it is not at its start, and the count-in begins only
+       when it stands still there; when it is let go it is at 0. */
+    const dt = (performance.now() - GAME.wait) / 1000, lead = gameCfg().speed + GAME_LEAD, held = audio.paused && audio.currentTime < 0.3;
+    if (!held && performance.now() - GAME.holdAt > 300) {
+      GAME.holdAt = performance.now();
+      if (!audio.paused) audio.pause(); else audio.currentTime = 0;
+    }
+    if (!GAME.lead && ((dt >= GAME_READY && held) || dt >= GAME_READY_MAX)) GAME.lead = performance.now();
     const t = GAME.lead ? (performance.now() - GAME.lead) / 1000 - lead : -lead;
-    if (t >= 0) { GAME.wait = 0; GAME.lead = 0; GAME.off = null; GAME.startAt = performance.now(); if (audio.paused) audio.play(); }
+    if (t >= 0) {
+      GAME.wait = 0; GAME.lead = 0; GAME.startAt = performance.now();
+      if (audio.currentTime >= 0.3) audio.currentTime = 0;
+      GAME.rate = gameRate(); GAME.off = GAME.offTo = -performance.now() / 1000 * GAME.rate; GAME.offs = [GAME.off]; GAME.offJump = 0;  // the game's time: 0 now
+      GAME.grace = performance.now() + GAME_GRACE * 1000;
+      if (audio.paused) audio.play();
+    }
     else {
       gameDraw(t - gameCfg().lag);
       const c = GAME.ctx, cv = $("gameCanvas"), dpr = Math.min(window.devicePixelRatio || 1, 1.5);
@@ -1435,7 +1468,8 @@ function gameDraw(now) {
     if (n.t > now + look) break;
     if (n.hit === -2 || n.done || (n.hit === 1 && !n.long)) continue;
     const x = n.lane * lw + lw * 0.1, w = lw * 0.8;
-    const col = tint && !tint.includes(n.lane) ? "#fff" : n.line >= 0 ? GAME.lineColor[n.line] || GAME.vocal : GAME.vocal;
+    const own = n.line >= 0 ? GAME.lineColor[n.line] || GAME.vocal : GAME.vocal;
+    const col = !tint ? own : tint.includes(n.lane) ? GAME.tintOf(own) : "#fff";
     if (n.long) {  // a long note: its body from the head to the end; while held the head stays on the line
       const held = GAME.hold[n.lane] === n, dead = n.hit === -1 || n.broke, y0 = held ? jy : y(n.t), y1 = Math.max(y(n.e), -nh);
       if (y1 > y0) continue;
@@ -1580,7 +1614,7 @@ window.addEventListener("keydown", e => {
   const lane = gameCfg().keys.findIndex(k => k[0] === e.code);
   if (lane >= 0) { e.preventDefault(); if (!e.repeat) gameHit(lane); return; }
   // pause: Enter while a game runs — and Space where Space is not one of the keys (5 · 7 keys play it)
-  if (e.code === "Space" || (e.key === "Enter" && GAME.run)) { e.preventDefault(); if (!e.repeat && GAME.run) $("btnPlay").click(); return; }
+  if (e.code === "Space" || (e.key === "Enter" && GAME.run)) { e.preventDefault(); if (!e.repeat && GAME.run && !GAME.wait) { GAME.grace = 0; $("btnPlay").click(); } return; }
   if (e.key === "Enter" && !GAME.run) { e.preventDefault(); return gameStart(); }
 }, true);
 window.addEventListener("keyup", e => {
