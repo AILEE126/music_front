@@ -108,7 +108,18 @@ let searchGen = 0, sortMemo = new WeakMap();  // scope songs → {key: sort, out
 /* give the screen a turn (input · drawing · the player's timers) — not setTimeout: clamped to 4 ms, and far slower in a hidden
    tab. Not scheduler.yield either (user request 2026-11-18, heat · lag): it puts the rest ahead of every other task, so a
    search or the 6 s warm-up held back the player's timers (lyrics · video box) — a posted message waits in line with them */
-const yieldUI = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); });
+/* 리듬게임 중에는 뒤에서 도는 일을 멈춤 (user 2026-11-27: "새로고침 후 바로 리듬게임 들어가서 시작해 버리니까 곡 목록 불러오는 게 뒤에서
+   돌아서 그런 것 같음 — 리듬게임 들어가면 화면에서 돌던 거 다 중지하고 리듬게임만 돌아가게 해"): everything long that runs behind
+   the screen — reading the song list's blocks, making the songs, the search's warm-up and counts — gives the screen its
+   turn here, so here it also waits while a game runs (rhythm_game.js GAME.run: from 시작 to the result) and goes on
+   after it. A block being read when the game starts is finished first (one block, tens of ms). */
+const yieldUI = () => new Promise(r => {
+  const go = () => {
+    if (typeof GAME !== "undefined" && GAME.run) return void setTimeout(go, 300);
+    const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0);
+  };
+  go();
+});
 function searchTick(gen) {
   let last = performance.now();
   return async () => {

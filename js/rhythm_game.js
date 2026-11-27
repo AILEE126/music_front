@@ -1239,7 +1239,7 @@ function gameStart() {
      not it), the song moved to its start, the first frames drawn — so the player's own start-up (a relayed video
      moves and buffers) fell on the first notes. Now the song is stopped at its start, the first screen is drawn for
      GAME_READY seconds (the notes stand still), and it plays once it has got there (GAME_READY_MAX at most). */
-  GAME.wait = 0;
+  GAME.wait = 0; GAME.lead = 0;
   if (gameCanSeek()) { if (!audio.paused) audio.pause(); audio.currentTime = 0; GAME.wait = performance.now(); }
   else {  // joined mid-song: what is already past is not counted
     const now = audio.currentTime;
@@ -1253,8 +1253,9 @@ function gameStart() {
   cancelAnimationFrame(GAME.raf);
   GAME.raf = requestAnimationFrame(gameFrame);
 }
+const GAME_LEAD = 0.5;  // seconds more than a note's way down the screen that the game's time starts before the song
 const GAME_READY = 1.5, GAME_READY_MAX = 4;  // seconds the first screen stands before the song starts · at most (the song has not got to its start)
-function gameStop() { GAME.run = false; GAME.wait = 0; cancelAnimationFrame(GAME.raf); document.body.classList.remove("grun"); }
+function gameStop() { GAME.run = false; GAME.wait = 0; GAME.lead = 0; cancelAnimationFrame(GAME.raf); document.body.classList.remove("grun"); }
 function gameClose() { gameStop(); GAME.on = false; document.body.classList.remove("gameon"); if ($("gameDlg").open) $("gameDlg").close(); showVideo(); gameComments(true); }
 /* 니코니코 영상의 흐르는 코멘트: off while the game is open — it runs over the video behind the notes (user request
    2026-11-26: "배경에 띄운 영상 니코동이면 자동으로 꺼져야"); the player's own setting (💬) is not changed and comes back on close */
@@ -1358,12 +1359,18 @@ function gameFrame() {
     return song && times ? gameEnd() : gameClose();
   }
   if (GAME.wait) {  // getting ready: the first screen, nothing judged
-    const dt = (performance.now() - GAME.wait) / 1000;
-    if (dt >= GAME_READY_MAX || (dt >= GAME_READY && audio.currentTime < 0.5)) { GAME.wait = 0; GAME.off = null; GAME.startAt = performance.now(); if (audio.paused) audio.play(); }
+    /* (user 2026-11-27, of the first cut: "READY 떠 있다가 갑자기 허공에서 노트가 생기는데? 떨어지는 게 아니고? 이걸 어떻게 침 — 준비가
+       다 되면 시작을 하라고 했지"): the first screen showed the song's first notes standing in the lanes. Now nothing is
+       on the screen while it gets ready, and then the game's time runs up to the song's start from `lead` seconds
+       before it — the first notes come down from the top like every other — and the song plays when it gets to 0. */
+    const dt = (performance.now() - GAME.wait) / 1000, lead = gameCfg().speed + GAME_LEAD;
+    if (!GAME.lead && (dt >= GAME_READY_MAX || (dt >= GAME_READY && audio.currentTime < 0.5))) GAME.lead = performance.now();
+    const t = GAME.lead ? (performance.now() - GAME.lead) / 1000 - lead : -lead;
+    if (t >= 0) { GAME.wait = 0; GAME.lead = 0; GAME.off = null; GAME.startAt = performance.now(); if (audio.paused) audio.play(); }
     else {
-      gameDraw(-gameCfg().lag);
+      gameDraw(t - gameCfg().lag);
       const c = GAME.ctx, cv = $("gameCanvas"), dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-      if (c) { c.globalAlpha = 1; c.fillStyle = GAME.colors.text; c.font = `700 ${Math.round(22 * dpr)}px sans-serif`; c.textAlign = "center"; c.fillText("READY", cv.width / 2, cv.height * 0.45); }
+      if (c && !GAME.lead) { c.globalAlpha = 1; c.fillStyle = GAME.colors.text; c.font = `700 ${Math.round(22 * dpr)}px sans-serif`; c.textAlign = "center"; c.fillText("READY", cv.width / 2, cv.height * 0.45); }
     }
     GAME.raf = requestAnimationFrame(gameFrame);
     return;
