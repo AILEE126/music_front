@@ -80,41 +80,123 @@ const gameKeyLabel = e => e.code === "Space" ? "␣" : /^Key[A-Z]$/.test(e.code)
 /* four-key notes → n keys (GAME_KEYSETS' order). Notes of one moment are laid together; a hand's two 4-key places go
    onto two of its keys — GAME_WIDE: which two, one row a 2-bar phrase, in turn. */
 const GAME_WIDE = [[0, 1, 1, 2], [1, 2, 0, 1], [0, 2, 0, 2], [0, 1, 0, 2], [1, 2, 1, 2], [0, 2, 0, 1]];  // [left low, left high, right low, right high] of a hand's 0–2
-/* 구석 트릴 (user 2026-11-27: "구석 트릴이라든가 이런 거 플레이어 손에 부담이 좀 있다고 함 — 너무 남발하지 않아야", then, the
-   counted public charts having none under their hardest levels while our HARD had a few: "하드에서도 조금 나오는 것만
-   수정하고 공개 채보처럼"): with three keys a hand, EASY · NORMAL · HARD have no trill on a hand's two outermost keys
-   (A S A S · L ; L ; — ring and middle finger): the note that would be its fourth, half a beat or less after the one
-   before, goes to the hand's inner key. SUPER HARD · EXTREME keep theirs (docs/rhythm_chart_guide.md §13). */
-function gameSpread(notes, n, S, BAR, BAR0, level) {
+/* 손에 부담이 가는 배치 (user 2026-11-27: "구석 트릴이라든가 이런 거 플레이어 손에 부담이 좀 있다고 함 — 너무 남발하지 않아야", the
+   counted public charts having no corner trill under their hardest levels: "하드에서도 조금 나오는 것만 수정하고 공개 채보처럼",
+   then of the rest of the count: "분석한 거 다 넣어") — the limits of docs/rhythm_chart_guide.md §13.5, one number a level
+   (EASY … EXTREME), kept while the notes are laid onto 5 · 6 · 7 keys; a note that would break one goes to another key of
+   its hand (or the thumb's):
+   · GAME_K_CORNER  a trill on a hand's two outermost keys (A S A S · L ; L ; — ring and middle finger): notes at most.
+                    Up to HARD none (3 = no fourth note, counted half a beat apart); above, a quarter beat apart,
+                    5 notes and one a minute
+   · GAME_K_TRILL   any trill of one hand a quarter beat apart: notes at most
+   · GAME_K_RUN     moments a quarter beat apart on one hand only, in a row
+   · the same key a quarter beat later: never up to HARD, above twice at most — and never on an outermost key or the thumb's
+   · GAME_K_ANCHOR  the same key half a beat apart, in a row: [an outermost key, the thumb's, any other]
+   · two keys of one hand at once: not at EASY (the thumb or the other hand takes one); the two outermost not up to
+     NORMAL, GAME_K_PAIR of the moments at most above; never three of a hand (as before)
+   · two keys at once, one a hand, up to NORMAL: mirror keys (D K · S L · A ;)
+   · chords in a row that take a hand to and fro over its two outermost keys (a bracket): the third goes elsewhere
+   · the thumb's key: as many notes as any other key (1 / keys of all notes — it had 30 % at EASY and 7 % from HARD
+     up), single notes with room round them; with others only as the inner key of three at once */
+const GAME_K_CORNER = [3, 3, 3, 5, 5], GAME_K_TRILL = [3, 3, 4, 9, 9], GAME_K_RUN = [4, 4, 4, 6, 6];
+const GAME_K_ANCHOR = [[1, 2, 3, 99, 99], [1, 2, 4, 99, 99], [2, 2, 4, 99, 99]], GAME_K_PAIR = [0, 0, 0.06, 0.11, 0.11];
+function gameSpread(notes, n, S, BAR, BAR0, level, perMin) {
   const mid = n % 2 ? (n - 1) / 2 : -1, side = (n - (mid >= 0 ? 1 : 0)) / 2, mod = (a, b) => ((a % b) + b) % b;  // side: keys a hand
+  const Q = S / 4, H = S / 2, hand = l => l === mid ? 2 : l < side ? 0 : 1, outer = l => l === 0 || l === n - 1;
+  const keysOf = h => Array.from({length: side}, (_, q) => h ? n - side + q : side - 1 - q);  // a hand's keys, the inner one first
+  const corner = (a, b) => side === 3 && a !== b && ((a < 2 && b < 2) || (a >= n - 2 && b >= n - 2));
   const by = new Map();
   for (const x of notes) { if (!by.has(x.st)) by.set(x.st, []); by.get(x.st).push(x); }
   const sts = [...by.keys()].sort((a, b) => a - b), free = new Array(n).fill(-1e9);  // free: the step each key is taken until
-  const hist = [], corner = (a, b) => a !== b && ((a < 2 && b < 2) || (a >= n - 2 && b >= n - 2));  // hist: the last three moments [step, key | -1 more than one]
+  const last = new Array(n).fill(-1e9), jack = new Array(n).fill(1), anch = new Array(n).fill(1), hist = [];  // hist: the last moments {st, l: keys}
+  let midN = 0, seen = 0, rowsN = 0, pairN = 0, cornerAt = -1e9;
+  // how long the to-and-fro `l p l p …` is that a single note on `l` at `st` would end (moments at most `g` apart)
+  const trill = (l, st, g) => {
+    const pr = hist[hist.length - 1];
+    if (!pr || pr.l.length !== 1 || pr.l[0] === l) return 1;
+    let len = 1, t = st;
+    for (let k = hist.length - 1; k >= 0; k--) {
+      const r = hist[k];
+      if (r.l.length !== 1 || t - r.st > g || r.l[0] !== (len % 2 ? pr.l[0] : l)) break;
+      len++; t = r.st;
+    }
+    return len;
+  };
+  const run = (h, st) => { let k = 1, t = st; for (let q = hist.length - 1; q >= 0 && t - hist[q].st <= Q && hist[q].l.every(x => hand(x) === h); q--) { k++; t = hist[q].st; } return k; };
+  const wrong = (l, st, single) => {
+    const d = st - last[l];
+    if (d <= Q && (level < 3 || outer(l) || l === mid || jack[l] >= 2)) return true;
+    if (d === H && anch[l] + 1 > GAME_K_ANCHOR[outer(l) ? 0 : l === mid ? 1 : 2][level]) return true;
+    if (hand(l) === 2) return false;
+    const pr = hist[hist.length - 1];
+    if (single && pr && pr.l.length === 1 && pr.l[0] !== l && hand(pr.l[0]) === hand(l)) {
+      if (corner(l, pr.l[0])) {
+        const len = trill(l, st, level <= 2 ? H : Q);
+        if (len > GAME_K_CORNER[level] || (len === 4 && st - cornerAt < perMin)) return true;
+      }
+      if (trill(l, st, Q) > GAME_K_TRILL[level]) return true;
+    }
+    return run(hand(l), st) > GAME_K_RUN[level];
+  };
   sts.forEach((st, i) => {
     const g = by.get(st), w = side === 2 ? [0, 1, 0, 1] : GAME_WIDE[mod(Math.floor((st - BAR0) / (2 * BAR)), GAME_WIDE.length)];
     const to = l => l < 2 ? w[l] : n - side + w[l];  // (the right hand's keys are the last `side`)
+    const open = l => free[l] < st - 1;  // (a key still taken — a held note, a note a step ago — is left alone)
     let lanes = g.map(x => to(x.lane));
-    if (mid >= 0 && free[mid] < st - 1) {
-      const gapA = i ? st - sts[i - 1] : 99, gapB = i + 1 < sts.length ? sts[i + 1] - st : 99;
-      // the thumb: a single note on a bar's first or third beat, with room round it · the inner key of three at once
-      if (g.length === 1 && !g[0].long && mod(st - BAR0, BAR / 2) === 0 && gapA >= 2 && gapB >= 2) lanes = [mid];
-      else if (g.length === 3) { const k = g.findIndex(x => g.some(y => y !== x && (y.lane < 2) === (x.lane < 2)) && (x.lane === 1 || x.lane === 2)); if (k >= 0) lanes[k] = mid; }
-    }
-    g.forEach((x, k) => {  // (a key still taken — a held note, the phrase before's last note a step ago: the hand's other key)
-      if (free[lanes[k]] >= st - 1 && lanes[k] !== mid) {
-        const lo = lanes[k] < side ? 0 : n - side, alt = [0, 1, 2].slice(0, side).map(q => lo + q).find(q => free[q] < st - 1 && !lanes.includes(q));
-        if (alt != null) lanes[k] = alt;
+    if (g.length === 1) {
+      const x = g[0], gapA = i ? st - sts[i - 1] : 99, gapB = i + 1 < sts.length ? sts[i + 1] - st : 99, room = level <= 1 ? 2 : 1;
+      // the thumb: a bar's first or third beat first, then any beat or half beat — until it has its share of the notes
+      const thumb = mid >= 0 && !x.long && st - last[mid] >= S && gapA >= room && gapB >= room &&
+        (mod(st - BAR0, BAR / 2) === 0 && gapA >= 2 && gapB >= 2 ? midN <= 1.1 * seen / n : mod(st, H) === 0 && midN < 0.9 * seen / n);
+      const own = lanes[0], rest = keysOf(hand(own)).filter(q => q !== own);
+      const order = thumb ? [mid, own, ...rest] : [own, ...rest, ...(mid >= 0 && !x.long ? [mid] : [])];
+      const pick = order.find(q => open(q) && !wrong(q, st, true)), any = order.find(q => q !== mid && open(q));
+      lanes = [pick != null ? pick : any != null ? any : own];
+      if (corner(lanes[0], (hist[hist.length - 1] || {l: [-1]}).l[0]) && trill(lanes[0], st, Q) === 4) cornerAt = st;
+    } else {
+      if (g.length === 3 && mid >= 0 && open(mid)) {  // the thumb: the inner key of three at once
+        const k = g.findIndex(x => g.some(y => y !== x && (y.lane < 2) === (x.lane < 2)) && (x.lane === 1 || x.lane === 2));
+        if (k >= 0) lanes[k] = mid;
       }
-    });
-    if (side === 3 && level <= 2 && g.length === 1 && hist.length === 3) {
-      const [a, b, c] = hist, L = lanes[0], inner = L < side ? 2 : n - 3;
-      if (corner(L, c[1]) && b[1] === L && a[1] === c[1] && st - c[0] <= S / 2 && c[0] - b[0] <= S / 2 && b[0] - a[0] <= S / 2 && free[inner] < st - 1) lanes[0] = inner;
+      if (g.length === 2) {
+        const h0 = hand(lanes[0]), h1 = hand(lanes[1]);
+        if (h0 === h1 && h0 < 2) {  // two keys of one hand
+          if (level === 0) {
+            const k = keysOf(h0).indexOf(lanes[0]) < keysOf(h0).indexOf(lanes[1]) ? 0 : 1, away = mid >= 0 && open(mid) && st - last[mid] > H ? mid : keysOf(1 - h0)[0];
+            if (open(away)) lanes[k] = away;
+          } else if (corner(lanes[0], lanes[1]) && (level <= 1 || pairN + 1 > GAME_K_PAIR[level] * (rowsN + 1))) {
+            const two = keysOf(h0).slice(0, 2);
+            if (two.every(open)) { lanes[0] = Math.min(...two); lanes[1] = Math.max(...two); }
+          }
+        } else if (side === 3 && level <= 1 && h0 + h1 === 1) {  // one a hand: mirror keys
+          const k = h0 === 0 ? 1 : 0, m = n - 1 - lanes[1 - k];
+          if (open(m)) lanes[k] = m;
+        }
+      }
+      g.forEach((x, k) => {
+        const l = lanes[k], h = hand(l);
+        if (h === 2) return;
+        // a bracket: the chord before and the one before that took this hand corner key → corner key → back here
+        const a = hist[hist.length - 2], b = hist[hist.length - 1], one = r => r && r.l.length > 1 ? r.l.filter(q => hand(q) === h) : [];
+        const br = a && st - b.st <= H && b.st - a.st <= H && one(a).length === 1 && one(b).length === 1 && one(a)[0] === l && corner(l, one(b)[0]) && lanes.filter(q => hand(q) === h).length === 1;
+        if (!open(l) || br || wrong(l, st, false)) {
+          const alt = keysOf(h).find(q => !lanes.includes(q) && open(q) && !wrong(q, st, false));
+          const any = alt != null ? alt : !open(l) ? keysOf(h).find(q => !lanes.includes(q) && open(q)) : null;
+          if (any != null) lanes[k] = any;
+        }
+      });
+      if (lanes.length === 2 && corner(lanes[0], lanes[1])) pairN++;
     }
-    hist.push([st, g.length === 1 ? lanes[0] : -1]);
-    if (hist.length > 3) hist.shift();
     const ord = [...lanes].sort((a, b) => a - b);
-    g.forEach((x, k) => { x.lane = lanes[k]; x.pair = g.length > 1 ? (lanes[k] === ord[0] ? ord[ord.length - 1] : ord[0]) : -1; free[lanes[k]] = x.long ? x.end : st; });
+    g.forEach((x, k) => {
+      const l = lanes[k], d = st - last[l];
+      jack[l] = d <= Q ? jack[l] + 1 : 1; anch[l] = d === H ? anch[l] + 1 : 1; last[l] = st;
+      if (l === mid) midN++;
+      x.lane = l; x.pair = g.length > 1 ? (l === ord[0] ? ord[ord.length - 1] : ord[0]) : -1; free[l] = x.long ? x.end : st;
+    });
+    seen += g.length; rowsN++;
+    hist.push({st, l: lanes.slice()});
+    if (hist.length > 12) hist.shift();
   });
 }
 const gameLane = code => gameKeys().findIndex(k => k[0] === code);
@@ -181,7 +263,7 @@ const GAME_FIT = [                               // a level's limits: notes ≥ 
   {gap: 2, win: 8, max: 4, rest: 2},
   {gap: 1, win: 8, max: 5, rest: 0},
   {gap: 1, win: 8, max: 6, rest: 0},
-  {gap: 1, win: 8, max: 7, rest: 0}];
+  {gap: 1, win: 8, max: 8, rest: 0}];
 /* 난이도는 간격과 패턴 (user 2026-11-27: "하이라이트가 아닌 부분도 노트가 너무 부실하다고 함 — 난이도는 노트 갯수보다는 간격이나 패턴이
    결정하는 거임"): the levels had been told apart by how MANY notes a stretch may hold (2 · 5 in 4 beats · 4 · 7 in 2
    beats), and a part that is not the highlight got 30 % of that — thin everywhere but the chorus. Now a level is its
@@ -189,6 +271,7 @@ const GAME_FIT = [                               // a level's limits: notes ≥ 
    most, so quarter runs stay short) — `max` only says that; and the calm parts keep GAME_SOFT (0.7) of it, with their
    notes half a beat apart at the least. What sets the upper levels apart is the patterns (GAME_RUNS · GAME_PAIRS). */
 const GAME_MUSIC = 0.3;                          // the music: the steps where most comes in — this share of all steps
+const GAME_HEARD = 3;  // a drum hit of this digit (of 9) or more is heard as one by itself
 const GAME_STRONG = 0.6, GAME_CALM = 0.1, GAME_SOFT = 0.6, GAME_HOOK = 0.8;  // 강약: a part's strength (0–1) → the share of the level's notes it gets
 const GAME_LONG = [[1, 1.5, 2, 3, 4], [0, 1, 2, 4, 4]];  // by level: a long note lasts at least · comes at least this long after the one before (beats)
 const GAME_BURST = 4;                            // single notes within 2 beats = a burst (폭타): no long note next to one
@@ -213,7 +296,10 @@ const GAME_ROUNDS = [GAME_PAIRS,
   [[0, 2], [0, 2], [1, 3], [1, 3], [0, 1], [0, 1], [2, 3], [2, 3]],
   [[1, 2], [0, 1], [1, 2], [2, 3], [0, 3], [0, 2], [0, 3], [1, 3]]];
 const GAME_TRIPLES = [[0, 1, 2], [1, 2, 3], [0, 1, 3], [0, 2, 3]];
-const GAME_MANY = [[0.1, 0.18], [0.03, 0.05]];   // of the keys-at-once at SUPER HARD · EXTREME: the share that is three keys · all four
+// (all four: user 2026-11-27 "4키 4개짜리 노트는 왜 이렇게 많음??" — 3 % · 5 % was one every 22 s · 12 s, some a beat or two
+// apart → 1 % · 2 %, and GAME_MANY_APART bars at least between two of them: a song's few biggest hits)
+const GAME_MANY = [[0.1, 0.18], [0.01, 0.02]];   // of the keys-at-once at SUPER HARD · EXTREME: the share that is three keys · all four
+const GAME_MANY_APART = 8;
 /* 패턴 (user 2026-11-27: "계단 같은 패턴도 활용해야 하고 … 공개적으로 올라와 있는 채보 정보 다 습득해서 문서화 — 그것도 활용해서
    규칙 로직 너가 더 추가해 봐"; music_backend docs/rhythm_chart_guide.md §12 — its rule numbers in brackets). With a chart
    v7+ the key of a single note is not worked out note by note from the pitch any more, it comes from the pattern the
@@ -245,12 +331,14 @@ const GAME_SHORT = [[[1, 2], [0, 1], [2, 3], [2, 1], [3, 2], [1, 0]],           
                     [[1, 2, 1], [2, 1, 2], [0, 2, 0], [3, 1, 3], [1, 3, 1], [2, 0, 2]]];     // to and fro
 const GAME_ANCHOR = [2, 4, 99, 99, 99];              // the same key at most this many times in a row half a beat apart
 function gameNotes(level) {
-  const sj = song && song.sync, ch = sj && sj.chart, off = offset || 0;
+  const sj = song && song.sync, off = offset || 0;
+  let ch = sj && sj.chart;
   GAME.lint = null;
   if (!ch || !(ch.v >= 2) || !(ch.notes || []).length || (ch.beats || []).length < 2) {  // no chart: the sync's line starts
     const m = (sj && sj.matched) || [];
     return {beat: false, notes: (times || []).map((t, i) => ({t: t + off, e: t + off, lane: i % gameKn(), line: i, ok: m[i] !== false, fill: false, long: false}))};
   }
+  if (level === 4 && ch.bpm < GAME_FINE_BPM && ch.feel) ch = gameFine(ch);  // EXTREME of a slow song: places twice as fine
   const S = ch.steps, mod = (a, b) => ((a % b) + b) % b;
   // the song's bars as the chart counted them (v9 `bar` [beats a bar, the first beat that starts one] — before: 4 from beat 0)
   const BAR = (ch.bar ? ch.bar[0] : 4) * S, BAR0 = (ch.bar ? ch.bar[1] : 0) * S;
@@ -274,7 +362,7 @@ function gameNotes(level) {
   // beats where much comes in
   // (GAME_MUSIC: the notes sit on the song's hits now, so fewer of the beats are needed for as many keys at once;
   // three and four keys at once are gone — GAME_PAIRS)
-  const acc2 = hard([0.03, 0.14, 0.3, 0.42, 0.5][level]);
+  const acc2 = hard([0.03, 0.14, 0.3, 0.42, 0.6][level]);
   const accOf = st => mod(st, S) === 0 ? +feel.acc[beatOf(st)] : -1, silent = st => !!feel && +feel.lvl[beatOf(st)] < 2;
   const lvlOf = st => feel ? +feel.lvl[beatOf(st)] : 9, movOf = st => feel && feel.mov ? +feel.mov[beatOf(st)] : 9;
   /* 강약 (user 2026-11-27: "슈퍼하드도 채보 떨어지는 강약 조절이 필요 — 잔잔한 부분까지 노트가 많이 떨어지면 게임이 아니라 노동 · 악보
@@ -393,7 +481,7 @@ function gameNotes(level) {
   // drums no longer has more than the chorus (user 2026-11-27: "오히려 간주 구간이 노트 훨씬 많고")
   // (a chorus 1 — up to 1.15 where the song's chorus is its busiest part (`flash`) · a verse 0.85 — down to 0.7 there · an interlude 0.6 · quiet 0.4)
   const flash = (inten && GAME.busy) || 0;
-  const ease = st => { const v = strong(st); return v >= 0.9 ? 1 + 0.15 * flash : v >= GAME_HOOK ? 1 : v >= GAME_STRONG ? 0.85 - 0.15 * flash : v > GAME_CALM ? 0.6 : 0.4; };
+  const ease = st => { const v = strong(st); return v >= 0.9 ? 1 + 0.15 * flash : v >= GAME_HOOK ? 1 : v >= GAME_STRONG ? 0.95 - 0.15 * flash : v > GAME_CALM ? 0.75 : 0.4; };
 
   // 1. every note there can be = the top level: kind 1 a sung note · 2 the tune where nobody sings · 3 the music
   const all = [], phr = new Map();
@@ -451,28 +539,40 @@ function gameNotes(level) {
          out there (the other hand takes them; no two keys at once meanwhile)
        · SUPER HARD takes the melody everywhere, not only in the strong parts: every sung syllable and every note of the
          tune that has a little of the drums on it, after the drums' own notes */
-    const upper = level >= 2;
+    const upper = level >= 2, flux = feel.drum && feel.hit;  // flux: the other measure of something coming in (all of the sound's rise)
+    /* 약한 비트 (user 2026-11-27: "미안해 미안해 — 가사 말고도 뒤에 비트가 다양하게 깔리는데도 반영이 하나도 안 되어 있는 듯", "잠긴 곡들
+       다 들어봤는데 뒤에 멜로디 비트 많이 쪼개져 있는데 … 멜로디 비트나 드럼을 전혀 못 잡고 있는 것 같은데"): right — a soft hit
+       between kick and snare has digit 1–2, like nothing, and the sound rule took both out. Chart v11 marks every step
+       where something starts (feel.on): such a step is a place for a note whatever its digit; one without the mark
+       needs a hit of GAME_HEARD. (A chart before v11: digit 2 with the other measure agreeing, as a stand-in.) */
+    const on = feel.on, starts = st => on ? on[st] === "1" : false;
     const digits = [...hit].map(Number).sort((x, y) => y - x), need = Math.max(2, digits[Math.floor(digits.length * GAME_MUSIC)] || 2);
     let nMusic = 0;
     for (let st = 0; st < top; st++) {
-      const h = +hit[st], m = melAt.get(st);
-      if ((held[st] && !upper) || at.has(st) || silent(st) || h < 1) continue;  // (every step the drums touch: the level's limits pick among them, the hardest hits first)
-      const s = sung.get(st);
+      const h = +hit[st], m = melAt.get(st), s = sung.get(st);
+      /* 음 없는 곳의 노트 (user 2026-11-27: "여전히 음 없는 부분에 뜬금없이 나오는 노트들이 있다고 함 — 그것 때문에 싱크가 안 맞다고
+         느껴지는 듯, 전체적으로 그렇다"): every step the drums touch at all was a place for a note — and digit 1 · 2 is
+         a ninth · two ninths of the song's hard hits, nothing one hears as a hit. Of SUPER HARD's moments 21 % were
+         such steps with no sung syllable and no note of the tune starting there (EASY 8 %). Now a step is a place for a
+         note only when something is heard to start on it: a drum hit of GAME_HEARD or more, or a weaker one together
+         with a note of the tune or a sung syllable. What that takes away the tune's own notes give back (below: at
+         every level and in every part, not only SUPER HARD and the chorus). */
+      if ((held[st] && !upper) || at.has(st) || silent(st) || h < (starts(st) ? 0 : m || s || (!on && h >= 2 && flux && +flux[st] >= 2) ? 1 : GAME_HEARD)) continue;
       // a note of the tune held for two beats or more with nothing sung in it = a long note
       let len = m && m[0] >= 2 * S ? m[0] : 0;
       for (let k = st + 1; len && k < st + len; k++) if (sung.has(k)) len = 0;
-      at.set(st, {st, len, p: (m && m[1]) || tuneP[st] || (s && s[3]) || 0, kind: 3, line: lineAt(st), ok: true, fill: false, w: 2 * h + (m ? 2 : 0) + (s ? 2 : 0)});
+      at.set(st, {st, len, p: (m && m[1]) || tuneP[st] || (s && s[3]) || 0, kind: 3, line: lineAt(st), ok: true, fill: false, w: 2 * h + (m ? 2 : 0) + (s ? 2 : 0) + (starts(st) ? 2 : 0)});
       nMusic++;
     }
     /* a strong part has every note of the level — but the drums alone may not give that many (ヒビカセ's chorus: 1.3–2.8
        places a second, its verse 4): there the song's own melody fills up, after the drums — the syllables sung and
        the notes of the tune, with less weight than a drum hit, so the level's limit takes the drums first */
     for (const [st, line, ok, pitch, len] of ch.notes) {
-      if (st < 0 || st >= top || at.has(st) || (held[st] && !upper) || (strong(st) < GAME_HOOK && level < 3)) continue;
+      if (st < 0 || st >= top || at.has(st) || (held[st] && !upper) || (strong(st) < GAME_HOOK && level < 2)) continue;
       at.set(st, {st, len: len || 0, p: pitch || tuneP[st] || 0, kind: 1, line, ok: !!ok, fill: false, w: 5});
     }
     for (const [st, , p] of ch.mel) {
-      if (st < 0 || st >= top || at.has(st) || (held[st] && !upper) || gap[st] || silent(st) || (strong(st) < GAME_HOOK && level < 3) || +hit[st] < 1) continue;
+      if (st < 0 || st >= top || at.has(st) || (held[st] && !upper) || gap[st] || silent(st) || (+hit[st] < 1 && !starts(st))) continue;
       at.set(st, {st, len: 0, p, kind: 3, line: lineAt(st), ok: true, fill: false, w: 3});
     }
     // the lyrics' share: the syllables that stand out most
@@ -487,6 +587,24 @@ function gameNotes(level) {
     });
     lead.sort((x, y) => y.c - x.c || x.n.st - y.n.st);
     for (const {n} of lead.slice(0, Math.round(nMusic * GAME_LYRIC / (1 - GAME_LYRIC)))) at.set(n.st, n);
+    /* EXTREME = 공개 채보의 최상위 난이도 (user 2026-11-27: "익스를 익스 난이도가 아니면 지금 싱크고 박자고 뭐고 아무 의미 없음 — 이걸
+       고치는 게 가장 급선무"): the counted public charts' top tier is 12–15 notes a second and more; ours was 8.3 (their
+       "Hard"), because every note had to be a sound that starts and a song has only so many. Charts of that tier do
+       what is done here: where the music is busy they run on — a beat in which GAME_STREAM or more places have a
+       sound is played on all of its places (a stream; the places between ride on the sounds beside them). A beat with
+       fewer sounds, a quiet or silent one gets nothing added, so nothing stands alone on no sound. EXTREME only. */
+    // (a slow song's finer chart has sounds on every other place only: both halves of the real beat must be full of
+    // them · and the last place of every second bar is left free — a stream has to breathe: one ran 328 places on)
+    if (level === 4) {
+      const fine = !!ch.fine, sounds = b => { let r = 0; for (let k = b * S; k < b * S + S; k++) if (at.has(k)) r++; return r; };
+      const full = [];
+      for (let b = 0; b * S < top; b++) full.push(!silent(b * S) && strong(b * S) > GAME_CALM && sounds(b) >= GAME_STREAM);
+      for (let b = 0; b * S < top; b++) {
+        if (!full[b] || (fine && !full[b ^ 1])) continue;
+        for (let k = b * S; k < Math.min(top, b * S + S); k++)
+          if (!at.has(k) && mod(k - BAR0, 2 * BAR) !== 2 * BAR - 1) at.set(k, {st: k, len: 0, p: tuneP[k] || 0, kind: 3, line: -1, ok: true, fill: false, w: 4});
+      }
+    }
     all.push(...at.values());
     all.sort((x, y) => x.st - y.st);
     /* 롱노트는 위 난이도일수록 적게 (user 2026-11-27: "롱노트가 상위 난이도 갈수록 더 줄어야 하고 덜 몰리게 — 낮은 난이도보다는 높은
@@ -689,7 +807,10 @@ function gameNotes(level) {
     if (level >= 3) {  // three · four keys: the hardest-hit of the level's keys-at-once (by rank — the digits are too coarse to cut by)
       const cs = kept.filter(n => n.two).sort((x, y) => accOf(y.st) - accOf(x.st) || +hit[y.st] - +hit[x.st] || x.st - y.st);
       const n4 = Math.round(cs.length * GAME_MANY[1][level - 3]), n3 = Math.round(cs.length * GAME_MANY[0][level - 3]);
-      cs.forEach((n, k) => { n.size = k < n4 ? 4 : k < n4 + n3 ? 3 : 2; });
+      const four = [];
+      for (const n of cs) { if (four.length >= n4) break; if (four.every(q => Math.abs(q.st - n.st) >= GAME_MANY_APART * BAR)) four.push(n); }
+      let k3 = 0;
+      for (const n of cs) n.size = four.includes(n) ? 4 : k3++ < n3 ? 3 : 2;
     }
     const single = n => n && !n.two && !n.len && n.kind !== 2 && !n.drop;
     kept.forEach((n, i) => {  // a single note between two pairs half a beat apart [14]
@@ -804,24 +925,46 @@ function gameNotes(level) {
   });
   lint.n = notes.length;
   GAME.lint = lint;
-  if (gameKn() !== 4) gameSpread(notes, gameKn(), S, BAR, BAR0, level);  // 키 수: onto the wider board
+  if (gameKn() !== 4) gameSpread(notes, gameKn(), S, BAR, BAR0, level, (ch.bpm || 150) * S);  // 키 수: onto the wider board
   return {beat: true, notes};
+}
+/* 느린 곡의 EXTREME: a place is a quarter of a beat — at 110 BPM 7 a second, so a slow song could never be dense however
+   its places are filled. Under GAME_FINE_BPM EXTREME plays the chart with a beat between every two (the same chart, as
+   a song twice as fast has it): its sounds stay where they are, the new places between them have none of their own
+   and are only played inside a stream. The levels below use the chart as it is. */
+const GAME_FINE_BPM = 130, GAME_STREAM = 2;
+const GAME_FINE = new WeakMap();
+function gameFine(ch) {
+  if (GAME_FINE.has(ch)) return GAME_FINE.get(ch);
+  const bt = [], f = ch.feel, n = ch.beats.length;
+  for (let i = 0; i < n; i++) bt.push(ch.beats[i], i + 1 < n ? (ch.beats[i] + ch.beats[i + 1]) / 2 : ch.beats[i] + (ch.beats[i] - ch.beats[i - 1]) / 2);
+  const twice = (s, gap) => s == null ? s : [...s].map(c => c + (gap == null ? c : gap)).join("");  // a beat's digit for both halves · or `gap` for the new one
+  const S = ch.steps, steps = s => { if (s == null) return s; let o = ""; for (let b = 0; b * S < s.length; b++) { const a = s.slice(b * S, b * S + S); o += [...a.slice(0, S / 2)].map(c => c + "0").join("") + [...a.slice(S / 2)].map(c => c + "0").join(""); } return o; };
+  const out = {...ch, fine: 2, bpm: ch.bpm * 2, beats: bt, bar: ch.bar ? [ch.bar[0] * 2, ch.bar[1] * 2] : [8, 0],
+    notes: ch.notes.map(x => [x[0] * 2, x[1], x[2], x[3], (x[4] || 0) * 2]), longs: (ch.longs || []).map(x => [x[0] * 2, x[1] * 2, x[2]]),
+    mel: (ch.mel || []).map(x => [x[0] * 2, x[1] * 2, x[2]]),
+    feel: {...f, lvl: twice(f.lvl), mov: twice(f.mov), acc: twice(f.acc, "0"), low: twice(f.low, "0"), hit: steps(f.hit), drum: steps(f.drum), on: steps(f.on)}};
+  GAME_FINE.set(ch, out);
+  return out;
 }
 /* EXTREME이 없는 곡 (user 2026-11-27: "곡마다 익스트림 만든다고 채보가 들어가면 어색한 부분에 억지로 넣는 건 하지 마 — 그렇게 억지로 넣게
    될 것 같으면 그냥 익스트림이 없는 곡으로 처리해야 됨"): EXTREME only adds notes where the song has a sound for them
    (gameNotes: w ≥ 4). A song that has few such places left over SUPER HARD — under GAME_EX_MIN of SUPER HARD's
    moments — would have an EXTREME that is SUPER HARD with more keys pressed at once, nothing of the song: that song
-   has no EXTREME (its button is off; the level asked for is played as SUPER HARD there, the setting is kept). */
-const GAME_EX_MIN = 0.08;
+   has no EXTREME (its button is off; the level asked for is played as SUPER HARD there, the setting is kept).
+   After the sound rule (user 2026-11-27: "익스 무리하게 못 만들어서 잠긴 곡들 다 들어봤는데 뒤에 멜로디 비트 많이 쪼개져 있는데 왜 못
+   만든다는 거?"): 12 of 15 songs were locked — not for want of sounds: SUPER HARD already plays nearly every place
+   where something starts, so EXTREME has few NEW moments whatever the song. And a note can no longer be forced in
+   (every place has a sound). So the count is of notes now: EXTREME is there when it has GAME_EX_MIN more notes than
+   SUPER HARD (its extra keys at once on the same sounds count) — all 15 have it (+7 … +25 %). */
+const GAME_EX_MIN = 0.05;
 function gameTop() {  // → the highest level this song has (worked out once a song · key count)
   const ch = song && song.sync && song.sync.chart, key = (SHELL.now ? gameSongKey(SHELL.now) : "") + "|" + (ch ? ch.v + ":" + (ch.notes || []).length : "");
   if (GAME.topKey === key) return GAME.top;
   let top = GAME_LEVELS.length - 1;
   if (ch) {
-    const m = l => new Set(gameNotes(l).notes.map(n => n.st)), hard = m(top - 1), ex = m(top);
-    let add = 0;
-    for (const s of ex) if (!hard.has(s)) add++;
-    if (hard.size && !hard.has(undefined) && add < hard.size * GAME_EX_MIN) top--;
+    const hard = gameNotes(top - 1), ex = gameNotes(top);
+    if (hard.beat && hard.notes.length && ex.notes.length < hard.notes.length * (1 + GAME_EX_MIN)) top--;
   }
   GAME.topKey = key; GAME.top = top;
   return top;
@@ -1091,12 +1234,18 @@ function gameStart() {
   gameLifeShow(100);
   GAME.line = -1; GAME.judged = {text: "", at: 0};
   $("gameOver").hidden = true;
-  if (gameCanSeek()) audio.currentTime = 0;
+  /* 준비 후 시작 (user 2026-11-27: "시작 10초까지 프레임 떨어지다가 점점 올라가는 게 보임 — 차라리 노트 생성 다 완료하면 재생
+     시작하는 게 어떰"): the song was started in the same moment as everything else — the notes made (measured: 15–20 ms,
+     not it), the song moved to its start, the first frames drawn — so the player's own start-up (a relayed video
+     moves and buffers) fell on the first notes. Now the song is stopped at its start, the first screen is drawn for
+     GAME_READY seconds (the notes stand still), and it plays once it has got there (GAME_READY_MAX at most). */
+  GAME.wait = 0;
+  if (gameCanSeek()) { if (!audio.paused) audio.pause(); audio.currentTime = 0; GAME.wait = performance.now(); }
   else {  // joined mid-song: what is already past is not counted
     const now = audio.currentTime;
     for (let l = 0; l < GAME.K; l++) while (GAME.ptr[l] < GAME.lanes[l].length && GAME.lanes[l][GAME.ptr[l]].t < now + 0.5) GAME.lanes[l][GAME.ptr[l]++].hit = -2;
   }
-  if (audio.paused) audio.play();
+  if (audio.paused && !GAME.wait) audio.play();
   GAME.cfg = null; GAME.box = null; GAME.say = null; GAME.dirty = true; gameFlush(true);
   GAME.run = true; GAME.startAt = performance.now(); GAME.off = null;
   document.body.classList.add("grun");  // (css: no blur while the notes move)
@@ -1104,7 +1253,8 @@ function gameStart() {
   cancelAnimationFrame(GAME.raf);
   GAME.raf = requestAnimationFrame(gameFrame);
 }
-function gameStop() { GAME.run = false; cancelAnimationFrame(GAME.raf); document.body.classList.remove("grun"); }
+const GAME_READY = 1.5, GAME_READY_MAX = 4;  // seconds the first screen stands before the song starts · at most (the song has not got to its start)
+function gameStop() { GAME.run = false; GAME.wait = 0; cancelAnimationFrame(GAME.raf); document.body.classList.remove("grun"); }
 function gameClose() { gameStop(); GAME.on = false; document.body.classList.remove("gameon"); if ($("gameDlg").open) $("gameDlg").close(); showVideo(); gameComments(true); }
 /* 니코니코 영상의 흐르는 코멘트: off while the game is open — it runs over the video behind the notes (user request
    2026-11-26: "배경에 띄운 영상 니코동이면 자동으로 꺼져야"); the player's own setting (💬) is not changed and comes back on close */
@@ -1206,6 +1356,17 @@ function gameFrame() {
   if (song !== GAME.song) {  // the next song came
     GAME.song = song; GAME.cut = GAME.lanes.some((q, l) => GAME.ptr[l] < q.length);
     return song && times ? gameEnd() : gameClose();
+  }
+  if (GAME.wait) {  // getting ready: the first screen, nothing judged
+    const dt = (performance.now() - GAME.wait) / 1000;
+    if (dt >= GAME_READY_MAX || (dt >= GAME_READY && audio.currentTime < 0.5)) { GAME.wait = 0; GAME.off = null; GAME.startAt = performance.now(); if (audio.paused) audio.play(); }
+    else {
+      gameDraw(-gameCfg().lag);
+      const c = GAME.ctx, cv = $("gameCanvas"), dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      if (c) { c.globalAlpha = 1; c.fillStyle = GAME.colors.text; c.font = `700 ${Math.round(22 * dpr)}px sans-serif`; c.textAlign = "center"; c.fillText("READY", cv.width / 2, cv.height * 0.45); }
+    }
+    GAME.raf = requestAnimationFrame(gameFrame);
+    return;
   }
   const now = gameClock() - gameCfg().lag;
   for (let l = 0; l < GAME.K; l++) {  // notes that went by · long notes held to their end
