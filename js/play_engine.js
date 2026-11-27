@@ -1088,6 +1088,7 @@ function makePlayer(el) {
   const onEnd = () => {
     if (P.editing) return;  // 플레이어에서 싱크를 직접 맞추는 중이면 넘어가지 않음
     if (P.holdEnd && P.holdEnd()) return;  // update waiting for this song's end (version_check.js): it reloads instead
+    if (P.gameHold && P.gameHold()) return;  // 리듬게임 창이 열려 있음: the song stops at its end, no next song (rhythm_game.js, 2026-11-27)
     if (P.follow) return;  // 같이듣기 손님: 방장이 다음 곡으로 넘김 (listen_together.js)
     if (P.repeat === "one") { audio.currentTime = skipOf(P.now, "skipA"); audio.play(); } else P.next(true);
   };

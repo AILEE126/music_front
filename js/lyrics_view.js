@@ -409,7 +409,8 @@ document.addEventListener("change", e => { if (e.target.tagName === "SELECT") e.
 document.addEventListener("focusout", e => { if (e.target.tagName === "SELECT") setTimeout(() => tick(true), 0); });
 // 0.25초마다 (시간 · 재생 막대) — 줄이 바뀌는 순간은 nextTimer 가 맞춤. 탭이 가려져 있으면 그리지 않음 (돌아오면 바로 맞춤)
 // 폰 화면이 꺼지면 가사를 아예 확인하지 않음 — 켜지면 그 자리로 바로 맞춤 (user request 2026-11-15, battery)
-const tickTimer = setInterval(() => { if (!audio.paused && !APP.screenOff && !document.hidden) tick(false); }, 250);
+// (not while a rhythm game runs: its notes must not wait for the lyrics behind the window — rhythm_game.js 노트 끊김, 2026-11-27)
+const tickTimer = setInterval(() => { if (!audio.paused && !APP.screenOff && !document.hidden && !(typeof GAME !== "undefined" && GAME.run)) tick(false); }, 250);
 on(window, "appscreen", e => { if (e.detail.on) tick(true); });
 on(document, "visibilitychange", () => { if (!document.hidden) tick(true); });
 cleanups.push(() => clearInterval(tickTimer));

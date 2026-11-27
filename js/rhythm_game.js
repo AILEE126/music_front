@@ -52,7 +52,10 @@
    Keys D F J K (lanes left to right) · touch: the lane under the finger · Space pauses · Esc closes. */
 // names (user 2026-11-26: "EASY, MIDDLE?, HARD, SUPER HARD로" — the second one asked with a question mark: NORMAL, the
 // usual word) — the comments here still say 쉬움 · 어려움 · 매우어려움 · >>매우매우어려움<< for the four, in this order
-const GAME_LEVELS = ["EASY", "NORMAL", "HARD", "SUPER HARD"];
+// EXTREME (user 2026-11-27: "익스트림 난이도 만들어 줘 — 나머지는 난이도 그대로 유지"): a fifth level above SUPER HARD, the four
+// below it untouched — every quarter beat may hold a note (8 in 2 beats), two keys at once on 60 % of the beats and
+// on the half beats the drums hit hard, a long note only when it lasts 4 beats, a MISS costs more
+const GAME_LEVELS = ["EASY", "NORMAL", "HARD", "SUPER HARD", "EXTREME"];
 const GAME_CODES = ["KeyD", "KeyF", "KeyJ", "KeyK"];
 /* 키 설정 (user request 2026-11-26: "키 설정하는 것도 넣어줘"): the four keys, left to right, kept per device (store
    game.keys = [[code, label] × 4]). Set from the bar: '키' → press four keys one after another (Esc = leave as it was).
@@ -82,7 +85,7 @@ const GAME_MISS = GAME_WIN[GAME_WIN.length - 1][1];
      written like the other shared files (LOCAL: a write token or the server PC's folder). A read-only token, no
      nickname, a song joined midway (같이듣기) or one without a chart: this device's best only. */
 const GAME_GRADE = [[98, "SS"], [95, "S"], [90, "A"], [80, "B"], [70, "C"], [0, "D"]];  // 정확도 from → 등급
-const GAME_LIFE = {got: [1.5, 1, 0.4], miss: [4, 5, 6, 7]};  // + by judgement · − a MISS by level (of 100)
+const GAME_LIFE = {got: [1.5, 1, 0.4], miss: [4, 5, 6, 7, 8]};  // + by judgement · − a MISS by level (of 100)
 const GAME_TOP = 5;
 const gameLifeOn = () => store.get("game.life", true) !== false;
 const gamePct = d => d <= 0.02 ? 100 : Math.max(1, Math.round(100 - (d - 0.02) / (GAME_MISS - 0.02) * 99));
@@ -120,6 +123,7 @@ function gameStepTime(ch, step) {
 const GAME_FIT = [                               // a level's limits: notes ≥ gap steps apart · ≤ max notes in any win steps ·
   {gap: 3, win: 8, max: 3, rest: 4},             // ≥ rest steps between two phrases (a step = a quarter beat)
   {gap: 2, win: 8, max: 4, rest: 2},
+  {gap: 1, win: 8, max: 5, rest: 0},
   {gap: 1, win: 8, max: 6, rest: 0},
   {gap: 1, win: 8, max: 8, rest: 0}];
 /* 난이도는 간격과 패턴 (user 2026-11-27: "하이라이트가 아닌 부분도 노트가 너무 부실하다고 함 — 난이도는 노트 갯수보다는 간격이나 패턴이
@@ -129,8 +133,8 @@ const GAME_FIT = [                               // a level's limits: notes ≥ 
    most, so quarter runs stay short) — `max` only says that; and the calm parts keep GAME_SOFT (0.7) of it, with their
    notes half a beat apart at the least. What sets the upper levels apart is the patterns (GAME_RUNS · GAME_PAIRS). */
 const GAME_MUSIC = 0.3;                          // the music: the steps where most comes in — this share of all steps
-const GAME_STRONG = 0.6, GAME_CALM = 0.2, GAME_SOFT = 0.7;    // 강약: a part's strength (0–1) → the share of the level's notes it gets
-const GAME_LONG = [[1, 1.5, 2, 3], [0, 1, 2, 4]];  // by level: a long note lasts at least · comes at least this long after the one before (beats)
+const GAME_STRONG = 0.6, GAME_CALM = 0.1, GAME_SOFT = 0.6, GAME_HOOK = 0.8;  // 강약: a part's strength (0–1) → the share of the level's notes it gets
+const GAME_LONG = [[1, 1.5, 2, 3, 4], [0, 1, 2, 4, 4]];  // by level: a long note lasts at least · comes at least this long after the one before (beats)
 const GAME_BURST = 4;                            // single notes within 2 beats = a burst (폭타): no long note next to one
 const GAME_PAIR = 0.4;                           // two keys at once only where the song is at least this strong
 const GAME_GAP = 4;                              // beats nobody sings for → that stretch is long notes only
@@ -169,7 +173,7 @@ const GAME_LAND = {"1,2": [0, 1, 2, 3], "0,3": [1, 2, 3, 2], "0,2": [0, 1, 2, 3]
 const GAME_WALK = [[1, 2, 0, 3], [2, 1, 3, 0], [0, 2, 1, 3], [3, 1, 2, 0]];
 const GAME_SHORT = [[[1, 2], [0, 1], [2, 3], [2, 1], [3, 2], [1, 0]],                           // runs of two · of three: steps of
                     [[1, 2, 1], [2, 1, 2], [0, 2, 0], [3, 1, 3], [1, 3, 1], [2, 0, 2]]];     // to and fro
-const GAME_ANCHOR = [2, 4, 99, 99];              // the same key at most this many times in a row half a beat apart
+const GAME_ANCHOR = [2, 4, 99, 99, 99];              // the same key at most this many times in a row half a beat apart
 function gameNotes(level) {
   const sj = song && song.sync, ch = sj && sj.chart, off = offset || 0;
   GAME.lint = null;
@@ -180,10 +184,10 @@ function gameNotes(level) {
   const S = ch.steps, mod = (a, b) => ((a % b) + b) % b;
   // the song's bars as the chart counted them (v9 `bar` [beats a bar, the first beat that starts one] — before: 4 from beat 0)
   const BAR = (ch.bar ? ch.bar[0] : 4) * S, BAR0 = (ch.bar ? ch.bar[1] : 0) * S;
-  const fillEvery = [S, S, S / 2, S / 2][level];
+  const fillEvery = [S, S, S / 2, S / 2, S / 2][level];
   // keys at once — every level, how often is the level: a line's first note always; two keys on every `two`-th beat,
   // three on a line's first note and every `three`-th beat
-  const two = [0, 4 * S, 2 * S, S][level], three = [0, 0, 0, 4 * S][level];
+  const two = [0, 4 * S, 2 * S, S, S][level], three = [0, 0, 0, 4 * S, 4 * S][level];
   /* the song's own feel (chart.feel — a digit a beat: lvl how loud, acc how hard the beat is hit; user 2026-11-26: "곡마다
      특색·컨셉을 살려야 함 — 가사와 멜로디의 특색도 그때그때"): keys at once go where the song hits hard — the hardest
      `share` of its beats (so a calm song gets them on its few accents, a driving one all through, and a verse and a
@@ -200,7 +204,7 @@ function gameNotes(level) {
   // beats where much comes in
   // (GAME_MUSIC: the notes sit on the song's hits now, so fewer of the beats are needed for as many keys at once;
   // three and four keys at once are gone — GAME_PAIRS)
-  const acc2 = hard([0.03, 0.14, 0.3, 0.6][level]);
+  const acc2 = hard([0.03, 0.14, 0.3, 0.42, 0.6][level]);
   const accOf = st => mod(st, S) === 0 ? +feel.acc[beatOf(st)] : -1, silent = st => !!feel && +feel.lvl[beatOf(st)] < 2;
   const lvlOf = st => feel ? +feel.lvl[beatOf(st)] : 9, movOf = st => feel && feel.mov ? +feel.mov[beatOf(st)] : 9;
   /* 강약 (user 2026-11-27: "슈퍼하드도 채보 떨어지는 강약 조절이 필요 — 잔잔한 부분까지 노트가 많이 떨어지면 게임이 아니라 노동 · 악보
@@ -250,27 +254,32 @@ function gameNotes(level) {
        the top of its scale all through the song; with half the weight on those two the chorus came out as the calm
        part (0.14–0.23). What does mark it: the voice is 3–5 semitones higher and its lines come back. So where
        somebody sings: the voice's height half, the lines coming back three tenths, loud + busy two tenths. */
-    const sc = rE.map((x, b) => sung[b] > 0.2 ? 0.2 * x + 0.5 * rP[b] + 0.3 * Math.min(1, rB[b] * 2) : 0.6 * x);
-    /* not a share of the song (user 2026-11-27, ヒビカセ: "처음 하이라이트만 노트가 잘 나왔고 이후 하이라이트는 너무 부실 — 노트 총량
-       같은 걸 정해 놓고 하는 거 아님?"): the strength was the beat's RANK in the song, so only a fixed part of every song
-       — its top quarter — could be strong; a song that is half chorus had the rest of its choruses thinned. Now the
-       sung beats are split into the two kinds they fall into by themselves (two means): the strength is where a beat
-       lies between the calmer kind (0) and the stronger kind (1) — as much of the song as is like its chorus is
-       strong. A song with no two kinds (the means nearly the same) is the same all through. */
-    const u = sc.filter((_, b) => heardAt(b) && sung[b] > 0.2).sort((x, y) => x - y);
-    if (u.length < 16) return rank(sc);
-    let c0 = u[u.length >> 2], c1 = u[u.length * 3 >> 2];
-    for (let k = 0; k < 12; k++) {
-      let s0 = 0, n0 = 0, s1 = 0, n1 = 0;
-      for (const x of u) if (Math.abs(x - c0) <= Math.abs(x - c1)) { s0 += x; n0++; } else { s1 += x; n1++; }
-      if (n0) c0 = s0 / n0;
-      if (n1) c1 = s1 / n1;
-    }
-    if (c1 - c0 < 0.08) return sc.map(() => 0.7);
-    return sc.map(x => Math.max(0, Math.min(1, (x - c0) / (c1 - c0))));
+    /* ワールズエンド・ダンスホール (user 2026-11-27: "하이라이트에 갑자기 노트 수가 확 떨어지는 문제 — 로직 만드는 규칙이 뭔가 잘못되어 있는
+       것 같은데"): its chorus is sung LOWER than its verses (65–66 against 67–70) and with fewer drums that stand out, so
+       "the voice is higher" put it at the bottom (0.08) — the second song the guess got backwards, each for another
+       reason. Neither the voice's height nor the drums say "chorus" in every song; the one sign that held in both is
+       that a chorus's words come back. So that carries the guess now (0.6), the other two only shade it (0.2 each) —
+       and a part that is not taken for the highlight keeps GAME_SOFT 0.85 of the level's notes, so a wrong guess costs
+       little. */
+    /* 하이라이트는 추측하지 않는다 (user 2026-11-27: "하이라이트 구분을 못 하는 거 아님? 보니까 오히려 간주 구간이 노트 훨씬 많고"):
+       right — the guess (the voice's height · the drums · loudness) was backwards on ヒビカセ and on ワールズエンド・ダンスホール,
+       each for another reason, and thinned their choruses while the interludes, full of drums, kept everything. What
+       the chart does know for certain is used instead:
+         · somebody sings there        → every note of the level (0.6; 1 where the words come back in the song — a
+                                          chorus's do — which also brings the melody in as notes at every level)
+         · nobody sings (an interlude) → fewer than a sung part (0.4)
+         · the song is quiet there     → fewest, and no closer than half a beat (0.1): 2 digits or more under the
+                                          song's usual loudness */
+    const lv = over(feel.lvl.split("").map(Number)), usual = [...lv].filter((_, b) => heardAt(b)).sort((x, y) => x - y);
+    const loud = usual.length ? usual[Math.floor(usual.length * 0.6)] : 9;
+    return lv.map((v, b) => v <= loud - 2 ? 0.1 : sung[b] > 0.2 ? 0.6 + 0.4 * Math.min(1, rB[b] * 1.5) : 0.4);
   })();
   const strong = st => inten ? inten[beatOf(st)] : 1;
-  const ease = st => { const v = strong(st); return v >= GAME_STRONG ? 1 : v <= GAME_CALM ? GAME_SOFT : GAME_SOFT + (1 - GAME_SOFT) * (v - GAME_CALM) / (GAME_STRONG - GAME_CALM); };
+  // how full a part is, of the level's limit: where the words come back 1 · sung 0.85 · an interlude 0.6 · quiet 0.4.
+  // The notes there are to choose from are plenty everywhere now (every step with something of the drums on it), so
+  // this — not how clearly the drums stand out in a part — decides how many notes it has: an interlude full of
+  // drums no longer has more than the chorus (user 2026-11-27: "오히려 간주 구간이 노트 훨씬 많고")
+  const ease = st => { const v = strong(st); return v >= GAME_HOOK ? 1 : v >= GAME_STRONG ? 0.85 : v > GAME_CALM ? 0.6 : 0.4; };
 
   // 1. every note there can be = the top level: kind 1 a sung note · 2 the tune where nobody sings · 3 the music
   const all = [], phr = new Map();
@@ -333,7 +342,7 @@ function gameNotes(level) {
     let nMusic = 0;
     for (let st = 0; st < top; st++) {
       const h = +hit[st], m = melAt.get(st);
-      if ((held[st] && !upper) || at.has(st) || silent(st) || h < (level === 3 && mod(st, S / 2) === 0 ? Math.max(1, need - 1) : need)) continue;  // (SUPER HARD: the drums' weaker hits on the beat and the half beat too)
+      if ((held[st] && !upper) || at.has(st) || silent(st) || h < 1) continue;  // (every step the drums touch: the level's limits pick among them, the hardest hits first)
       const s = sung.get(st);
       // a note of the tune held for two beats or more with nothing sung in it = a long note
       let len = m && m[0] >= 2 * S ? m[0] : 0;
@@ -345,11 +354,11 @@ function gameNotes(level) {
        places a second, its verse 4): there the song's own melody fills up, after the drums — the syllables sung and
        the notes of the tune, with less weight than a drum hit, so the level's limit takes the drums first */
     for (const [st, line, ok, pitch, len] of ch.notes) {
-      if (st < 0 || st >= top || at.has(st) || (held[st] && !upper) || (strong(st) < GAME_STRONG && level < 3)) continue;
+      if (st < 0 || st >= top || at.has(st) || (held[st] && !upper) || (strong(st) < GAME_HOOK && level < 3)) continue;
       at.set(st, {st, len: len || 0, p: pitch || tuneP[st] || 0, kind: 1, line, ok: !!ok, fill: false, w: 5});
     }
     for (const [st, , p] of ch.mel) {
-      if (st < 0 || st >= top || at.has(st) || (held[st] && !upper) || gap[st] || silent(st) || (strong(st) < GAME_STRONG && level < 3) || +hit[st] < 1) continue;
+      if (st < 0 || st >= top || at.has(st) || (held[st] && !upper) || gap[st] || silent(st) || (strong(st) < GAME_HOOK && level < 3) || +hit[st] < 1) continue;
       at.set(st, {st, len: 0, p, kind: 3, line: lineAt(st), ok: true, fill: false, w: 3});
     }
     // the lyrics' share: the syllables that stand out most
@@ -513,7 +522,7 @@ function gameNotes(level) {
       while (k < kept.length && kept[k].st <= st + S) { head = kept[k].st; if (kept[k].len) lend = Math.max(lend, kept[k].st + kept[k].len); k++; }
       if (head >= st - S || silent(st) || (mod(st, S) !== 0 && movOf(st) < 4)) continue;
       const over = st <= lend - S;
-      if (over ? !(level >= 1 && feel && (mod(st, S) === 0 ? accOf(st) >= (level === 3 ? 3 : 4) : level === 3 && movOf(st) >= 6) && (level > 1 || mod(Math.floor(st / S), 2) === 0)) : lend >= st - S) continue;  // (어려움: every 2nd beat)
+      if (over ? !(level >= 1 && feel && (mod(st, S) === 0 ? accOf(st) >= (level >= 3 ? 3 : 4) : level >= 3 && movOf(st) >= 6) && (level > 1 || mod(Math.floor(st / S), 2) === 0)) : lend >= st - S) continue;  // (어려움: every 2nd beat)
       fill.push({st, len: 0, p: 0, kind: 0, line: -1, ok: true, fill: true, head: false, over});
     }
     if (fill.length) { kept.push(...fill); kept.sort((x, y) => x.st - y.st); }
@@ -544,7 +553,9 @@ function gameNotes(level) {
       n.two = false;
       if (n.kind !== 2 && !n.len) {
         const next = i + 1 < kept.length ? kept[i + 1].st : 1e9;
-        let t2 = accOf(n.st) >= acc2 && lvlOf(n.st) > 5 && strong(n.st) >= GAME_PAIR;
+        // (where the words come back the beat need not be hit as hard: a chorus that is a wall of sound has few hard hits)
+        let t2 = (accOf(n.st) >= acc2 - (strong(n.st) >= GAME_HOOK ? 2 : 0) || (level >= 4 && mod(n.st, S) === S / 2 && +hit[n.st] >= 6))  // (EXTREME: on a hard half beat too)
+          && lvlOf(n.st) > 5 && strong(n.st) >= GAME_PAIR;
         if (t2 && (level === 0 ? n.st - pSt < S && next - n.st < S : level < 3 && n.st - cSt < [S, S, S / 2][level])) t2 = false;
         if (t2) { if (n.st - cSt > 8 * S) cN = 0; n.two = true; n.ci = cN++ % GAME_PAIRS.length; cSt = n.st; }
       }
@@ -659,7 +670,7 @@ function gameNotes(level) {
   GAME.lint = lint;
   return {beat: true, notes};
 }
-const gameLevel = () => Math.max(0, Math.min(3, +store.get("game.level", 1) || 0));
+const gameLevel = () => Math.max(0, Math.min(GAME_LEVELS.length - 1, +store.get("game.level", 1) || 0));
 // seconds a note is on screen before its line — 0.2 at the fastest (user 2026-11-27: "최대 속도 더 늘려줘"; it was 0.6)
 const gameSpeed = () => Math.max(0.2, Math.min(3, +store.get("game.speed", 1.4) || 1.4));
 const gameLag = () => Math.max(-0.5, Math.min(0.3, +store.get("game.lag", 0) || 0));  // 판정 맞추기: + = the notes come later
@@ -732,7 +743,7 @@ function gameCalTap() {
   let d = Math.atan2(sy, sx) / (2 * Math.PI) * p;  // the taps' mean distance from the beat, within half a beat either way
   if (d > 0.1) d -= p;  // (the clock runs behind the sound, not ahead: a tap "after" the beat is one before the next)
   if (even < 0.6) return gameCalShow("누른 박자가 고르지 않아 맞추지 못했습니다 — 다시 해 주세요.");
-  store.set("game.lag", Math.round(Math.max(-0.5, Math.min(0.3, d)) * 100) / 100);
+  store.set("game.lag", Math.round(Math.max(-0.5, Math.min(0.3, d)) * 100) / 100); GAME.cfg = null;
   gameLagShow();
   gameCalShow(`판정을 ${(gameLag() >= 0 ? "+" : "") + Math.round(gameLag() * 1000)}ms 로 맞췄습니다. 어긋나면 − ＋ 로 조금씩 고치세요.`);
 }
@@ -742,20 +753,49 @@ const gameCanSeek = () => !(typeof LT !== "undefined" && LT.role && (LT.role ===
    (measured ±10–15 ms a few times a second — the notes jerked: user 2026-11-26 "노트 끊김"): the game counts on by the
    screen's own clock and only leans toward the reported time; a real jump (seek · the next report after a stall) is taken at once.
    gameClock: once a frame (moves the clock) · gameNow: between frames (a key press) */
+/* 노트 멈칫 (user 2026-11-27: "렉 같은 느낌은 아니고 노트가 내려오다 말고 멈칫 하는 현상이 약간 있음"): the clock above leaned
+   6 % a frame toward the player's time — and that time is the last report + the time since it. A report that comes
+   late, or twice with the same value (seen on Niconico: 66 ms after the one before, the song's time not moved),
+   throws the player's time BACK by that much until the next report; the game's clock followed it down and up again
+   — the notes slowed for a quarter of a second and caught up. Now the game's clock is the screen's own clock plus one
+   number, how far the song is ahead of it (GAME.off). Every report is one reading of that number, and a reading can
+   only be too LOW (a report is late, never early) — so the number is the highest of the last 12 readings (3 s), moved
+   toward by 2 ms a frame at most. Between reports the clock does not look at the player's time at all.
+   A reading 0.3 s or more off twice in a row = the song was moved: taken at once. */
+const gameRate = () => audio.playbackRate || 1;
 function gameNow() {
-  if (GAME.ct == null || audio.paused) return audio.currentTime;
-  return GAME.ct + (performance.now() - GAME.cp) / 1000 * (audio.playbackRate || 1);
+  if (GAME.off == null || audio.paused) return audio.currentTime;
+  return performance.now() / 1000 * gameRate() + GAME.off;
 }
 function gameClock() {
-  const p = performance.now(), ct = audio.currentTime;
-  if (GAME.ct == null || audio.paused) { GAME.ct = ct; GAME.cp = p; return ct; }
-  const t = GAME.ct + (p - GAME.cp) / 1000 * (audio.playbackRate || 1), d = ct - t;
-  // far off: a seek — believed only when it stays far for 8 frames (one report 0.2 s off and back again was seen)
-  GAME.far = Math.abs(d) > 0.2 ? (GAME.far || 0) + 1 : 0;
-  GAME.ct = GAME.far >= 8 ? ct : GAME.far ? t : t + d * 0.06; GAME.cp = p;
-  if (GAME.far >= 8) GAME.far = 0;
-  return GAME.ct;
+  if (audio.paused || GAME.rate !== gameRate()) { GAME.off = null; GAME.rate = gameRate(); }
+  if (GAME.off == null) {
+    if (audio.paused) return audio.currentTime;
+    GAME.off = GAME.offTo = audio.currentTime - performance.now() / 1000 * gameRate(); GAME.offs = [GAME.off]; GAME.offJump = 0;
+  }
+  GAME.off += Math.max(-0.002, Math.min(0.002, (GAME.offTo - GAME.off) * 0.1));
+  return performance.now() / 1000 * gameRate() + GAME.off;
 }
+audio.addEventListener("timeupdate", () => {  // one report of the song's time = one reading
+  if (!GAME.run || audio.paused || GAME.off == null) return;
+  const o = audio.currentTime - performance.now() / 1000 * gameRate();
+  if (Math.abs(o - GAME.offTo) > 0.3) {
+    if (++GAME.offJump < 2) return;
+    GAME.off = GAME.offTo = o; GAME.offs = [o]; GAME.offJump = 0;
+    return;
+  }
+  GAME.offJump = 0;
+  GAME.offs.push(o);
+  if (GAME.offs.length > 12) GAME.offs.shift();
+  GAME.offTo = Math.max(...GAME.offs);
+});
+for (const ev of ["seeked", "pause", "sourcechange"]) audio.addEventListener(ev, () => { GAME.off = null; });
+/* 곡이 끝나면 (user 2026-11-27: "리듬게임 모드 중에서는 한 곡 재생 끝나면 그대로 멈추고 다음 곡 넘어가지도 않아야 됨 — 다시 하기 누르면
+   방금 했던 곡 다시 시작"): while the game's window is open the player does not go on to the next song at the end of
+   one (play_engine.js onEnd asks SHELL.gameHold) — it was the next song that 다시 하기 then started. A game still
+   running when the song ends is over. Not as a 같이듣기 guest / in a channel: the song is not this player's to hold. */
+SHELL.gameHold = () => GAME.on && gameCanSeek();
+audio.addEventListener("ended", () => { if (GAME.on && GAME.run && gameCanSeek()) { gameStop(); gameEnd(); } });
 
 function gameOpen() {
   if (!song || !times) return uiAlert("싱크가 있는 곡에서만 할 수 있습니다.");
@@ -809,7 +849,8 @@ function gameReady(result) {
     + `<div class="ghelp">키 ${esc(gameKeys().map(k => k[1]).join(" "))} · 화면 터치 · 긴 노트는 끝까지 누르고 있기 · Space 일시정지 · Esc 닫기${gameCanSeek() ? " · 시작하면 곡이 처음부터 재생됩니다" : " · 같이듣기 중이라 지금 재생 위치부터 합니다"}</div>`;
   $("gameOver").hidden = false;
   $("gameScore").textContent = s ? s.score.toLocaleString() : "0"; $("gameCombo").textContent = ""; $("gameLyric").textContent = "";
-  $("gameJudge").className = "gjudge";
+  $("gameJudge").className = "gjudge"; $("gameJudge").textContent = "";
+  GAME.cfg = null; GAME.box = null; GAME.say = null; GAME.dirty = false;
   gameRankShow(it, lvl, s && s.at);
   gameDraw(audio.currentTime);
 }
@@ -873,7 +914,7 @@ async function gameRankSave(it, lvl, s) {
 }
 function gameLifeShow(v) {
   const el = $("gameLife").firstElementChild;
-  el.style.height = Math.max(0, Math.min(100, v)) + "%";
+  el.style.transform = `scaleY(${Math.max(0, Math.min(100, v)) / 100})`;
   $("gameLife").classList.toggle("low", v < 30);
 }
 function gameStart() {
@@ -895,7 +936,8 @@ function gameStart() {
     for (let l = 0; l < 4; l++) while (GAME.ptr[l] < GAME.lanes[l].length && GAME.lanes[l][GAME.ptr[l]].t < now + 0.5) GAME.lanes[l][GAME.ptr[l]++].hit = -2;
   }
   if (audio.paused) audio.play();
-  GAME.run = true; GAME.startAt = performance.now(); GAME.ct = null;
+  GAME.cfg = null; GAME.box = null; GAME.say = null; GAME.dirty = true; gameFlush(true);
+  GAME.run = true; GAME.startAt = performance.now(); GAME.off = null;
   document.body.classList.add("grun");  // (css: no blur while the notes move)
   GAME.last = g.notes.reduce((m, n) => Math.max(m, n.e), 0);
   cancelAnimationFrame(GAME.raf);
@@ -923,20 +965,39 @@ function gameEnd(failed) {
 }
 /* the judgement on screen: the combo (gone at a MISS — above the judgement: user 2026-11-26 "콤보가 판정 위에 뜨게"),
    under it the judgement's name · how exact (%) · FAST / SLOW */
+/* 노트 끊김 (user 2026-11-27: "리듬게임 중 노트가 중간중간 끊기는 현상 — 프로그램이 웹에서 돌아가기에 무거운 건 맞는데 그 와중에 노트
+   자체는 안 끊기게 하는 방법을 찾아야 · 브라우저 화면 공유를 하면 훨씬 많이 끊긴다"). What the game itself did to the page
+   while the notes move, and what it does now:
+   · every hit rebuilt the judgement in the page and made the browser lay the whole window out again on the spot (to
+     restart its pop), and every frame asked for the canvas's size, which lays it out once more when a hit has just
+     changed the page — ten hits a second = ten to twenty forced layouts a second, each a frame that comes late
+       → the judgement · percent · FAST / SLOW · combo are drawn on the notes' own canvas (gameDraw), the page is
+         not touched by a hit; the canvas's size is measured when it changes (GAME.box), not every frame
+   · score · 정확도 · 게이지 were written at every hit → at most 8 times a second (gameFlush); the gauge moves by a
+     transform, which costs no layout
+   · speed · 판정 · the keys were read from the browser's storage several times a frame → once (gameCfg), again
+     when a setting is clicked
+   · the lyrics behind the window went on following the song (4 times a second) → not while a game runs
+     (lyrics_view.js tickTimer)
+   · the canvas is drawn at 1.5 dots a pixel at most (was 2) — fewer dots to fill and to put on screen
+   The notes' place is worked out from the clock, not counted in frames: a late frame shows them where they should be,
+   it does not slow them. Not measured in frames a second (the test pane draws none). */
 function gameSay(text, cls, pct, early) {
   GAME.judged = {text, at: performance.now()};
-  const j = $("gameJudge"), s = GAME.stat;
-  j.innerHTML = (s.combo > 1 ? `<div class="gj2"><b>${s.combo}</b><span>COMBO</span></div>` : "")
-    + `<div class="gj1"><b>${text}</b>${pct != null ? `<i>${pct}%</i>` : ""}${early ? `<em class="${early < 0 ? "fast" : "slow"}">${early < 0 ? "FAST" : "SLOW"}</em>` : ""}</div>`;
-  j.className = "gjudge " + cls;
-  void j.offsetWidth; j.classList.add("pop");  // the pop runs again for every note
+  GAME.say = {text, cls, pct, early, combo: GAME.stat.combo, at: performance.now()};
 }
-function gameScoreUp() {
+function gameScoreUp() { GAME.dirty = true; }
+function gameFlush(force) {  // score · 정확도 · 게이지 onto the page, not more often than 8 times a second
+  const t = performance.now();
+  if (!GAME.dirty || (!force && t - (GAME.flushAt || 0) < 125)) return;
+  GAME.dirty = false; GAME.flushAt = t;
   const s = GAME.stat;
   $("gameScore").textContent = s.score.toLocaleString();
   $("gameCombo").textContent = `${gameAcc(s).toFixed(2)}% · MAX ${s.max}`;
   if (GAME.lifeOn) gameLifeShow(s.life);
 }
+// the settings a frame needs, read once (the browser's storage is slow to ask many times a frame)
+const gameCfg = () => GAME.cfg || (GAME.cfg = {speed: gameSpeed(), lag: gameLag(), keys: gameKeys()});
 /* one judgement: k = its place in GAME_WIN · pct how exact · early: − hit before the note's time, + after (0: exact / a long note's end) */
 function gameGot(k, lane, pct = 100, early = 0) {
   if (lane != null) GAME.fx.push({lane, at: performance.now(), k});
@@ -960,7 +1021,7 @@ function gameMiss(n) { n.hit = -1; gameLost(n.lane); }
 function gameHit(lane) {
   GAME.flash[lane] = performance.now();
   if (!GAME.run || audio.paused) return;
-  const now = gameNow() - gameLag(), q = GAME.lanes[lane];
+  const now = gameNow() - gameCfg().lag, q = GAME.lanes[lane];
   let i = GAME.ptr[lane];
   while (i < q.length && q[i].hit) i++;
   const n = q[i];
@@ -975,7 +1036,7 @@ function gameUp(lane) {
   const n = GAME.hold[lane];
   if (!n || !GAME.run) return;
   GAME.hold[lane] = null;
-  if (gameNow() - gameLag() >= n.e - GAME_MISS) { n.done = true; return gameGot(0, lane); }
+  if (gameNow() - gameCfg().lag >= n.e - GAME_MISS) { n.done = true; return gameGot(0, lane); }
   n.broke = true;
   gameLost(lane);
 }
@@ -985,7 +1046,7 @@ function gameFrame() {
     GAME.song = song; GAME.cut = GAME.lanes.some((q, l) => GAME.ptr[l] < q.length);
     return song && times ? gameEnd() : gameClose();
   }
-  const now = gameClock() - gameLag();
+  const now = gameClock() - gameCfg().lag;
   for (let l = 0; l < 4; l++) {  // notes that went by · long notes held to their end
     const q = GAME.lanes[l];
     while (GAME.ptr[l] < q.length && (q[GAME.ptr[l]].hit || q[GAME.ptr[l]].t < now - GAME_MISS)) { if (!q[GAME.ptr[l]].hit) gameMiss(q[GAME.ptr[l]]); GAME.ptr[l]++; }
@@ -998,6 +1059,7 @@ function gameFrame() {
     if (gameCanSeek() && !audio.paused) audio.pause();
     return gameEnd(true);
   }
+  gameFlush();
   // the line being sung, under the lanes
   let li = -1;
   for (let i = 0; i < times.length; i++) { if (times[i] + (offset || 0) <= now + 0.05) li = i; else break; }
@@ -1007,11 +1069,12 @@ function gameFrame() {
   GAME.raf = requestAnimationFrame(gameFrame);
 }
 function gameDraw(now) {
-  GAME.keyLabels = gameKeys().map(k => k[1]);
-  const cv = $("gameCanvas"), box = cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cfg = gameCfg();
+  GAME.keyLabels = cfg.keys.map(k => k[1]);
+  const cv = $("gameCanvas"), box = GAME.box || (GAME.box = cv.getBoundingClientRect()), dpr = Math.min(window.devicePixelRatio || 1, 1.5);
   const W = Math.max(1, Math.round(box.width * dpr)), H = Math.max(1, Math.round(box.height * dpr));
   if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
-  const c = cv.getContext("2d"), C = GAME.colors, lw = W / 4, jy = H * 0.84, look = gameSpeed(), nh = Math.max(10 * dpr, H * 0.022);
+  const c = GAME.ctx || (GAME.ctx = cv.getContext("2d", {desynchronized: true})), C = GAME.colors, lw = W / 4, jy = H * 0.84, look = cfg.speed, nh = Math.max(10 * dpr, H * 0.022);
   const y = t => jy - (t - now) / look * jy;
   c.clearRect(0, 0, W, H);
   const t = performance.now();
@@ -1077,12 +1140,35 @@ function gameDraw(now) {
   c.globalAlpha = 1;
   c.fillStyle = C.muted; c.font = `${12 * dpr}px sans-serif`; c.textAlign = "center";
   for (let l = 0; l < 4; l++) c.fillText(GAME.keyLabels[l], l * lw + lw / 2, H - 8 * dpr);
+  /* the judgement, in the middle and one under the other (user 2026-11-26): the combo · the judgement's name · how exact ·
+     FAST / SLOW — drawn here, on the canvas (it was built in the page at every hit: 노트 끊김 above). It pops in
+     (80 ms), stays, and fades out by 0.6 s */
+  const sy = GAME.run && GAME.say;
+  if (sy && t - sy.at < 600) {
+    const age = t - sy.at, k = age < 80 ? 1.25 - 0.25 * age / 80 : 1, cx = W / 2, col = {perfect: C.ok, great: C.a, good: C.muted, miss: "#ff5a5a"}[sy.cls] || C.text;
+    const line = (txt, size, yy, color, bold = 900) => {
+      c.font = `${bold} ${Math.round(size * dpr * k)}px sans-serif`; c.lineJoin = "round";
+      c.lineWidth = Math.max(2, size * dpr * 0.14); c.strokeStyle = "rgba(0,0,0,.6)"; c.strokeText(txt, cx, yy);
+      c.fillStyle = color; c.fillText(txt, cx, yy);
+    };
+    c.globalAlpha = age < 350 ? 1 : 1 - (age - 350) / 250;
+    c.textAlign = "center"; c.textBaseline = "middle";
+    let yy = H * 0.36;
+    if (sy.combo > 1) { line(String(sy.combo), 50, yy, C.text); line("COMBO", 11, yy + 34 * dpr, C.text, 700); yy += 72 * dpr; }
+    line(sy.text, 34, yy, col);
+    if (sy.pct != null) line(sy.pct + "%", 20, yy + 34 * dpr, col);
+    if (sy.early) line(sy.early < 0 ? "FAST" : "SLOW", 12, yy + 58 * dpr, sy.early < 0 ? "#6cb6ff" : "#e0b040", 700);
+    c.textBaseline = "alphabetic"; c.globalAlpha = 1;
+  }
 }
 function gameRound(c, x, y, w, h, r) {
   c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
 }
 
 $("btnGame").onclick = gameOpen;
+// the canvas's size on screen: measured when it changes, not at every frame (노트 끊김)
+if (typeof ResizeObserver !== "undefined") new ResizeObserver(() => { GAME.box = null; if (GAME.on && !GAME.run) gameDraw(audio.currentTime); }).observe($("gameCanvas"));
+addEventListener("resize", () => { GAME.box = null; });
 /* 설정 · 신고 (user request 2026-11-26: "난이도를 제외한 나머지 설정들 다 한 버튼으로 새로운 팝업 뜨는 걸로 · 설정 왼쪽에 오류 버그
    신고 버튼 — 새로운 항목 '리듬게임'으로 자동 작성"): the report window opens with the kind 리듬게임, the playing song and
    a first line saying how the game was set (level · speed · 판정 · gauge · the chart) */
@@ -1101,6 +1187,7 @@ $("gameReport").onclick = () => {
 $("gameClose").onclick = gameClose;
 $("gameDlg").addEventListener("close", () => { if (!$("gameDlg").open) { gameStop(); GAME.on = false; document.body.classList.remove("gameon"); showVideo(); gameComments(true); } });  // (the event comes later: it may be open again)
 $("gameDlg").addEventListener("click", e => {
+  GAME.cfg = null;  // (a setting may be about to change — read again at the next frame)
   const l = e.target.closest("#gameLevels button"), sp = e.target.closest("[data-sp]"), lag = e.target.closest("[data-lag]");
   if (l) { store.set("game.level", +l.dataset.l); return gameReady(); }  // another level: from the start screen again
   if (sp) {  // 0.2 s a press, 0.1 s under 0.6 s (the fast end is felt much more)
@@ -1138,7 +1225,7 @@ window.addEventListener("keydown", e => {
     if (e.key === "Escape") GAME.keyset = null;
     else if (!e.repeat && !["Space", "Enter", "NumpadEnter"].includes(e.code) && !GAME.keyset.some(k => k[0] === e.code)) {
       GAME.keyset.push([e.code, gameKeyLabel(e)]);
-      if (GAME.keyset.length === 4) { store.set("game.keys", GAME.keyset); GAME.keyset = null; gameKeysShow(); return gameReady(); }
+      if (GAME.keyset.length === 4) { store.set("game.keys", GAME.keyset); GAME.keyset = null; GAME.cfg = null; gameKeysShow(); return gameReady(); }
     }
     return gameKeysShow();
   }
@@ -1154,11 +1241,11 @@ window.addEventListener("keydown", e => {
   if (e.key === "Escape") { e.preventDefault(); return gameClose(); }
   if (e.code === "Space") { e.preventDefault(); if (!e.repeat && GAME.run) $("btnPlay").click(); return; }
   if (e.key === "Enter" && !GAME.run) { e.preventDefault(); return gameStart(); }
-  const lane = gameLane(e.code);
+  const lane = gameCfg().keys.findIndex(k => k[0] === e.code);
   if (lane >= 0) { e.preventDefault(); if (!e.repeat) gameHit(lane); }
 }, true);
 window.addEventListener("keyup", e => {
   if (!GAME.on) return;
-  const lane = gameLane(e.code);
+  const lane = gameCfg().keys.findIndex(k => k[0] === e.code);
   if (lane >= 0) gameUp(lane);
 }, true);
