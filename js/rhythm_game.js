@@ -172,6 +172,12 @@ function gameSpread(notes, n, S, BAR, BAR0, level, perMin) {
           const k = h0 === 0 ? 1 : 0, m = n - 1 - lanes[1 - k];
           if (open(m)) lanes[k] = m;
         }
+        // (from HARD up half of the moments and more are keys at once: the thumb's key takes part in them there —
+        // the inner key of one of the two — or it would be left with a few single notes; public charts: an even share)
+        if (level >= 2 && mid >= 0 && open(mid) && st - last[mid] >= H && midN < 0.9 * seen / n && !g.some(x => x.long)) {
+          const k = Math.abs(lanes[0] - mid) <= Math.abs(lanes[1] - mid) ? 0 : 1;
+          if (!wrong(mid, st, false)) lanes[k] = mid;
+        }
       }
       g.forEach((x, k) => {
         const l = lanes[k], h = hand(l);
@@ -273,7 +279,12 @@ const GAME_FIT = [                               // a level's limits: notes ≥ 
 const GAME_MUSIC = 0.3;                          // the music: the steps where most comes in — this share of all steps
 const GAME_HEARD = 3;  // a drum hit of this digit (of 9) or more is heard as one by itself
 const GAME_STRONG = 0.6, GAME_CALM = 0.1, GAME_SOFT = 0.6, GAME_HOOK = 0.8;  // 강약: a part's strength (0–1) → the share of the level's notes it gets
-const GAME_LONG = [[1, 1.5, 2, 3, 4], [0, 1, 2, 4, 4]];  // by level: a long note lasts at least · comes at least this long after the one before (beats)
+// (the upper levels' 3 · 4 beats and 4 beats apart left them 0–2 % long notes; public charts have 10–20 % at every level
+// — user 2026-11-27: "공개 채보에서 그렇지 않다고 분석을 했으면 공개 채보 분석대로 따라가는 게 맞고")
+// (their long notes are short: half a beat is the middle length from 6 notes a second up, a beat below — 628 charts)
+const GAME_LONG = [[1, 1, 0.5, 0.5, 0.5], [0, 0, 0, 0, 0]];  // by level: a long note lasts at least · comes at least this long after the one before (beats)
+const GAME_BUSY = 0.3, GAME_REST = 30;           // GAME_SHAPE: the share of a song's beats that is "busy" · seconds without a calm bar before two light bars
+const GAME_CHORD = [[0.10, 0.18], [0.24, 0.35], [0.42, 0.51], [0.46, 0.56], [0.50, 0.61]];  // by level: the share of the moments that is keys at once [rest, busy]
 const GAME_BURST = 4;                            // single notes within 2 beats = a burst (폭타): no long note next to one
 const GAME_PAIR = 0.4;                           // two keys at once only where the song is at least this strong
 const GAME_GAP = 4;                              // beats nobody sings for → that stretch is long notes only
@@ -559,7 +570,7 @@ function gameNotes(level) {
          every level and in every part, not only SUPER HARD and the chorus). */
       if ((held[st] && !upper) || at.has(st) || silent(st) || h < (starts(st) ? 0 : m || s || (!on && h >= 2 && flux && +flux[st] >= 2) ? 1 : GAME_HEARD)) continue;
       // a note of the tune held for two beats or more with nothing sung in it = a long note
-      let len = m && m[0] >= 2 * S ? m[0] : 0;
+      let len = m && m[0] >= S / 2 ? m[0] : 0;  // (was 2 beats: GAME_SHAPE — public charts hold what the song holds; chart v12 keeps a tune note's length from half a beat)
       for (let k = st + 1; len && k < st + len; k++) if (sung.has(k)) len = 0;
       at.set(st, {st, len, p: (m && m[1]) || tuneP[st] || (s && s[3]) || 0, kind: 3, line: lineAt(st), ok: true, fill: false, w: 2 * h + (m ? 2 : 0) + (s ? 2 : 0) + (starts(st) ? 2 : 0)});
       nMusic++;
@@ -699,6 +710,32 @@ function gameNotes(level) {
   // 3. the level: from 쉬움 up, each level keeps the one below and takes in the notes that matter most and still fit
   // (a long note is played at every level)
   all.forEach((n, i) => { n.i = i; if (n.score == null) n.score = 50; });
+  /* GAME_SHAPE — 공개 채보처럼 (user 2026-11-27: "하이라이트 이외 구간에 지친다는 평 (데이 드림 판타지아) — 다른 오픈 채보들 상위 난이도
+     하이라이트 구간이랑 비 하이라이트 구간 어떤 차이가 있는지 확인" → "우리도 적용시켜 줘 … 뭐든지 공개 채보 분석 따라가"). Counted
+     on 628 public charts (docs/rhythm_chart_guide.md §14; busy = a chart's busiest 30 % of 4 s windows): outside the busy
+     parts they keep 0.70 of the notes but HALVE the quarter-beat steps, fill up with keys at once (half of the moments
+     there, 6 in 10 in the busy parts) and long notes (13–20 % of the notes there), have a calm stretch every half
+     minute and no busy stretch longer than ~30 s. So here, at every level:
+       · busy = where the song gives most places for notes (the top GAME_BUSY of its beats, 2 beats either side counted)
+         or a chorus found by its words; the rest is "rest"
+       · rest: quarter-beat steps only in every other beat
+       · every GAME_REST seconds without a calm bar: the 3rd and 4th bar of the phrase are light (a note a beat)
+       · keys at once and long notes: by GAME_CHORD / GAME_LONG below. */
+  const nB = Math.ceil((all.length ? all[all.length - 1].st + 1 : 0) / S) + 1, dens = new Array(nB).fill(0);
+  for (const n of all) { const b = Math.floor(n.st / S); for (let k = Math.max(0, b - 2); k <= Math.min(nB - 1, b + 2); k++) dens[k]++; }
+  const dcut = (() => { const u = dens.filter(x => x > 0).sort((x, y) => x - y); return u.length ? u[Math.floor(u.length * (1 - GAME_BUSY))] : 1e9; })();
+  const busyAt = st => { const b = Math.max(0, Math.min(nB - 1, Math.floor(st / S))); return dens[b] >= dcut || strong(st) >= 0.9; };
+  const light = new Set(), barOf = st => Math.floor((st - BAR0) / BAR);
+  if (music && all.length) {
+    const perBar = new Map();
+    for (const n of all) perBar.set(barOf(n.st), (perBar.get(barOf(n.st)) || 0) + 1);
+    let since = gameStepTime(ch, all[0].st);
+    for (let b = barOf(all[0].st); b <= barOf(all[all.length - 1].st); b++) {
+      const t = gameStepTime(ch, BAR0 + b * BAR);
+      if ((perBar.get(b) || 0) <= 2 || strong(BAR0 + b * BAR) <= GAME_CALM) { since = gameStepTime(ch, BAR0 + (b + 1) * BAR); continue; }  // a calm bar by itself
+      if (t - since >= GAME_REST && mod(b, 4) === 2) { light.add(b); light.add(b + 1); since = gameStepTime(ch, BAR0 + (b + 2) * BAR); b++; }
+    }
+  }
   const order = [...all].sort((x, y) => y.score - x.score || x.st - y.st);
   const thin = () => {
   const on = Uint8Array.from(all, n => n.len ? 1 : 0);
@@ -710,7 +747,8 @@ function gameNotes(level) {
       let a = i - 1, b = i + 1;
       while (a >= 0 && !on[a]) a--;
       while (b < all.length && !on[b]) b++;
-      const k = ease(n.st), gap = strong(n.st) <= GAME_CALM ? Math.max(C.gap, S / 2) : C.gap, max = Math.max(1, Math.round(C.max * k));  // 강약
+      const k = ease(n.st), slow = music && !busyAt(n.st) && mod(Math.floor((n.st - BAR0) / S), 2) === 0;  // (rest: no quarter-beat steps in this beat)
+      const gap = music && light.has(barOf(n.st)) ? Math.max(C.gap, S) : strong(n.st) <= GAME_CALM || slow ? Math.max(C.gap, S / 2) : C.gap, max = Math.max(1, Math.round(C.max * k));  // 강약
       // (HARD · SUPER HARD: a note may come while the note before is held — half a beat after it began at the least)
       if (a >= 0) { const d = lv >= 2 && all[a].len ? Math.min(n.st - all[a].st - S / 2 + gap, n.st - all[a].st) : n.st - all[a].st - all[a].len; if (d < gap || (all[a].g !== n.g && d < C.rest)) return false; }
       if (b < all.length) { const d = all[b].st - n.st - n.len; if (d < gap || (all[b].g !== n.g && d < C.rest)) return false; }
@@ -736,7 +774,9 @@ function gameNotes(level) {
     for (let round = 0, any = true; any && round < 4; round++) {
     any = false;
     all.forEach((n, i) => {
-      if (!on[i] || !n.len || (n.kind === 2 && !n.p)) return;
+      // (GAME_SHAPE: only in the busy parts, and only a long note of a beat or more — the rest keeps its long notes,
+      // they are its rests, and a short hold inside a run is what the public charts' busy parts have: 10 % of their notes)
+      if (!on[i] || !n.len || (n.kind === 2 && !n.p) || !busyAt(n.st) || n.len < S) return;
       let before = 0, after = 0;
       for (let j = i - 1; j >= 0 && n.st - all[j].st <= 2 * S; j--) if (on[j] && !all[j].len) before++;
       for (let j = i + 1; j < all.length && all[j].st - n.st - n.len <= 2 * S; j++) if (on[j] && !all[j].len && all[j].st > n.st + n.len) after++;
@@ -787,13 +827,18 @@ function gameNotes(level) {
   };
   if (music) {  // GAME_RUNS: which notes are two keys at once, then the key of every single note by its pattern
     let cSt = -1e9, pSt = -1e9, cN = 0;
+    // keys at once (GAME_SHAPE): the hardest-hit moments of the busy part and of the rest, as many as GAME_CHORD says —
+    // the beat first, then the half beat, then the quarters, each by how hard it is hit
+    for (const part of [0, 1]) {
+      const rows = kept.filter(n => busyAt(n.st) === !!part), can = rows.filter(n => n.kind !== 2 && !n.len && lvlOf(n.st) > 5 && strong(n.st) >= GAME_PAIR);
+      const sc = n => (mod(n.st, S) === 0 ? 40 + 2 * Math.max(0, accOf(n.st)) : mod(n.st, S) === S / 2 ? 20 : 0) + (+hit[n.st] || 0);
+      can.sort((x, y) => sc(y) - sc(x) || x.st - y.st).forEach((n, k) => { n.want = k < Math.round(rows.length * GAME_CHORD[level][part]); });
+    }
     kept.forEach((n, i) => {
       n.two = false;
       if (n.kind !== 2 && !n.len) {
         const next = i + 1 < kept.length ? kept[i + 1].st : 1e9;
-        // (where the words come back the beat need not be hit as hard: a chorus that is a wall of sound has few hard hits)
-        let t2 = (accOf(n.st) >= acc2 - (strong(n.st) >= GAME_HOOK ? 2 : 0) || (level >= 4 && mod(n.st, S) === S / 2 && +hit[n.st] >= 6))  // (EXTREME: on a hard half beat too)
-          && lvlOf(n.st) > 5 && strong(n.st) >= GAME_PAIR;
+        let t2 = !!n.want;
         if (t2 && (level === 0 ? n.st - pSt < S && next - n.st < S : level < 3 && n.st - cSt < [S, S, S / 2][level])) t2 = false;
         if (t2) {
           if (n.st - cSt > 8 * S) cN = 0;
@@ -845,7 +890,7 @@ function gameNotes(level) {
         const d = q.slice(1).map((p, i) => Math.sign(p - q[i])), u = [...new Set(q)].sort((x, y) => x - y);
         const wide = u[u.length - 1] - u[0] > 2, ups = d.filter(x => x > 0).length, downs = d.filter(x => x < 0).length;
         const top = q.indexOf(u[u.length - 1]);
-        if (u.length === 2 && d.every(x => x)) { const tr = trill++ % 2 ? [0, 3] : [1, 2]; lanes = q.map(p => tr[p === u[0] ? 0 : 1]); }  // F J · D K in turn
+        if (u.length === 2 && d.every(x => x)) { const tr = [[1, 2], [0, 3], [0, 2], [1, 3]][trill++ % 4]; lanes = q.map(p => tr[p === u[0] ? 0 : 1]); }  // F J · D K in turn
         else if (wide && ups >= 2 && !downs) lanes = q.map((_, i) => mod(i + (L <= 4 ? 4 - L : 0), 4));
         else if (wide && downs >= 2 && !ups) lanes = q.map((_, i) => mod(3 - i - (L <= 4 ? 4 - L : 0), 4));
         else if (wide && top > 0 && top < L - 1 && d.slice(0, top).every(x => x >= 0) && d.slice(top).every(x => x <= 0)) lanes = q.map((_, i) => mod(3 - Math.abs(i - top), 4));
@@ -870,9 +915,18 @@ function gameNotes(level) {
     }
   }
   let heldN = 0, prevSt = -1e9, prevEnd = -1e9, prevKind = -1, chordSt = -1e9, chordN = 0, tri = 0;
+  /* 좌우 균형 (user 2026-11-27: "전체적으로 트릴도 오른쪽에 몰아서 나오는 것 같다는데"): counted on 15 songs — the trills were
+     even (left hand 36 · right hand 35 at HARD) but the notes were not: the right hand had 54 % of them at every level
+     (a higher pitch goes right, and most of a tune lies above its middle). Public charts are even key by key (§13).
+     Now a 2-bar phrase is played mirrored (D ↔ K, F ↔ J — its patterns stay what they are) whenever the right hand is
+     ahead when it begins. */
+  let flipPh = null, flip = false;
+  const sideOf = () => lint.lanes[2] + lint.lanes[3] - lint.lanes[0] - lint.lanes[1];
   kept.forEach((n, i) => {
     if (n.drop) return;  // left out by its pattern (GAME_RUNS)
     if (n.st === prevSt) return;  // (never a third key on a step)
+    const ph = Math.floor((n.st - BAR0) / (2 * BAR));
+    if (music && ph !== flipPh) { flipPh = ph; flip = sideOf() > 0; }
     let lane;
     if (n.fill) {
       const b = mod(Math.floor(n.st / S), 4);
@@ -883,6 +937,7 @@ function gameNotes(level) {
       // 전체적으로 앞에서 두 번째 트랙에 많은 것 같은데". The round now goes on through the song.)
       lane = HELD_LANE[heldN++ % 4];
     } else lane = n.rl != null ? n.rl : laneOf(n);
+    if (flip) lane = 3 - lane;
     const hl = !n.len && !n.fill ? last.findIndex(L => L.end > n.st) : -1;  // a key is being held: the other hand plays this note
     if (hl >= 0 && (lane < 2) === (hl < 2)) lane = 3 - lane;
     if (n.over) {  // during a long note: the other hand's two keys in turn
@@ -891,7 +946,8 @@ function gameNotes(level) {
     }
     const t = gameStepTime(ch, n.st) + off;
     if (n.kind !== 2 && !n.len && !n.over) {  // two keys at once (GAME_PAIRS)? — on the beats the song hits hardest
-      let two2 = hl >= 0 ? false : music ? n.two : (n.head && level > 0) || (feel ? accOf(n.st) >= acc2 : two && mod(n.st, two) === 0);
+      // (while a key is held: SUPER HARD · EXTREME play the other hand's two keys at once — public charts do; below them one key)
+      let two2 = hl >= 0 ? music && level >= 3 && n.two : music ? n.two : (n.head && level > 0) || (feel ? accOf(n.st) >= acc2 : two && mod(n.st, two) === 0);
       if (two2 && !n.head && !music) {
         const next = i + 1 < kept.length ? kept[i + 1].st : 1e9;
         if (feel && lvlOf(n.st) <= 5) two2 = false;  // a quiet beat
@@ -900,10 +956,12 @@ function gameNotes(level) {
       if (two2) {
         if (n.st - chordSt > 8 * S) chordN = 0;
         if (music) chordN = n.ci;  // (worked out with the patterns above)
-        const free = ls => ls.every(l => !bad(l, n.st) && n.st - last[l].end >= 2);  // (nor right after a note on one of its keys)
+        const free = ls => ls.every(l => l >= 0 && !bad(l, n.st) && n.st - last[l].end >= 2);  // (nor right after a note on one of its keys)
         const pair = (music && n.pr) || GAME_PAIRS[chordN % GAME_PAIRS.length];
-        let ls = music && n.size === 4 ? [0, 1, 2, 3] : music && n.size === 3 ? GAME_TRIPLES[tri % GAME_TRIPLES.length] : pair;
+        let ls = hl >= 0 ? (hl < 2 ? [2, 3] : [0, 1]) : music && n.size === 4 ? [0, 1, 2, 3] : music && n.size === 3 ? GAME_TRIPLES[tri % GAME_TRIPLES.length] : pair;
         if (ls.length > 2 && !free(ls)) ls = pair;  // (three · four keys do not fit here: the pair)
+        if (hl >= 0 && last.filter(L => L.end > n.st).length > 1) ls = [-1];  // (both hands hold: no room)
+        else if (flip && hl < 0) ls = ls.map(l => 3 - l).sort((x, y) => x - y);
         if (free(ls)) {
           if (ls.length === 3) tri++;
           chordN++; chordSt = n.st;
