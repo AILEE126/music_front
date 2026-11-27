@@ -80,11 +80,17 @@ const gameKeyLabel = e => e.code === "Space" ? "␣" : /^Key[A-Z]$/.test(e.code)
 /* four-key notes → n keys (GAME_KEYSETS' order). Notes of one moment are laid together; a hand's two 4-key places go
    onto two of its keys — GAME_WIDE: which two, one row a 2-bar phrase, in turn. */
 const GAME_WIDE = [[0, 1, 1, 2], [1, 2, 0, 1], [0, 2, 0, 2], [0, 1, 0, 2], [1, 2, 1, 2], [0, 2, 0, 1]];  // [left low, left high, right low, right high] of a hand's 0–2
-function gameSpread(notes, n, S, BAR, BAR0) {
+/* 구석 트릴 (user 2026-11-27: "구석 트릴이라든가 이런 거 플레이어 손에 부담이 좀 있다고 함 — 너무 남발하지 않아야", then, the
+   counted public charts having none under their hardest levels while our HARD had a few: "하드에서도 조금 나오는 것만
+   수정하고 공개 채보처럼"): with three keys a hand, EASY · NORMAL · HARD have no trill on a hand's two outermost keys
+   (A S A S · L ; L ; — ring and middle finger): the note that would be its fourth, half a beat or less after the one
+   before, goes to the hand's inner key. SUPER HARD · EXTREME keep theirs (docs/rhythm_chart_guide.md §13). */
+function gameSpread(notes, n, S, BAR, BAR0, level) {
   const mid = n % 2 ? (n - 1) / 2 : -1, side = (n - (mid >= 0 ? 1 : 0)) / 2, mod = (a, b) => ((a % b) + b) % b;  // side: keys a hand
   const by = new Map();
   for (const x of notes) { if (!by.has(x.st)) by.set(x.st, []); by.get(x.st).push(x); }
   const sts = [...by.keys()].sort((a, b) => a - b), free = new Array(n).fill(-1e9);  // free: the step each key is taken until
+  const hist = [], corner = (a, b) => a !== b && ((a < 2 && b < 2) || (a >= n - 2 && b >= n - 2));  // hist: the last three moments [step, key | -1 more than one]
   sts.forEach((st, i) => {
     const g = by.get(st), w = side === 2 ? [0, 1, 0, 1] : GAME_WIDE[mod(Math.floor((st - BAR0) / (2 * BAR)), GAME_WIDE.length)];
     const to = l => l < 2 ? w[l] : n - side + w[l];  // (the right hand's keys are the last `side`)
@@ -101,6 +107,12 @@ function gameSpread(notes, n, S, BAR, BAR0) {
         if (alt != null) lanes[k] = alt;
       }
     });
+    if (side === 3 && level <= 2 && g.length === 1 && hist.length === 3) {
+      const [a, b, c] = hist, L = lanes[0], inner = L < side ? 2 : n - 3;
+      if (corner(L, c[1]) && b[1] === L && a[1] === c[1] && st - c[0] <= S / 2 && c[0] - b[0] <= S / 2 && b[0] - a[0] <= S / 2 && free[inner] < st - 1) lanes[0] = inner;
+    }
+    hist.push([st, g.length === 1 ? lanes[0] : -1]);
+    if (hist.length > 3) hist.shift();
     const ord = [...lanes].sort((a, b) => a - b);
     g.forEach((x, k) => { x.lane = lanes[k]; x.pair = g.length > 1 ? (lanes[k] === ord[0] ? ord[ord.length - 1] : ord[0]) : -1; free[lanes[k]] = x.long ? x.end : st; });
   });
@@ -792,7 +804,7 @@ function gameNotes(level) {
   });
   lint.n = notes.length;
   GAME.lint = lint;
-  if (gameKn() !== 4) gameSpread(notes, gameKn(), S, BAR, BAR0);  // 키 수: onto the wider board
+  if (gameKn() !== 4) gameSpread(notes, gameKn(), S, BAR, BAR0, level);  // 키 수: onto the wider board
   return {beat: true, notes};
 }
 /* EXTREME이 없는 곡 (user 2026-11-27: "곡마다 익스트림 만든다고 채보가 들어가면 어색한 부분에 억지로 넣는 건 하지 마 — 그렇게 억지로 넣게
