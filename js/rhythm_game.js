@@ -279,25 +279,20 @@ function gameNotes(level) {
      strength; the top GAME_STRONG part gets every note of the level, the bottom GAME_CALM part GAME_SOFT of them. */
   const inten = (() => {
     if (!feel) return null;
-    const nb = feel.lvl.length, dr = feel.drum || feel.hit, e = [], hi = new Array(nb).fill(0), hn = new Array(nb).fill(0), back = new Array(nb).fill(0);
+    const nb = feel.lvl.length, dr = feel.drum || feel.hit, e = [], hi = new Array(nb).fill(0), hn = new Array(nb).fill(0);
     for (let b = 0; b < nb; b++) {
       let a = 0;
       if (dr) for (let k = 0; k < S; k++) a += +dr[b * S + k] || 0; else a = +feel.acc[b] * 2;
       e.push(+feel.lvl[b] / 9 + a / (4.5 * S));
     }
-    const texts = ((song && song.groups) || []).map(g => String(g.orig || "").replace(/\s+/g, "")), seen = {};
-    for (const t of texts) if (t) seen[t] = (seen[t] || 0) + 1;
-    // … or half as much when only some words of the line do: 4 letters in a row it shares with a line 4 or more lines away
-    // (ヒビカセ's hook is 'この息と音とヒビカセ' · '重ねた息と音をヒビカセ' · 'オトヒビカセ' — never the same line twice)
-    const grams = texts.map(t => { const g = new Set(); for (let k = 0; k + 4 <= t.length; k++) g.add(t.slice(k, k + 4)); return g; });
-    const part = texts.map((t, i) => grams.some((g, k) => Math.abs(k - i) >= 4 && [...grams[i]].some(x => g.has(x))));
+    const texts = ((song && song.groups) || []).map(g => String(g.orig || "").replace(/\s+/g, ""));
     // a line is sung from its first syllable to the end of its last — a held note counts for as long as it is held
     // (ヒビカセ's hook is a few long notes: counted by syllables it was "nobody sings" and went by loudness alone)
     const inLine = new Array(nb).fill(0), lineEnd = {};
     for (const [st, line, , pitch, len] of ch.notes) {
       const b = beatOf(st), e = beatOf(st + (len || 0)), from = line in lineEnd ? lineEnd[line] : b;
       for (let k = b; k <= e; k++) if (pitch) { hi[k] += pitch; hn[k]++; }
-      for (let k = Math.min(from, b); k <= e; k++) { inLine[k] = 1; if (seen[texts[line]] > 1) back[k] = 1; else if (part[line]) back[k] = Math.max(back[k], 0.5); }
+      for (let k = Math.min(from, b); k <= e; k++) inLine[k] = 1;
       lineEnd[line] = e;
     }
     const W = 8;  // beats either side: 4 bars
@@ -305,7 +300,7 @@ function gameNotes(level) {
     const heardAt = b => +feel.lvl[b] >= 2;
     const rank = v => { const u = v.filter((x, b) => heardAt(b) && !isNaN(x)).sort((x, y) => x - y); return v.map(x => { if (isNaN(x) || !u.length) return 0.5; let lo = 0, top = u.length; while (lo < top) { const m = (lo + top) >> 1; if (u[m] < x) lo = m + 1; else top = m; } return lo / u.length; }); };
     if (e.filter((_, b) => heardAt(b)).length < 16) return null;
-    const rE = rank(over(e)), rP = rank(over(hi.map((x, b) => hn[b] ? x / hn[b] : 0), b => hn[b] > 0)), rB = over(back);
+    const rE = rank(over(e)), rP = rank(over(hi.map((x, b) => hn[b] ? x / hn[b] : 0), b => hn[b] > 0));
     const sung = over(inLine);  // (where nobody sings the voice says nothing: loudness alone)
     /* ヒビカセ (user 2026-11-27: "하이라이트 구간에 노트가 오히려 더 안 나오는 문제"): its chorus is a wall of sound — nothing
        stands out of it, so "how busy" (the drums that stand out) is LOWER there than in the verse, and loudness is at
@@ -330,14 +325,63 @@ function gameNotes(level) {
                                           song's usual loudness */
     const lv = over(feel.lvl.split("").map(Number)), usual = [...lv].filter((_, b) => heardAt(b)).sort((x, y) => x - y);
     const loud = usual.length ? usual[Math.floor(usual.length * 0.6)] : 9;
-    return lv.map((v, b) => v <= loud - 2 ? 0.1 : sung[b] > 0.2 ? 0.6 + 0.4 * Math.min(1, rB[b] * 1.5) : 0.4);
+    /* 후렴 (user 2026-11-27: "하이라이트가 아닌 곳에도 힘이 들어간 구간이 있어서 체력 소모가 많이 된다 — 보통 1, 2절 사비 & 후렴 이렇게
+       세 번 정도 그 정도 구간이 나와야 하고, 이 규칙에 따르지 않는 곡이 있을 수 있으니 하이라이트 · 후렴 인식을 점검 … 총 노트
+       수가 많이 낮아지지는 않게"). Looked at on the twelve charted songs: what the sound gives does not find a chorus
+       (loudness is flat — ロミオ is within 0.7 dB all through; the drums and the voice's height each went the wrong way
+       on one song; bars or sung melodies that "come back" marked half of every song). What does: a chorus's WORDS come
+       back as a block. So —
+         · the chorus = the longest stretches of lines in a row that are sung again elsewhere in the song (3 letters in a
+           row shared with a far line, 60 % of the shorter one), and the others at least 0.6 as long: 2–3 sections in
+           nine of the twelve songs (0.95)
+         · a song whose words never come back (ロミオ · メルト · ODDS&ENDS of the twelve): the third of its sung part where
+           the voice sings highest, as a weaker guess (0.8) — and its verses are eased less, in case the guess is wrong
+         · the rest of the sung part = verse (0.6)
+       `ease` turns these into how full a part is. */
+    const T = times || [], dur = ch.beats[ch.beats.length - 1];
+    const tri = texts.map(t => { const g = new Set(); for (let k = 0; k + 3 <= t.length; k++) g.add(t.slice(k, k + 3)); return g; });
+    const like = (a, c) => { if (tri[a].size < 2 || tri[c].size < 2) return texts[a] && texts[a] === texts[c] ? 1 : 0; let m = 0; for (const x of tri[a]) if (tri[c].has(x)) m++; return m / Math.min(tri[a].size, tri[c].size); };
+    const again = texts.map((_, i) => texts.some((_, k) => Math.abs(i - k) >= 3 && like(i, k) >= 0.6));
+    const endOf = i => i + 1 < T.length ? Math.min(T[i + 1], T[i] + 12) : Math.min(dur, T[i] + 8);
+    const blocks = [];
+    for (let i = 0, a = -1, last = -1; i <= texts.length; i++) {
+      if (i < texts.length && again[i]) { if (a < 0) a = i; last = i; }
+      else if (a >= 0 && (i >= texts.length || i - last > 1)) { const d = endOf(last) - T[a]; if (last - a >= 2 || d >= 8) blocks.push([T[a], endOf(last), d]); a = -1; }
+    }
+    const longest = Math.max(0, ...blocks.map(x => x[2])), chorus = blocks.filter(x => x[2] >= 0.6 * longest);
+    const beatAt = t => { let lo = 0, hi = ch.beats.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (ch.beats[m] <= t) lo = m; else hi = m - 1; } return lo; };
+    const cho = new Array(nb).fill(0);
+    for (const [t0, t1] of chorus) for (let b = beatAt(t0); b <= Math.min(nb - 1, beatAt(t1)); b++) cho[b] = 1;
+    const known = chorus.length > 0;
+    /* 후렴이 화려한 곡만 (user 2026-11-27: "후렴에 강조는 하이라이트처럼 들어가면 안 됨 — 곡마다 다름. 후렴이 화려한 곡은 화려해야
+       한다는 거임, 아니면 굳이 그렇게 하지 마"): a chorus is not given more notes for being the chorus. `flash` 0–1 = how
+       much more goes on in this song's chorus than in its verses — drums · notes of the tune · sung syllables a beat,
+       chorus against verse (the mean of the three, or the drums alone if that is more): 0 up to 0.95, 1 from 1.1.
+       At 0 chorus and verse are as full as each other was before this (1 · 0.85); at 1 the chorus is 1.15, the verse 0.7. */
+    let flash = 0;
+    if (known) {
+      const tn = new Array(nb).fill(0), sy = new Array(nb).fill(0);
+      for (const [st] of ch.mel || []) if (st >= 0 && st < nb * S) tn[Math.floor(st / S)]++;
+      for (const [st] of ch.notes) if (st >= 0 && st < nb * S) sy[Math.floor(st / S)]++;
+      const drum = b => e[b] - +feel.lvl[b] / 9;
+      const ratio = f => { let c = 0, cn = 0, v = 0, vn = 0; for (let b = 0; b < nb; b++) if (sung[b] > 0.2) { if (cho[b]) { c += f(b); cn++; } else { v += f(b); vn++; } } return cn && vn && v ? c / cn / (v / vn) : 1; };
+      const rd = ratio(drum), r = Math.max(rd, (rd + ratio(b => tn[b]) + ratio(b => sy[b])) / 3);
+      flash = Math.max(0, Math.min(1, (r - 0.95) / 0.15));
+    }
+    let high = 2;
+    if (!known) { const u = rP.filter((_, b) => sung[b] > 0.2 && heardAt(b)).sort((x, y) => x - y); high = u.length ? u[Math.floor(u.length * 0.67)] : 2; }
+    GAME.busy = flash;
+    GAME.chorus = {known, flash, sections: chorus.map(x => [Math.round(x[0]), Math.round(x[1])])};
+    return lv.map((v, b) => v <= loud - 2 ? 0.1 : sung[b] <= 0.2 ? 0.4 : known ? (cho[b] ? 0.95 : 0.6) : rP[b] >= high ? 0.8 : 0.6);
   })();
   const strong = st => inten ? inten[beatOf(st)] : 1;
-  // how full a part is, of the level's limit: where the words come back 1 · sung 0.85 · an interlude 0.6 · quiet 0.4.
+  // how full a part is, of the level's limit.
   // The notes there are to choose from are plenty everywhere now (every step with something of the drums on it), so
   // this — not how clearly the drums stand out in a part — decides how many notes it has: an interlude full of
   // drums no longer has more than the chorus (user 2026-11-27: "오히려 간주 구간이 노트 훨씬 많고")
-  const ease = st => { const v = strong(st); return v >= GAME_HOOK ? 1 : v >= GAME_STRONG ? 0.85 : v > GAME_CALM ? 0.6 : 0.4; };
+  // (a chorus 1 — up to 1.15 where the song's chorus is its busiest part (`flash`) · a verse 0.85 — down to 0.7 there · an interlude 0.6 · quiet 0.4)
+  const flash = (inten && GAME.busy) || 0;
+  const ease = st => { const v = strong(st); return v >= 0.9 ? 1 + 0.15 * flash : v >= GAME_HOOK ? 1 : v >= GAME_STRONG ? 0.85 - 0.15 * flash : v > GAME_CALM ? 0.6 : 0.4; };
 
   // 1. every note there can be = the top level: kind 1 a sung note · 2 the tune where nobody sings · 3 the music
   const all = [], phr = new Map();
@@ -1173,6 +1217,12 @@ function gameFrame() {
   if (now > GAME.last + 2 && performance.now() - GAME.startAt > 3000) return gameEnd();
   GAME.raf = requestAnimationFrame(gameFrame);
 }
+/* 트랙별 노트 색 (user 2026-11-27: "5키의 경우 1 3 5 트랙 노트 흰색, 2 4번 트랙 노트 다른 색 이런 식으로 구분되게 — 6키의 경우 2 5
+   트랙에 색 넣고 7키의 경우 2 4 6. 색 있는 트랙은 보컬 컬러 유지하고, 구분 컬러는 흰색 · 이제 가사 구간 멜로디 구간 구별 안 할
+   듯"): with 5 · 6 · 7 keys a note's colour says which key it is on — the keys listed here (from 0) have the singer's
+   colour, the others are white. 4 keys: every key the singer's colour, as before. A note off the sung line is no
+   longer paler than a sung one, at any key count. */
+const GAME_TINT = {5: [1, 3], 6: [1, 4], 7: [1, 3, 5]};
 function gameDraw(now) {
   const cfg = gameCfg();
   GAME.keyLabels = cfg.keys.map(k => k[1]);
@@ -1199,12 +1249,13 @@ function gameDraw(now) {
     c.globalAlpha = 1;
   }
   c.fillStyle = C.text; c.globalAlpha = 0.85; c.fillRect(0, jy - dpr, W, 2 * dpr); c.globalAlpha = 1;  // the line to hit on
+  const tint = GAME_TINT[K];
   for (const n of GAME.notes) {
     if (n.e < now - 0.25) continue;
     if (n.t > now + look) break;
     if (n.hit === -2 || n.done || (n.hit === 1 && !n.long)) continue;
     const x = n.lane * lw + lw * 0.1, w = lw * 0.8;
-    const col = n.line >= 0 ? GAME.lineColor[n.line] || GAME.vocal : GAME.vocal;
+    const col = tint && !tint.includes(n.lane) ? "#fff" : n.line >= 0 ? GAME.lineColor[n.line] || GAME.vocal : GAME.vocal;
     if (n.long) {  // a long note: its body from the head to the end; while held the head stays on the line
       const held = GAME.hold[n.lane] === n, dead = n.hit === -1 || n.broke, y0 = held ? jy : y(n.t), y1 = Math.max(y(n.e), -nh);
       if (y1 > y0) continue;
@@ -1220,7 +1271,7 @@ function gameDraw(now) {
       c.globalAlpha = n.hit === -1 ? 0.2 : 0.75; c.fillStyle = "#fff";
       c.fillRect(n.lane * lw + lw / 2, yy + nh * 0.36, (n.pair - n.lane) * lw, nh * 0.28);
     }
-    c.globalAlpha = n.hit === -1 ? 0.25 : n.fill ? 0.55 : 1;  // the bare beat (no sung note, no tune): paler
+    c.globalAlpha = n.hit === -1 ? 0.25 : 1;
     // (a thin dark edge: a pale vocal colour on the light theme's glass was hard to see)
     if (n.ok) { c.fillStyle = col; gameRound(c, x, yy, w, nh, nh / 2); c.fill(); c.strokeStyle = "rgba(0,0,0,.45)"; c.lineWidth = dpr; c.stroke(); }
     else { c.strokeStyle = col; c.lineWidth = 2 * dpr; gameRound(c, x + dpr, yy + dpr, w - 2 * dpr, nh - 2 * dpr, nh / 2); c.stroke(); }  // 일치 안 된 노트: hollow
