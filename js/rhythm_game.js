@@ -60,13 +60,57 @@ const GAME_CODES = ["KeyD", "KeyF", "KeyJ", "KeyK"];
 /* 키 설정 (user request 2026-11-26: "키 설정하는 것도 넣어줘"): the four keys, left to right, kept per device (store
    game.keys = [[code, label] × 4]). Set from the bar: '키' → press four keys one after another (Esc = leave as it was).
    Not usable: Esc · Space · Enter (the game's own) and a key already taken. */
-const gameKeys = () => { const k = store.get("game.keys", null); return Array.isArray(k) && k.length === 4 && k.every(x => Array.isArray(x) && x[0]) ? k : GAME_CODES.map(c => [c, c.slice(3)]); };
-const gameKeyLabel = e => /^Key[A-Z]$/.test(e.code) ? e.code.slice(3) : /^Digit\d$/.test(e.code) ? e.code.slice(5) : e.key.length === 1 ? e.key.toUpperCase() : e.key.replace(/^Arrow/, "").slice(0, 5);
+/* 키 수 (user 2026-11-27: "4키(디폴트), 5키, 6키 추가 — 5키는 D F 스페 J K, 6키는 A S D K L ;, 7키는 A S D 스페이스 K L ; · 이거 다
+   대응해서. 근데 키 올라간다고 해서 동시에 치기 무리한 키들이 많이 나오면 안 돼 — 채보 규칙 문서에도 있지만"): 설정 › 키 수
+   (store game.kn). The notes are made for four keys as before — two of each hand, with every rule about hands, pairs
+   and patterns — and then laid onto the wider board (gameSpread): a hand keeps its notes (left stays left), so no
+   chord is wider or more crowded than its 4-key one; with 6 · 7 keys each 2-bar phrase uses two of a hand's three keys
+   and the next phrase another two, so all keys are played but never three of one hand at once; the middle key (5 · 7
+   keys, the thumb) takes the single notes on a bar's first and third beat and the third key of three-at-once.
+   Keys, 랭킹 and 기록 are kept per key count (the four-key ones as they were). */
+const GAME_KEYSETS = {4: GAME_CODES.map(c => [c, c.slice(3)]),
+  5: [["KeyD", "D"], ["KeyF", "F"], ["Space", "␣"], ["KeyJ", "J"], ["KeyK", "K"]],
+  6: [["KeyA", "A"], ["KeyS", "S"], ["KeyD", "D"], ["KeyK", "K"], ["KeyL", "L"], ["Semicolon", ";"]],
+  7: [["KeyA", "A"], ["KeyS", "S"], ["KeyD", "D"], ["Space", "␣"], ["KeyK", "K"], ["KeyL", "L"], ["Semicolon", ";"]]};
+const gameKn = () => { const n = +store.get("game.kn", 4); return GAME_KEYSETS[n] ? n : 4; };
+const gameKk = () => gameKn() === 4 ? "" : "k" + gameKn();  // what tells a key count's records from the four-key ones
+const gameKeysAt = n => "game.keys" + (n === 4 ? "" : n);
+const gameKeys = () => { const n = gameKn(), k = store.get(gameKeysAt(n), null); return Array.isArray(k) && k.length === n && k.every(x => Array.isArray(x) && x[0]) ? k : GAME_KEYSETS[n]; };
+const gameKeyLabel = e => e.code === "Space" ? "␣" : /^Key[A-Z]$/.test(e.code) ? e.code.slice(3) : /^Digit\d$/.test(e.code) ? e.code.slice(5) : e.key.length === 1 ? e.key.toUpperCase() : e.key.replace(/^Arrow/, "").slice(0, 5);
+/* four-key notes → n keys (GAME_KEYSETS' order). Notes of one moment are laid together; a hand's two 4-key places go
+   onto two of its keys — GAME_WIDE: which two, one row a 2-bar phrase, in turn. */
+const GAME_WIDE = [[0, 1, 1, 2], [1, 2, 0, 1], [0, 2, 0, 2], [0, 1, 0, 2], [1, 2, 1, 2], [0, 2, 0, 1]];  // [left low, left high, right low, right high] of a hand's 0–2
+function gameSpread(notes, n, S, BAR, BAR0) {
+  const mid = n % 2 ? (n - 1) / 2 : -1, side = (n - (mid >= 0 ? 1 : 0)) / 2, mod = (a, b) => ((a % b) + b) % b;  // side: keys a hand
+  const by = new Map();
+  for (const x of notes) { if (!by.has(x.st)) by.set(x.st, []); by.get(x.st).push(x); }
+  const sts = [...by.keys()].sort((a, b) => a - b), free = new Array(n).fill(-1e9);  // free: the step each key is taken until
+  sts.forEach((st, i) => {
+    const g = by.get(st), w = side === 2 ? [0, 1, 0, 1] : GAME_WIDE[mod(Math.floor((st - BAR0) / (2 * BAR)), GAME_WIDE.length)];
+    const to = l => l < 2 ? w[l] : n - side + w[l];  // (the right hand's keys are the last `side`)
+    let lanes = g.map(x => to(x.lane));
+    if (mid >= 0 && free[mid] < st - 1) {
+      const gapA = i ? st - sts[i - 1] : 99, gapB = i + 1 < sts.length ? sts[i + 1] - st : 99;
+      // the thumb: a single note on a bar's first or third beat, with room round it · the inner key of three at once
+      if (g.length === 1 && !g[0].long && mod(st - BAR0, BAR / 2) === 0 && gapA >= 2 && gapB >= 2) lanes = [mid];
+      else if (g.length === 3) { const k = g.findIndex(x => g.some(y => y !== x && (y.lane < 2) === (x.lane < 2)) && (x.lane === 1 || x.lane === 2)); if (k >= 0) lanes[k] = mid; }
+    }
+    g.forEach((x, k) => {  // (a key still taken — a held note, the phrase before's last note a step ago: the hand's other key)
+      if (free[lanes[k]] >= st - 1 && lanes[k] !== mid) {
+        const lo = lanes[k] < side ? 0 : n - side, alt = [0, 1, 2].slice(0, side).map(q => lo + q).find(q => free[q] < st - 1 && !lanes.includes(q));
+        if (alt != null) lanes[k] = alt;
+      }
+    });
+    const ord = [...lanes].sort((a, b) => a - b);
+    g.forEach((x, k) => { x.lane = lanes[k]; x.pair = g.length > 1 ? (lanes[k] === ord[0] ? ord[ord.length - 1] : ord[0]) : -1; free[lanes[k]] = x.long ? x.end : st; });
+  });
+}
 const gameLane = code => gameKeys().findIndex(k => k[0] === code);
 function gameKeysShow() {
   const set = GAME.keyset;
   $("gameKeys").textContent = set ? `${set.length + 1}번째 키를 누르세요 (${set.map(k => k[1]).join(" ")}${set.length ? " " : ""}…)` : gameKeys().map(k => k[1]).join(" ");
   $("gameKeys").classList.toggle("on", !!set);
+  for (const b of document.querySelectorAll("#gameKn button")) b.classList.toggle("on", +b.dataset.kn === gameKn());
 }
 const GAME_WIN = [["PERFECT", 0.05], ["GREAT", 0.1], ["GOOD", 0.16]];  // name · seconds either way
 const GAME_MISS = GAME_WIN[GAME_WIN.length - 1][1];
@@ -125,7 +169,7 @@ const GAME_FIT = [                               // a level's limits: notes ≥ 
   {gap: 2, win: 8, max: 4, rest: 2},
   {gap: 1, win: 8, max: 5, rest: 0},
   {gap: 1, win: 8, max: 6, rest: 0},
-  {gap: 1, win: 8, max: 8, rest: 0}];
+  {gap: 1, win: 8, max: 7, rest: 0}];
 /* 난이도는 간격과 패턴 (user 2026-11-27: "하이라이트가 아닌 부분도 노트가 너무 부실하다고 함 — 난이도는 노트 갯수보다는 간격이나 패턴이
    결정하는 거임"): the levels had been told apart by how MANY notes a stretch may hold (2 · 5 in 4 beats · 4 · 7 in 2
    beats), and a part that is not the highlight got 30 % of that — thin everywhere but the chorus. Now a level is its
@@ -144,6 +188,20 @@ const GAME_LYRIC = 0.2;                          // the lyrics' own notes: this 
    never more than two keys, one of each hand, and which two is not worked out note by note any more — the pairs come in
    this round, the same at every level; a new round starts after 2 bars without one. The two notes are joined by a bar. */
 const GAME_PAIRS = [[1, 2], [1, 2], [0, 3], [0, 3], [0, 2], [1, 3], [0, 2], [1, 3]];
+/* 패턴이 너무 단조롭다 (user 2026-11-27, feedback on EXTREME: "노트 패턴 다양성이 너무 떨어진다 — 히비카세 익스의 경우 13칸 24칸만 자주
+   나와서 재미없다", "슈하랑 익스에서는 3, 4 동시에 치는 노트가 좀 나와야"): one round of eight pairs was all there was —
+   four kinds of pair, and D J · F K half of them; the two keys of one hand (D F · J K) never came. Now there are five
+   rounds, every one of the six pairs among them, and the song goes through them 4 bars at a time: inside a phrase the
+   order is one a player can learn (the rule the first round was made for), from phrase to phrase it changes.
+   SUPER HARD and EXTREME also have three keys at once on their hardest beats (GAME_TRIPLES in turn) and all four on
+   the very hardest — the earlier "never more than two" stays for EASY · NORMAL · HARD. */
+const GAME_ROUNDS = [GAME_PAIRS,
+  [[0, 1], [2, 3], [0, 1], [2, 3], [1, 2], [0, 3], [1, 2], [0, 3]],
+  [[0, 3], [1, 2], [0, 3], [1, 2], [0, 1], [2, 3], [0, 2], [1, 3]],
+  [[0, 2], [0, 2], [1, 3], [1, 3], [0, 1], [0, 1], [2, 3], [2, 3]],
+  [[1, 2], [0, 1], [1, 2], [2, 3], [0, 3], [0, 2], [0, 3], [1, 3]]];
+const GAME_TRIPLES = [[0, 1, 2], [1, 2, 3], [0, 1, 3], [0, 2, 3]];
+const GAME_MANY = [[0.1, 0.18], [0.03, 0.05]];   // of the keys-at-once at SUPER HARD · EXTREME: the share that is three keys · all four
 /* 패턴 (user 2026-11-27: "계단 같은 패턴도 활용해야 하고 … 공개적으로 올라와 있는 채보 정보 다 습득해서 문서화 — 그것도 활용해서
    규칙 로직 너가 더 추가해 봐"; music_backend docs/rhythm_chart_guide.md §12 — its rule numbers in brackets). With a chart
    v7+ the key of a single note is not worked out note by note from the pitch any more, it comes from the pattern the
@@ -169,7 +227,7 @@ const GAME_PAIRS = [[1, 2], [1, 2], [0, 3], [0, 3], [0, 2], [1, 3], [0, 2], [1, 
    calmer · the run lands on a two-key note [12]. Everything else is trills and bent stairs; the slow notes' sets and
    the runs of three have no stair in them. */
 const GAME_GROUPS = [[1, 2, 1, 2], [0, 1, 2, 1], [2, 1, 2, 1], [3, 2, 1, 2], [0, 3, 0, 3], [1, 2, 3, 2]];
-const GAME_LAND = {"1,2": [0, 1, 2, 3], "0,3": [1, 2, 3, 2], "0,2": [0, 1, 2, 3], "1,3": [3, 2, 1, 0]};  // the four before a pair
+const GAME_LAND = {"1,2": [0, 1, 2, 3], "0,3": [1, 2, 3, 2], "0,2": [0, 1, 2, 3], "1,3": [3, 2, 1, 0], "0,1": [0, 1, 2, 3], "2,3": [3, 2, 1, 0]};  // the four before a pair
 const GAME_WALK = [[1, 2, 0, 3], [2, 1, 3, 0], [0, 2, 1, 3], [3, 1, 2, 0]];
 const GAME_SHORT = [[[1, 2], [0, 1], [2, 3], [2, 1], [3, 2], [1, 0]],                           // runs of two · of three: steps of
                     [[1, 2, 1], [2, 1, 2], [0, 2, 0], [3, 1, 3], [1, 3, 1], [2, 0, 2]]];     // to and fro
@@ -179,7 +237,7 @@ function gameNotes(level) {
   GAME.lint = null;
   if (!ch || !(ch.v >= 2) || !(ch.notes || []).length || (ch.beats || []).length < 2) {  // no chart: the sync's line starts
     const m = (sj && sj.matched) || [];
-    return {beat: false, notes: (times || []).map((t, i) => ({t: t + off, e: t + off, lane: i % 4, line: i, ok: m[i] !== false, fill: false, long: false}))};
+    return {beat: false, notes: (times || []).map((t, i) => ({t: t + off, e: t + off, lane: i % gameKn(), line: i, ok: m[i] !== false, fill: false, long: false}))};
   }
   const S = ch.steps, mod = (a, b) => ((a % b) + b) % b;
   // the song's bars as the chart counted them (v9 `bar` [beats a bar, the first beat that starts one] — before: 4 from beat 0)
@@ -204,7 +262,7 @@ function gameNotes(level) {
   // beats where much comes in
   // (GAME_MUSIC: the notes sit on the song's hits now, so fewer of the beats are needed for as many keys at once;
   // three and four keys at once are gone — GAME_PAIRS)
-  const acc2 = hard([0.03, 0.14, 0.3, 0.42, 0.6][level]);
+  const acc2 = hard([0.03, 0.14, 0.3, 0.42, 0.5][level]);
   const accOf = st => mod(st, S) === 0 ? +feel.acc[beatOf(st)] : -1, silent = st => !!feel && +feel.lvl[beatOf(st)] < 2;
   const lvlOf = st => feel ? +feel.lvl[beatOf(st)] : 9, movOf = st => feel && feel.mov ? +feel.mov[beatOf(st)] : 9;
   /* 강약 (user 2026-11-27: "슈퍼하드도 채보 떨어지는 강약 조절이 필요 — 잔잔한 부분까지 노트가 많이 떨어지면 게임이 아니라 노동 · 악보
@@ -487,7 +545,13 @@ function gameNotes(level) {
       for (let j = 0; j + max < near.length; j++) if (near[j + max] - near[j] < C.win) return false;
       return true;
     };
-    for (const n of order) if (!on[n.i] && fits(n.i)) on[n.i] = 1;
+    /* EXTREME is not "more notes" (user 2026-11-27: "익스가 하드에서 노트 수만 늘어난 거? … 그냥 노트만 많고 노래랑 조화가 떨어진다고
+       함"): it was — the same chart, with the limit raised to a note on every quarter beat, and what filled that up
+       were the places where hardly anything of the drums comes in (126 of the 231 moments it added on ヒビカセ had the
+       lowest digit). Now what EXTREME adds over SUPER HARD must be a sound of the song: a hit of digit 2 or more, a
+       note of the tune with drums on it, or a sung syllable (w ≥ 4) — and what makes it harder is the patterns
+       (three and four keys, more pairs, the hard half beats). */
+    for (const n of order) if (!on[n.i] && !(lv === 4 && n.w != null && n.w < 4) && fits(n.i)) on[n.i] = 1;
   }
   return on;
   };
@@ -545,7 +609,7 @@ function gameNotes(level) {
     const L = last[lane], d = n.st - L.end;
     L.a = d <= 2 ? L.a + 1 : 1; L.q = d < 2 ? L.q + 1 : 1; L.end = n.st + n.len; L.two = pair >= 0;
     lint.lanes[lane]++;
-    notes.push({t, e: n.len ? gameStepTime(ch, n.st + n.len) + off : t, lane, line: n.line, ok: n.ok, fill: n.fill, long: !!n.len, pair});
+    notes.push({t, e: n.len ? gameStepTime(ch, n.st + n.len) + off : t, lane, line: n.line, ok: n.ok, fill: n.fill, long: !!n.len, pair, st: n.st, end: n.st + n.len});
   };
   if (music) {  // GAME_RUNS: which notes are two keys at once, then the key of every single note by its pattern
     let cSt = -1e9, pSt = -1e9, cN = 0;
@@ -557,15 +621,26 @@ function gameNotes(level) {
         let t2 = (accOf(n.st) >= acc2 - (strong(n.st) >= GAME_HOOK ? 2 : 0) || (level >= 4 && mod(n.st, S) === S / 2 && +hit[n.st] >= 6))  // (EXTREME: on a hard half beat too)
           && lvlOf(n.st) > 5 && strong(n.st) >= GAME_PAIR;
         if (t2 && (level === 0 ? n.st - pSt < S && next - n.st < S : level < 3 && n.st - cSt < [S, S, S / 2][level])) t2 = false;
-        if (t2) { if (n.st - cSt > 8 * S) cN = 0; n.two = true; n.ci = cN++ % GAME_PAIRS.length; cSt = n.st; }
+        if (t2) {
+          if (n.st - cSt > 8 * S) cN = 0;
+          n.two = true; n.ci = cN++ % GAME_PAIRS.length; cSt = n.st;
+          n.pr = GAME_ROUNDS[mod(Math.floor((n.st - BAR0) / (4 * BAR)), GAME_ROUNDS.length)][n.ci];  // its pair: the phrase's round
+          n.size = 2;
+        }
       }
       pSt = n.st;
     });
+    if (level >= 3) {  // three · four keys: the hardest-hit of the level's keys-at-once (by rank — the digits are too coarse to cut by)
+      const cs = kept.filter(n => n.two).sort((x, y) => accOf(y.st) - accOf(x.st) || +hit[y.st] - +hit[x.st] || x.st - y.st);
+      const n4 = Math.round(cs.length * GAME_MANY[1][level - 3]), n3 = Math.round(cs.length * GAME_MANY[0][level - 3]);
+      cs.forEach((n, k) => { n.size = k < n4 ? 4 : k < n4 + n3 ? 3 : 2; });
+    }
     const single = n => n && !n.two && !n.len && n.kind !== 2 && !n.drop;
     kept.forEach((n, i) => {  // a single note between two pairs half a beat apart [14]
       const a = kept[i - 1], b = kept[i + 1];
       if (!single(n) || !a || !b || !a.two || !b.two || b.st - a.st > S / 2) return;
-      if (a.ci >= 4) n.drop = true; else n.rl = (a.ci < 2 ? [0, 3] : [1, 2])[mod(Math.floor(n.st / S), 2)];
+      const free = [0, 1, 2, 3].filter(l => !a.pr.includes(l) && !b.pr.includes(l) && a.size < 3 && b.size < 3);  // a key neither pair uses
+      if (!free.length) n.drop = true; else n.rl = free[mod(Math.floor(n.st / S), free.length)];
     });
     const runs = [];
     let run = [];
@@ -599,7 +674,7 @@ function gameNotes(level) {
         else if (wide && top > 0 && top < L - 1 && d.slice(0, top).every(x => x >= 0) && d.slice(top).every(x => x <= 0)) lanes = q.map((_, i) => mod(3 - Math.abs(i - top), 4));
       }
       if (!lanes) {  // no tune: fours of GAME_GROUPS; the four that lands on a pair fits it [12]; every other run left ↔ right [11]
-        const flip = rn++ % 2 === 1, land = r.next ? GAME_LAND[GAME_PAIRS[r.next.ci].join(",")] : null;
+        const flip = rn++ % 2 === 1, land = r.next ? GAME_LAND[r.next.pr.join(",")] : null;
         lanes = [];
         if (L < 4) lanes = land ? land.slice(4 - L) : GAME_SHORT[L - 2][short[L - 2]++ % GAME_SHORT[L - 2].length];  // (its own round: every key gets its share)
         else {
@@ -617,7 +692,7 @@ function gameNotes(level) {
       ns.forEach((n, i) => { n.rl = lanes[i]; });
     }
   }
-  let heldN = 0, prevSt = -1e9, prevEnd = -1e9, prevKind = -1, chordSt = -1e9, chordN = 0;
+  let heldN = 0, prevSt = -1e9, prevEnd = -1e9, prevKind = -1, chordSt = -1e9, chordN = 0, tri = 0;
   kept.forEach((n, i) => {
     if (n.drop) return;  // left out by its pattern (GAME_RUNS)
     if (n.st === prevSt) return;  // (never a third key on a step)
@@ -646,11 +721,16 @@ function gameNotes(level) {
       if (two2) {
         if (n.st - chordSt > 8 * S) chordN = 0;
         if (music) chordN = n.ci;  // (worked out with the patterns above)
-        const [l0, l1] = GAME_PAIRS[chordN % GAME_PAIRS.length];
-        if (!bad(l0, n.st) && !bad(l1, n.st) && n.st - last[l0].end >= 2 && n.st - last[l1].end >= 2) {  // (nor right after a note on one of its keys)
+        const free = ls => ls.every(l => !bad(l, n.st) && n.st - last[l].end >= 2);  // (nor right after a note on one of its keys)
+        const pair = (music && n.pr) || GAME_PAIRS[chordN % GAME_PAIRS.length];
+        let ls = music && n.size === 4 ? [0, 1, 2, 3] : music && n.size === 3 ? GAME_TRIPLES[tri % GAME_TRIPLES.length] : pair;
+        if (ls.length > 2 && !free(ls)) ls = pair;  // (three · four keys do not fit here: the pair)
+        if (free(ls)) {
+          if (ls.length === 3) tri++;
           chordN++; chordSt = n.st;
           lint.by[n.fill ? 0 : n.kind]++;
-          put(n, l0, t, l1); put({st: n.st, len: 0, line: n.line, ok: n.ok, fill: n.fill}, l1, t, l0);
+          // (the bar that joins them is drawn from the leftmost key to the rightmost)
+          ls.forEach((l, k) => put(k ? {st: n.st, len: 0, line: n.line, ok: n.ok, fill: n.fill} : n, l, t, k ? ls[0] : ls[ls.length - 1]));
           prevSt = n.st; prevEnd = n.st; prevKind = n.kind;
           return;
         }
@@ -668,9 +748,29 @@ function gameNotes(level) {
   });
   lint.n = notes.length;
   GAME.lint = lint;
+  if (gameKn() !== 4) gameSpread(notes, gameKn(), S, BAR, BAR0);  // 키 수: onto the wider board
   return {beat: true, notes};
 }
-const gameLevel = () => Math.max(0, Math.min(GAME_LEVELS.length - 1, +store.get("game.level", 1) || 0));
+/* EXTREME이 없는 곡 (user 2026-11-27: "곡마다 익스트림 만든다고 채보가 들어가면 어색한 부분에 억지로 넣는 건 하지 마 — 그렇게 억지로 넣게
+   될 것 같으면 그냥 익스트림이 없는 곡으로 처리해야 됨"): EXTREME only adds notes where the song has a sound for them
+   (gameNotes: w ≥ 4). A song that has few such places left over SUPER HARD — under GAME_EX_MIN of SUPER HARD's
+   moments — would have an EXTREME that is SUPER HARD with more keys pressed at once, nothing of the song: that song
+   has no EXTREME (its button is off; the level asked for is played as SUPER HARD there, the setting is kept). */
+const GAME_EX_MIN = 0.08;
+function gameTop() {  // → the highest level this song has (worked out once a song · key count)
+  const ch = song && song.sync && song.sync.chart, key = (SHELL.now ? gameSongKey(SHELL.now) : "") + "|" + (ch ? ch.v + ":" + (ch.notes || []).length : "");
+  if (GAME.topKey === key) return GAME.top;
+  let top = GAME_LEVELS.length - 1;
+  if (ch) {
+    const m = l => new Set(gameNotes(l).notes.map(n => n.st)), hard = m(top - 1), ex = m(top);
+    let add = 0;
+    for (const s of ex) if (!hard.has(s)) add++;
+    if (hard.size && !hard.has(undefined) && add < hard.size * GAME_EX_MIN) top--;
+  }
+  GAME.topKey = key; GAME.top = top;
+  return top;
+}
+const gameLevel = () => Math.max(0, Math.min(gameTop(), +store.get("game.level", 1) || 0));
 // seconds a note is on screen before its line — 0.2 at the fastest (user 2026-11-27: "최대 속도 더 늘려줘"; it was 0.6)
 const gameSpeed = () => Math.max(0.2, Math.min(3, +store.get("game.speed", 1.4) || 1.4));
 const gameLag = () => Math.max(-0.5, Math.min(0.3, +store.get("game.lag", 0) || 0));  // 판정 맞추기: + = the notes come later
@@ -821,14 +921,17 @@ function gameReady(result) {
   const ch = song && song.sync && song.sync.chart, lvl = gameLevel(), g = gameNotes(lvl), it = SHELL.now;
   GAME.beat = g.beat;
   $("gameTitle").textContent = it ? titleOf(it) : "";
-  $("gameLevels").innerHTML = GAME_LEVELS.map((l, i) => `<button type="button" data-l="${i}"${i === lvl ? ' class="on"' : ""}>${esc(l)}</button>`).join("");
+  $("gameLevels").innerHTML = GAME_LEVELS.map((l, i) => i > gameTop()
+    ? `<button type="button" disabled title="이 곡은 ${esc(l)} 이 없습니다 — 더 넣을 만한 소리가 곡에 없어 억지로 만들지 않음">${esc(l)}</button>`
+    : `<button type="button" data-l="${i}"${i === lvl ? ' class="on"' : ""}>${esc(l)}</button>`).join("");
   $("gameSpeed").textContent = gameSpeed().toFixed(1) + "초";
   $("gameLag").textContent = (gameLag() >= 0 ? "+" : "") + Math.round(gameLag() * 1000) + "ms";
   GAME.keyset = null; gameKeysShow(); gameSeeShow(); gameBgShow();
   const nl = g.notes.filter(n => n.long).length;
   const info = g.beat ? `${ch.bpms ? ch.bpms.map(Math.round).join("–") : Math.round(ch.bpm)} BPM · 노트 ${g.notes.length.toLocaleString()}개${nl ? ` (롱노트 ${nl}개)` : ""} · 채보 일치 ${Math.round((ch.score || 0) * 100)}%`
     : `이 곡은 아직 박자 채보가 없어 가사 줄 시작(${g.notes.length}개)만 노트로 나옵니다 — 난이도와 상관없이 같습니다`;
-  const s = result, best = (store.get("game.best", {}) || {})[gameSongKey(it) + "|" + lvl];
+  GAME.K = gameKn();
+  const s = result, best = (store.get("game.best", {}) || {})[gameSongKey(it) + "|" + lvl + gameKk()];
   $("gameLifeBtn").textContent = gameLifeOn() ? "켬" : "끔";
   $("gameLifeBtn").classList.toggle("on", gameLifeOn());
   $("gameDlg").classList.toggle("nolife", !gameLifeOn());
@@ -846,7 +949,7 @@ function gameReady(result) {
     + `<div class="ginfo${g.beat ? "" : " warn"}">${esc(info)}</div>`
     + `<button type="button" class="primary" id="gameStart">${s ? "다시 하기" : "시작"}</button>`
     + (s ? gameHistHtml(it) : "")
-    + `<div class="ghelp">키 ${esc(gameKeys().map(k => k[1]).join(" "))} · 화면 터치 · 긴 노트는 끝까지 누르고 있기 · Space 일시정지 · Esc 닫기${gameCanSeek() ? " · 시작하면 곡이 처음부터 재생됩니다" : " · 같이듣기 중이라 지금 재생 위치부터 합니다"}</div>`;
+    + `<div class="ghelp">키 ${esc(gameKeys().map(k => k[1]).join(" "))} · 화면 터치 · 긴 노트는 끝까지 누르고 있기 · ${gameKeys().some(k => k[0] === "Space") ? "Enter" : "Space · Enter"} 일시정지 · Esc 닫기${gameCanSeek() ? " · 시작하면 곡이 처음부터 재생됩니다" : " · 같이듣기 중이라 지금 재생 위치부터 합니다"}</div>`;
   $("gameOver").hidden = false;
   $("gameScore").textContent = s ? s.score.toLocaleString() : "0"; $("gameCombo").textContent = ""; $("gameLyric").textContent = "";
   $("gameJudge").className = "gjudge"; $("gameJudge").textContent = "";
@@ -860,7 +963,7 @@ function gameReady(result) {
 const GAME_HIST = 10;
 function gameHistAdd(it, lvl, s) {
   const all = store.get("game.hist", {}) || {}, key = gameSongKey(it);
-  all[key] = [{lvl, score: s.score, acc: s.acc, max: s.max, grade: s.grade, fc: s.fc, at: s.at}, ...(all[key] || [])].slice(0, GAME_HIST);
+  all[key] = [{lvl, kn: s.kn || 4, score: s.score, acc: s.acc, max: s.max, grade: s.grade, fc: s.fc, at: s.at}, ...(all[key] || [])].slice(0, GAME_HIST);
   store.set("game.hist", all);
 }
 function gameHistHtml(it) {
@@ -869,7 +972,7 @@ function gameHistHtml(it) {
   const when = at => { const d = new Date(at), p = n => String(n).padStart(2, "0"); return isNaN(d) ? "" : `${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
   return `<div class="ghist"><div class="grh">MY RECORD</div><div class="ghl">` + rows.map((r, i) => `<div class="ghc${i ? "" : " now"}">`
     + `<em class="ggrade g${esc(r.grade)}">${esc(r.grade)}</em><b>${(+r.score || 0).toLocaleString()}</b><span>${(+r.acc || 0).toFixed(2)}%</span>`
-    + `<span>콤보 ${+r.max || 0}${r.fc ? " FC" : ""}</span><span>${esc(GAME_LEVELS[r.lvl] || "")}</span><span>${when(r.at)}</span></div>`).join("") + `</div></div>`;
+    + `<span>콤보 ${+r.max || 0}${r.fc ? " FC" : ""}</span><span>${esc(GAME_LEVELS[r.lvl] || "")}${r.kn && r.kn !== 4 ? ` · ${r.kn}키` : ""}</span><span>${when(r.at)}</span></div>`).join("") + `</div></div>`;
 }
 /* 랭킹 (the song's file is read again every time the board is shown: someone else may have played) */
 const gameRankPath = it => `${LOCAL.data}game_rank/${it.vocadb}.json`;
@@ -879,7 +982,7 @@ async function gameRankRead(it) {
 }
 function gameRankHtml(rows, lvl, mineAt, note) {
   const me = gameNickKey(gameWho());
-  return `<div class="grh">RANKING · ${esc(GAME_LEVELS[lvl])}</div>`
+  return `<div class="grh">RANKING · ${esc(GAME_LEVELS[lvl])}${gameKn() === 4 ? "" : ` · ${gameKn()}키`}</div>`
     + (rows.length ? `<div class="grt"><div class="grr head"><i>순위</i><b>닉네임</b><span>점수</span><span>정확도</span><span>최대 콤보</span><em>등급</em></div>`
         + rows.map((r, i) => `<div class="grr${gameNickKey(r.name) === me ? " me" : ""}${mineAt && r.at === mineAt ? " now" : ""}"><i>${i + 1}</i><b>${esc(r.name)}</b>`
           + `<span>${(+r.score || 0).toLocaleString()}</span><span>${(+r.acc || 0).toFixed(2)}%</span><span>${+r.max || 0}${r.fc ? " FC" : ""}</span><em class="ggrade g${esc(r.grade || "")}">${esc(r.grade || "")}</em></div>`).join("") + `</div>`
@@ -890,12 +993,12 @@ async function gameRankShow(it, lvl, mineAt) {
   const box = () => song === GAME.song && gameLevel() === lvl ? $("gameRank") : null;
   if (!it || !it.vocadb || !GAME.beat) return;
   const d = await gameRankRead(it);
-  if (box() && d) box().innerHTML = gameRankHtml((d.levels || {})[lvl] || [], lvl, mineAt,
+  if (box() && d) box().innerHTML = gameRankHtml((d.levels || {})[lvl + gameKk()] || [], lvl, mineAt,
     !gameWho() ? "닉네임이 없어 랭킹에 올라가지 않습니다" : !LOCAL.canWrite ? "읽기 전용으로 열어 랭킹에 올라가지 않습니다 (이 기기의 최고 기록만 남음)" : "");
 }
 /* a finished run → this device's best · the song's board (only a run that beats this nickname's own and is in the 5) */
 async function gameRankSave(it, lvl, s) {
-  const key = gameSongKey(it) + "|" + lvl, best = store.get("game.best", {}) || {};
+  const kk = s.kn === 4 ? "" : "k" + s.kn, key = gameSongKey(it) + "|" + lvl + kk, best = store.get("game.best", {}) || {};
   if (!best[key] || s.score > best[key].score) { s.best = !!best[key]; best[key] = {score: s.score, acc: s.acc, max: s.max, grade: s.grade, at: s.at}; store.set("game.best", best); }
   const name = gameWho();
   if (!name || !it.vocadb || !LOCAL.canWrite) return;
@@ -904,11 +1007,11 @@ async function gameRankSave(it, lvl, s) {
   await LOCAL.locked(path, async () => {
     const d = await LOCAL.readJson(path, null) || {levels: {}};
     d.levels = d.levels || {};
-    const rows = d.levels[lvl] || [], mine = rows.find(r => gameNickKey(r.name) === gameNickKey(name));
+    const rows = d.levels[lvl + kk] || [], mine = rows.find(r => gameNickKey(r.name) === gameNickKey(name));
     if (mine && mine.score >= row.score) return;
     const next = [...rows.filter(r => r !== mine), row].sort((a, b) => b.score - a.score || String(a.at).localeCompare(String(b.at))).slice(0, GAME_TOP);
     if (!next.includes(row)) return;
-    d.vocadb = String(it.vocadb); d.title = titleOf(it); d.levels[lvl] = next;
+    d.vocadb = String(it.vocadb); d.title = titleOf(it); d.levels[lvl + kk] = next;
     await LOCAL.writeText(path, JSON.stringify(d, null, 1) + "\n", name);
   });
 }
@@ -921,9 +1024,11 @@ function gameStart() {
   gameComments(false);  // (a song that came while the window was open loads with the player's setting)
   const g = gameNotes(gameLevel());
   GAME.notes = g.notes; GAME.beat = g.beat;
-  GAME.lanes = [[], [], [], []];
+  GAME.K = gameKn();
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();  // (Space is a key in 5 · 7 keys: it must not press a button)
+  GAME.lanes = Array.from({length: GAME.K}, () => []);
   for (const n of g.notes) { n.hit = 0; GAME.lanes[n.lane].push(n); }  // hit: 0 waiting · 1 hit · -1 missed
-  GAME.ptr = [0, 0, 0, 0]; GAME.hold = [null, null, null, null]; GAME.fx = [];
+  GAME.ptr = new Array(GAME.K).fill(0); GAME.hold = new Array(GAME.K).fill(null); GAME.flash = new Array(GAME.K).fill(0); GAME.fx = [];
   GAME.stat = {score: 0, combo: 0, max: 0, hit: [0, 0, 0], miss: 0, sum: 0, fast: 0, slow: 0, life: 100};
   GAME.lifeOn = gameLifeOn(); GAME.level = gameLevel(); GAME.item = SHELL.now;
   GAME.whole = gameCanSeek(); GAME.cut = false;  // whole: played from the start · cut: the next song came before the last note
@@ -933,7 +1038,7 @@ function gameStart() {
   if (gameCanSeek()) audio.currentTime = 0;
   else {  // joined mid-song: what is already past is not counted
     const now = audio.currentTime;
-    for (let l = 0; l < 4; l++) while (GAME.ptr[l] < GAME.lanes[l].length && GAME.lanes[l][GAME.ptr[l]].t < now + 0.5) GAME.lanes[l][GAME.ptr[l]++].hit = -2;
+    for (let l = 0; l < GAME.K; l++) while (GAME.ptr[l] < GAME.lanes[l].length && GAME.lanes[l][GAME.ptr[l]].t < now + 0.5) GAME.lanes[l][GAME.ptr[l]++].hit = -2;
   }
   if (audio.paused) audio.play();
   GAME.cfg = null; GAME.box = null; GAME.say = null; GAME.dirty = true; gameFlush(true);
@@ -952,7 +1057,7 @@ const gameAcc = s => { const n = s.hit[0] + s.hit[1] + s.hit[2] + s.miss; return
 function gameEnd(failed) {
   const s = GAME.stat, n = s.hit[0] + s.hit[1] + s.hit[2] + s.miss, acc = Math.round(gameAcc(s) * 100) / 100, it = GAME.item, lvl = GAME.level;
   const res = {score: s.score, max: s.max, hit: s.hit, miss: s.miss, acc: n ? acc : 0, notes: n, fast: s.fast, slow: s.slow, failed: !!failed,
-               fc: !failed && n > 0 && !s.miss, perfect: !failed && n > 0 && s.hit[0] === n, grade: failed ? "F" : gameGrade(acc), at: new Date().toISOString()};
+               fc: !failed && n > 0 && !s.miss, perfect: !failed && n > 0 && s.hit[0] === n, grade: failed ? "F" : gameGrade(acc), at: new Date().toISOString(), kn: GAME.K || 4};
   // ranked: a whole song with a chart, played to its last note
   const ranked = !failed && n > 0 && GAME.beat && GAME.whole && !GAME.cut && it;
   res.note = failed ? "게이지가 바닥나 실패했습니다 — 기록되지 않습니다" : !GAME.beat ? "박자 채보가 없는 곡은 기록되지 않습니다" : !GAME.whole ? "같이듣기 중 중간부터 해서 기록되지 않습니다"
@@ -1047,7 +1152,7 @@ function gameFrame() {
     return song && times ? gameEnd() : gameClose();
   }
   const now = gameClock() - gameCfg().lag;
-  for (let l = 0; l < 4; l++) {  // notes that went by · long notes held to their end
+  for (let l = 0; l < GAME.K; l++) {  // notes that went by · long notes held to their end
     const q = GAME.lanes[l];
     while (GAME.ptr[l] < q.length && (q[GAME.ptr[l]].hit || q[GAME.ptr[l]].t < now - GAME_MISS)) { if (!q[GAME.ptr[l]].hit) gameMiss(q[GAME.ptr[l]]); GAME.ptr[l]++; }
     const h = GAME.hold[l];
@@ -1074,12 +1179,12 @@ function gameDraw(now) {
   const cv = $("gameCanvas"), box = GAME.box || (GAME.box = cv.getBoundingClientRect()), dpr = Math.min(window.devicePixelRatio || 1, 1.5);
   const W = Math.max(1, Math.round(box.width * dpr)), H = Math.max(1, Math.round(box.height * dpr));
   if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
-  const c = GAME.ctx || (GAME.ctx = cv.getContext("2d", {desynchronized: true})), C = GAME.colors, lw = W / 4, jy = H * 0.84, look = cfg.speed, nh = Math.max(10 * dpr, H * 0.022);
+  const c = GAME.ctx || (GAME.ctx = cv.getContext("2d", {desynchronized: true})), C = GAME.colors, K = GAME.K || 4, lw = W / K, jy = H * 0.84, look = cfg.speed, nh = Math.max(10 * dpr, H * 0.022);
   const y = t => jy - (t - now) / look * jy;
   c.clearRect(0, 0, W, H);
   const t = performance.now();
-  for (let l = 0; l < 4; l++) {  // lanes · the lane of a key just pressed lights up
-    const a = Math.max(0, 1 - (t - GAME.flash[l]) / 180);
+  for (let l = 0; l < K; l++) {  // lanes · the lane of a key just pressed lights up
+    const a = Math.max(0, 1 - (t - (GAME.flash[l] || 0)) / 180);
     if (a > 0) { c.globalAlpha = a * 0.28; c.fillStyle = C.a; c.fillRect(l * lw, 0, lw, H); c.globalAlpha = 1; }
     if (l) { c.fillStyle = C.line; c.fillRect(l * lw - dpr / 2, 0, dpr, H); }
   }
@@ -1139,7 +1244,7 @@ function gameDraw(now) {
   }
   c.globalAlpha = 1;
   c.fillStyle = C.muted; c.font = `${12 * dpr}px sans-serif`; c.textAlign = "center";
-  for (let l = 0; l < 4; l++) c.fillText(GAME.keyLabels[l], l * lw + lw / 2, H - 8 * dpr);
+  for (let l = 0; l < K; l++) c.fillText(GAME.keyLabels[l] || "", l * lw + lw / 2, H - 8 * dpr);
   /* the judgement, in the middle and one under the other (user 2026-11-26): the combo · the judgement's name · how exact ·
      FAST / SLOW — drawn here, on the canvas (it was built in the page at every hit: 노트 끊김 above). It pops in
      (80 ms), stays, and fades out by 0.6 s */
@@ -1196,6 +1301,8 @@ $("gameDlg").addEventListener("click", e => {
   }
   if (lag) { store.set("game.lag", Math.round((gameLag() + 0.01 * +lag.dataset.lag) * 100) / 100); $("gameLag").textContent = (gameLag() >= 0 ? "+" : "") + Math.round(gameLag() * 1000) + "ms"; }
   if (e.target.closest("#gameBgBtn")) { store.set("game.bg", gameBgVideo() ? "image" : "video"); gameBgShow(); showVideo(); }
+  const kn = e.target.closest("[data-kn]");
+  if (kn) { if (GAME.run) return uiAlert("게임 중에는 키 수를 바꿀 수 없습니다."); store.set("game.kn", +kn.dataset.kn); GAME.keyset = null; GAME.cfg = null; return gameReady(); }
   const see = e.target.closest("[data-see]");
   if (see) { store.set("game.see", Math.round((gameSee() + 0.1 * +see.dataset.see) * 10) / 10); gameSeeShow(); }
   if (e.target.closest("#gameKeys")) { if (GAME.run) return uiAlert("게임 중에는 키를 바꿀 수 없습니다."); GAME.keyset = GAME.keyset ? null : []; gameKeysShow(); }
@@ -1205,7 +1312,7 @@ $("gameDlg").addEventListener("click", e => {
 });
 $("gameCanvas").addEventListener("pointerdown", e => {
   e.preventDefault();
-  const r = $("gameCanvas").getBoundingClientRect(), lane = Math.max(0, Math.min(3, Math.floor((e.clientX - r.left) / r.width * 4)));
+  const r = $("gameCanvas").getBoundingClientRect(), lane = Math.max(0, Math.min(GAME.K - 1, Math.floor((e.clientX - r.left) / r.width * GAME.K)));
   GAME.touch.set(e.pointerId, lane);
   try { $("gameCanvas").setPointerCapture(e.pointerId); } catch (x) { /* the finger is gone already */ }
   gameHit(lane);
@@ -1223,9 +1330,9 @@ window.addEventListener("keydown", e => {
   if (GAME.keyset) {  // 키 설정: this key is the next lane's
     e.preventDefault();
     if (e.key === "Escape") GAME.keyset = null;
-    else if (!e.repeat && !["Space", "Enter", "NumpadEnter"].includes(e.code) && !GAME.keyset.some(k => k[0] === e.code)) {
+    else if (!e.repeat && !["Enter", "NumpadEnter"].includes(e.code) && !GAME.keyset.some(k => k[0] === e.code)) {
       GAME.keyset.push([e.code, gameKeyLabel(e)]);
-      if (GAME.keyset.length === 4) { store.set("game.keys", GAME.keyset); GAME.keyset = null; GAME.cfg = null; gameKeysShow(); return gameReady(); }
+      if (GAME.keyset.length === gameKn()) { store.set(gameKeysAt(gameKn()), GAME.keyset); GAME.keyset = null; GAME.cfg = null; gameKeysShow(); return gameReady(); }
     }
     return gameKeysShow();
   }
@@ -1239,10 +1346,11 @@ window.addEventListener("keydown", e => {
     return;
   }
   if (e.key === "Escape") { e.preventDefault(); return gameClose(); }
-  if (e.code === "Space") { e.preventDefault(); if (!e.repeat && GAME.run) $("btnPlay").click(); return; }
-  if (e.key === "Enter" && !GAME.run) { e.preventDefault(); return gameStart(); }
   const lane = gameCfg().keys.findIndex(k => k[0] === e.code);
-  if (lane >= 0) { e.preventDefault(); if (!e.repeat) gameHit(lane); }
+  if (lane >= 0) { e.preventDefault(); if (!e.repeat) gameHit(lane); return; }
+  // pause: Enter while a game runs — and Space where Space is not one of the keys (5 · 7 keys play it)
+  if (e.code === "Space" || (e.key === "Enter" && GAME.run)) { e.preventDefault(); if (!e.repeat && GAME.run) $("btnPlay").click(); return; }
+  if (e.key === "Enter" && !GAME.run) { e.preventDefault(); return gameStart(); }
 }, true);
 window.addEventListener("keyup", e => {
   if (!GAME.on) return;
