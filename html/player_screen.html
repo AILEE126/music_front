@@ -215,31 +215,33 @@
 <canvas id="gameBg" width="64" height="36"></canvas><div id="gameBack"></div><!-- where the video plays while the game is open: the whole screen, behind the window -->
 <dialog id="gameDlg" class="gamedlg">
   <div class="ghead"><b id="gameTitle"></b><span class="grow"></span>
-    <button class="ib" id="gameClose" title="닫기 (Esc)" aria-label="닫기">✕</button></div>
-  <div class="gbar">
-    <div class="seg glevel" id="gameLevels" title="난이도 — 박자를 얼마나 잘게 치는지"></div>
-    <span class="grow"></span>
-    <!-- user request 2026-11-26: every setting but the level behind one 설정 button (a popup); left of it 오류 · 버그 신고 -->
-    <button type="button" id="gameReport" title="리듬게임의 오류 · 버그 알리기 — 종류 '리듬게임'으로 신고 창이 열림">오류 · 버그 신고</button>
-    <button type="button" id="gameSetBtn" title="속도 · 키 · 게이지 · 판정 맞추기">설정</button>
-  </div>
+    <!-- user request 2026-11-28: ✕ opens the settings (게임 중에는 일시정지 — Esc 와 같음); the bar under it (오류 · 버그 신고 · 설정) is gone, the lanes are taller -->
+    <button class="ib" id="gameSetBtn" title="설정 · 일시정지 (Esc) — 플레이어로 돌아가기는 설정 안에" aria-label="설정">✕</button></div>
   <div class="gscore"><b id="gameScore">0</b><span id="gameCombo"></span></div>
   <div class="gstage"><canvas id="gameCanvas"></canvas><div class="glife" id="gameLife" title="목숨 게이지"><i></i></div><div class="gjudge" id="gameJudge"></div>
     <div class="gover" id="gameOver"></div></div>
   <div class="glyric" id="gameLyric"></div>
   <dialog id="gameSetDlg" class="gsetdlg"><!-- 리듬게임 설정 (inside the game window: its clicks are the game's) -->
-    <div class="ghead"><b>리듬게임 설정</b><span class="grow"></span><button class="ib" id="gameSetClose" title="닫기 (Esc)" aria-label="닫기">✕</button></div>
+    <div class="ghead"><b id="gameSetHead">리듬게임 설정</b><span class="grow"></span><button class="ib" id="gameSetClose" title="닫기 (Esc)" aria-label="닫기">✕</button></div>
     <div class="gsets">
+    <div class="seg glevel" id="gameLevels" title="난이도 — 박자를 얼마나 잘게 치는지"></div>
     <span class="gset" title="노트가 화면에 보이기 시작해서 판정선까지 걸리는 시간 (짧을수록 빠름)">속도 <button type="button" data-sp="1">빠르게</button><b id="gameSpeed"></b><button type="button" data-sp="-1">느리게</button></span>
     <span class="gset" title="키 수 — 4키 D F J K · 5키 D F Space J K · 6키 A S D K L ; · 7키 A S D Space K L ; (키는 아래에서 바꿀 수 있음). 랭킹과 기록은 키 수마다 따로">키 수 <span class="seg glevel" id="gameKn"><button type="button" data-kn="4">4</button><button type="button" data-kn="5">5</button><button type="button" data-kn="6">6</button><button type="button" data-kn="7">7</button></span></span>
     <span class="gset" title="칠 키 4개 바꾸기 — 누른 뒤 왼쪽 줄부터 차례로 키 4개를 누름 (Esc = 그대로)">키 <button type="button" id="gameKeys"></button></span>
+    <span class="gset" title="동시에 치는 두 노트를 잇는 줄 보이기">같이치기 연결선 <button type="button" id="gameLinkBtn"></button></span>
     <span class="gset" title="목숨 게이지 — 놓칠 때마다 줄고, 바닥나면 실패 (끄면 게이지 없이 끝까지)">게이지 <button type="button" id="gameLifeBtn"></button></span>
     <span class="gset" title="판정 맞추기 — 노트가 소리보다 먼저 오면 ＋, 늦게 오면 −">판정 <button type="button" data-lag="-1">−</button><b id="gameLag"></b><button type="button" data-lag="1">＋</button></span>
     <span class="gset" title="게임창 뒤에 깔리는 것 — 이미지: 곡의 썸네일을 흐리게 (가볍고 덜 산만함) · 영상: 재생 중인 영상">배경 <button type="button" id="gameBgBtn"></button></span>
     <span class="gset" title="게임창 뒤 배경이 비치는 정도 — 0% 는 배경이 안 보임">배경 비침 <button type="button" data-see="-1">−</button><b id="gameSee"></b><button type="button" data-see="1">＋</button></span>
-    <span class="gset" title="곡을 들으며 박자에 맞춰 16번 누르면 판정 값을 자동으로 맞춤 — 기기 · 스피커마다 소리가 늦는 정도가 달라서 필요"><button type="button" id="gameCal">박자에 맞춰 쳐서 자동으로 맞추기</button></span>
+    <span class="gset" title="곡을 들으며 박자에 맞춰 16번 누르면 위의 판정 값을 자동으로 맞춤 — 기기 · 스피커마다 소리가 늦게 나오는 정도가 달라서 필요"><button type="button" id="gameCal">판정 자동 맞추기 (박자에 맞춰 16번 누르기)</button></span>
     <div class="gcal" id="gameCalBox" hidden><span id="gameCalText"></span><button type="button" class="primary" id="gameCalTap">박자에 맞춰 누르기</button></div>
+    <span class="gset" title="끄면 이 판은 곡의 랭킹에 올라가지 않음 (이 기기의 내 기록에는 남음)">점수 기록 <button type="button" id="gameRecBtn"></button></span>
     </div>
+    <!-- user request 2026-11-28: the window the game opens with — 게임 시작; while paused (Esc) 이어하기 · 재시작 -->
+    <div class="ggo"><span class="gnote" id="gameGoNote"></span><div class="ggob">
+      <button type="button" id="gameRestart">재시작</button><button type="button" class="primary" id="gameGo">게임 시작</button></div>
+      <div class="ggo2"><button type="button" id="gameReport" title="리듬게임의 오류 · 버그 알리기 — 종류 '리듬게임'으로 신고 창이 열림">오류 · 버그 신고</button>
+      <button type="button" id="gameExit" title="리듬게임을 닫고 플레이어로">플레이어로 돌아가기</button></div></div>
   </dialog>
 </dialog>
 <dialog id="searchDlg"><!-- 곡 검색 (user request 2026-11-14): VocaDB API + our songs — results are played or put in the playlist -->

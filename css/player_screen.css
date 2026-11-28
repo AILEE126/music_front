@@ -1373,7 +1373,13 @@ dialog.gamedlg[open]{display:flex;flex-direction:column}
    the window lets a little of the video through, blurred */
 /* 배경 영상이 비치는 정도 (user 2026-11-27: "반투명 이거 뒤에 영상 좀 신경 쓰여서 투명도 조절"): --gsee 0–1, set from the game's
    설정 (store game.see, rhythm_game.js gameSeeShow) — 1 = as it was (the window 46 %, the lanes 28 % of their colour) */
-dialog.gamedlg{background:color-mix(in srgb,var(--card) calc(100% - 54% * var(--gsee,.4)),transparent);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+/* no blur (user 2026-11-28: "배경비침 … 노트 내려올 때만 빠져서 깜빡거리는 것처럼 보임 — 아예 빼든가"): the blur was off while notes
+   moved (body.grun) and on otherwise, so it came and went with every start · pause; a blur cannot be worked out once and
+   kept (the browser redoes it every frame) → none at all; how much shows through is still 배경 비침 */
+/* (user 2026-11-28, a screenshot at 100 %: "뒤가 전혀 안 보인다니까"): the window and the lanes each kept part of their colour
+   (46 % · 28 % at 100 %), together ~60 % dark — black on a dark theme. Now each lets --gsee through: together 1 − see²
+   — 40 % (default) as before (84 %), 70 % → 51 %, 100 % → nothing in front of the video but the notes */
+dialog.gamedlg{background:color-mix(in srgb,var(--card) calc(100% - 100% * var(--gsee,.4)),transparent)}
 dialog.gamedlg::backdrop{background:rgba(0,0,0,.3)}  /* the video behind the window stays visible (user request 2026-11-26) */
 #gameBack{position:fixed;inset:0;z-index:-1;pointer-events:none}
 /* 배경 = 이미지 (user 2026-11-27: "반투명한 블러 이미지를 게임창 뒤에 디폴트로 박을 수는 없음?"): the song's thumbnail, blurred once —
@@ -1381,24 +1387,32 @@ dialog.gamedlg::backdrop{background:rgba(0,0,0,.3)}  /* the video behind the win
 /* no css filter on it (user 2026-11-27, after the first try: "이 패치 하기 전이 더 프레임이 안 떨어지는 것 같다" — a blur filter on a
    screen-sized layer is worked out again every time the notes above it move): a 64 × 36 canvas the thumbnail is drawn
    into once, stretched over the screen — the stretching is the blur */
-#gameBg{display:none;position:fixed;left:0;top:0;width:100%;height:100%;z-index:39;pointer-events:none;background:#101014}
-body.gameon.gbgimg #gameBg{display:block}
+/* (user 2026-11-28: "배경 썸네일 블러 아예 빼줘"; "썸네일 확대한 것도 빼줘" then "화면에 꽉 차게는 해 줘야" — the enlarging meant was
+   the blurry small one): the video's biggest thumbnail, filling the screen (cropped, not stretched) */
+#gameBg{display:none;position:fixed;left:0;top:0;width:100%;height:100%;z-index:39;pointer-events:none;background:#101014;object-fit:cover}
+body.gameon.gbgimg #gameBg,body.gameon.gstill #gameBg{display:block}  /* gstill: the song not playing (rhythm_game.js gameStill) */
+body.gameon.gstill #gameBg{z-index:41}  /* over the video's player (#streamHost 40) */
 .gamedlg .grow{flex:1}
 .gamedlg .ghead{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
 .gamedlg .ghead b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.gamedlg .gbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px 10px;padding:8px 12px;font-size:12px}
 .gamedlg .glevel{display:inline-flex}
 .gamedlg .glevel button{padding:4px 9px;font-size:12px;border-radius:0;margin-left:-1px}
 .gamedlg .glevel button:disabled{opacity:.35;cursor:default;text-decoration:line-through}  /* a level this song does not have (EXTREME) */
 .gamedlg .glevel button:first-child{border-radius:6px 0 0 6px;margin-left:0}
 .gamedlg .glevel button:last-child{border-radius:0 6px 6px 0}
 /* 설정 창 (user request 2026-11-26: every setting but the level in a popup behind one button) */
-.gamedlg .gbar>button{padding:4px 10px;font-size:12px}
 dialog.gsetdlg{width:min(360px,calc(92vw / var(--ui-zoom)));padding:0;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text)}
 dialog.gsetdlg::backdrop{background:rgba(0,0,0,.35)}
 .gamedlg .gcal{display:flex;flex-direction:column;align-items:center;gap:10px;font-size:12.5px;text-align:center;line-height:1.5}
 .gamedlg .gcal[hidden],.gamedlg .gcal button[hidden]{display:none}
 .gamedlg .gcal .primary{padding:18px 28px;font-size:15px;touch-action:manipulation}
+.gamedlg .ggo{display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 14px 16px;border-top:1px solid var(--line)}
+.gamedlg .ggo .gnote:empty{display:none}
+.gamedlg .ggob{display:flex;gap:10px}
+.gamedlg .ggob button{padding:9px 22px;font-size:14px}
+.gamedlg .ggob button[hidden]{display:none}
+.gamedlg .ggo2{display:flex;gap:8px}
+.gamedlg .ggo2 button{padding:4px 10px;font-size:12px}
 .gamedlg .gsets{display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 14px;font-size:13px}
 .gamedlg .gset{display:inline-flex;align-items:center;gap:4px;color:var(--muted);white-space:nowrap}
 .gamedlg .gset button{padding:2px 7px;font-size:11.5px}
@@ -1406,7 +1420,7 @@ dialog.gsetdlg::backdrop{background:rgba(0,0,0,.35)}
 .gamedlg .gscore{display:flex;flex-direction:column;align-items:center;gap:0;padding:0 14px 6px}
 .gamedlg .gscore b{font-size:22px;font-variant-numeric:tabular-nums}
 .gamedlg .gscore span{color:var(--ok);font-weight:700;font-size:13px;font-variant-numeric:tabular-nums}
-.gamedlg .gstage{position:relative;flex:1;min-height:0;background:color-mix(in srgb,var(--bg) calc(100% - 72% * var(--gsee,.4)),transparent);border-top:1px solid var(--line);border-bottom:1px solid var(--line);touch-action:none;user-select:none}
+.gamedlg .gstage{position:relative;flex:1;min-height:0;background:color-mix(in srgb,var(--bg) calc(100% - 100% * var(--gsee,.4)),transparent);border-top:1px solid var(--line);border-bottom:1px solid var(--line);touch-action:none;user-select:none}
 .gamedlg canvas{position:absolute;inset:0 14px 0 0;width:calc(100% - 14px);height:100%;display:block;touch-action:none}
 .gamedlg.nolife canvas{inset:0;width:100%}
 /* 목숨 게이지 (user request 2026-11-26): a bar up the right edge of the lanes, red when low; hidden when turned off */
@@ -1486,13 +1500,11 @@ dialog.gsetdlg::backdrop{background:rgba(0,0,0,.35)}
    frame of the video — is off (the enlarged small picture is soft already) */
 /* PC too (user 2026-11-27: "모바일도 아닌데 노트 프레임이 너무 떨어지는데"): drawing the notes costs 0.1 ms a frame (measured) —
    what is left is putting the screen together: the window's blur is worked out again for every frame of the notes and
-   of the video behind it. While a game runs (body.grun) the blur is off, and whenever the window is open the video's
+   of the video behind it. The blur is gone (2026-11-28, see dialog.gamedlg above), and whenever the window is open the video's
    player is a third of the screen each way, enlarged (soft, like the blur was). Not measured: the test pane counts as
    hidden, where the browser draws no frames. */
 body.gameon #gameBack{inset:auto;left:0;top:0;width:33.334%;height:33.334%}
 body.gameon #streamHost:not(.folded){transform:scale(3);transform-origin:0 0}
-body.grun dialog.gamedlg{-webkit-backdrop-filter:none;backdrop-filter:none}
 body.m.gameon #gameBack{inset:auto;left:0;top:0;width:25%;height:25%}
 body.m.gameon #streamHost:not(.folded){transform:scale(4);transform-origin:0 0}
-body.m dialog.gamedlg{-webkit-backdrop-filter:none;backdrop-filter:none}
 body.m dialog.gamedlg{width:calc(100vw / var(--ui-zoom));height:calc(100dvh / var(--ui-zoom));max-width:none;max-height:none;border-radius:0;border:0;margin:0}
